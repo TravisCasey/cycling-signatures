@@ -11,10 +11,8 @@ keywords = ["homology", "topology", "dynamical systems"]
 categories = ["mathematics"]
 resolver = "3"
 
-# Dependencies are added in Phase 1 as each module lands. The skeleton ships
-# without dependencies so the empty crate compiles cleanly.
-
 [dependencies]
+thiserror = "2.0.18"
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }

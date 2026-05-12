@@ -3,3 +3,7 @@
 
 //! Algebraic topological descriptions of recurrent motions in high-dimensional
 //! dynamical systems.
+
+pub mod error;
+
+pub use crate::error::{Error, Result};
