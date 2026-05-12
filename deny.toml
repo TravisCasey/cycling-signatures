@@ -1,0 +1,38 @@
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+all-features = true
+
+[advisories]
+unmaintained = "workspace"
+unsound = "all"
+ignore = []
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "GPL-3.0-or-later",
+    "LGPL-3.0-or-later",
+    "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+]
+
+[bans]
+multiple-versions = "deny"
+wildcards = "warn"
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = []

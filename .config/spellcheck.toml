@@ -1,0 +1,6 @@
+[Hunspell]
+lang = "en_US"
+search_dirs = ["."]
+extra_dictionaries = ["spellcheck.dic"]
+skip_os_lookups = true
+use_builtin = true

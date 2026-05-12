@@ -1,0 +1,32 @@
+[package]
+name = "cycling_signatures"
+version = "0.1.0"
+authors = ["Travis Casey"]
+edition = "2024"
+description = "Algebraic topological descriptions of recurrent motions in high-dimensional dynamical systems"
+readme = "README.md"
+repository = "https://github.com/TravisCasey/cycling-signatures"
+license = "GPL-3.0-or-later"
+keywords = ["homology", "topology", "dynamical systems"]
+categories = ["mathematics"]
+resolver = "3"
+
+# Dependencies are added in Phase 1 as each module lands. The skeleton ships
+# without dependencies so the empty crate compiles cleanly.
+
+[dependencies]
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+len_without_is_empty = "allow"
+unreadable_literal = "allow"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
