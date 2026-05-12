@@ -13,6 +13,7 @@ resolver = "3"
 
 [dependencies]
 chomp3rs = { git = "https://github.com/TravisCasey/CHomP3-rs.git", rev = "ba91cb5bfc530a5bd0115034452e674cbb749aab", version = "0.3.7", default-features = false }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
 thiserror = "2.0.18"
 
 [lints.clippy]
@@ -25,6 +26,11 @@ cast_precision_loss = "allow"
 cast_sign_loss = "allow"
 len_without_is_empty = "allow"
 unreadable_literal = "allow"
+
+[features]
+serde = ["dep:serde", "chomp3rs/serde"]
+rayon = ["chomp3rs/rayon"]
+mpi = ["chomp3rs/mpi"]
 
 [package.metadata.docs.rs]
 all-features = true

@@ -10,10 +10,10 @@
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// A spanning vector passed to `CyclingSignature::new` did not have the
-    /// expected length.
+    /// A spanning vector passed to [`crate::F2Subspace::new`] did not have
+    /// the expected length.
     #[error("spanning vector at index {index} has length {actual}, expected {expected}")]
-    SignatureVectorLength {
+    F2SubspaceVectorLength {
         /// Position of the offending vector in the input slice.
         index: usize,
         /// Length of the offending vector.

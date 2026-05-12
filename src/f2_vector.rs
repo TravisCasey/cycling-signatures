@@ -6,9 +6,12 @@
 use std::{iter::FromIterator, ops::BitXorAssign};
 
 use chomp3rs::{F2, Ring};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-/// A bit-packed vector over the field with two elements.
+/// A vector over the field with two elements.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct F2Vector {
     bits: Vec<u64>,
     len: usize,
@@ -27,6 +30,21 @@ impl F2Vector {
 
     /// A vector of the given length whose entries at the named indices are 1
     /// and all other entries are 0. Repeated indices are tolerated.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use cycling_signatures::F2Vector;
+    ///
+    /// let vector = F2Vector::from_nonzero(8, [1, 4, 7]);
+    /// let nonzeros: Vec<usize> = vector.nonzero_indices().collect();
+    /// assert_eq!(nonzeros, vec![1, 4, 7]);
+    ///
+    /// // Repeated indices are tolerated; setting an index to 1 twice is the
+    /// // same as setting it once.
+    /// let with_repeat = F2Vector::from_nonzero(8, [1, 4, 4, 7]);
+    /// assert_eq!(vector, with_repeat);
+    /// ```
     ///
     /// # Panics
     ///
@@ -112,7 +130,32 @@ impl F2Vector {
     }
 }
 
+impl AsRef<F2Vector> for F2Vector {
+    fn as_ref(&self) -> &F2Vector {
+        self
+    }
+}
+
 impl FromIterator<F2> for F2Vector {
+    /// Collects an iterator of [`F2`] entries into an [`F2Vector`].
+    ///
+    /// Items are placed positionally: the first item becomes index 0, the
+    /// second becomes index 1, and so on. The resulting vector's length equals
+    /// the iterator's actual count.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use chomp3rs::{F2, Ring};
+    /// use cycling_signatures::F2Vector;
+    ///
+    /// let vector: F2Vector = [F2::one(), F2::zero(), F2::one(), F2::one()]
+    ///     .into_iter()
+    ///     .collect();
+    /// assert_eq!(vector.len(), 4);
+    /// let nonzeros: Vec<usize> = vector.nonzero_indices().collect();
+    /// assert_eq!(nonzeros, vec![0, 2, 3]);
+    /// ```
     fn from_iter<I: IntoIterator<Item = F2>>(iter: I) -> Self {
         let entries: Vec<F2> = iter.into_iter().collect();
         let len = entries.len();

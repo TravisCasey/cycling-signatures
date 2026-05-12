@@ -22,6 +22,8 @@ allow = [
     "Apache-2.0",
     "MIT",
     "Unicode-3.0",
+    "BSD-3-Clause",
+    "ISC",
 ]
 
 # gmp-mpfr-sys (transitive via chomp3rs -> flint-sys) declares its license
