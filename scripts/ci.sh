@@ -24,14 +24,29 @@ run_step() {
 run_step "Format check" \
     cargo +nightly fmt --check
 
-run_step "Clippy" \
-    cargo clippy --all-targets
+run_step "Build (no features)" \
+    cargo build --no-default-features
 
-run_step "Tests" \
-    cargo test
+run_step "Build (serde)" \
+    cargo build --features serde
+
+run_step "Build (rayon)" \
+    cargo build --features rayon
+
+run_step "Build (mpi)" \
+    cargo build --features mpi
+
+run_step "Tests (no features)" \
+    cargo test --no-default-features
+
+run_step "Tests (serde)" \
+    cargo test --features serde
+
+run_step "Clippy (serde)" \
+    cargo clippy --all-targets --features serde -- -D warnings
 
 RUSTDOCFLAGS="-Dwarnings" run_step "Documentation" \
-    cargo doc --no-deps --document-private-items
+    cargo doc --no-deps --document-private-items --features serde
 
 run_step "Cargo deny" \
     cargo deny check
