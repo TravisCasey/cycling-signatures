@@ -3,7 +3,7 @@
 
 //! Vector type over the field with two elements.
 
-use std::{iter::FromIterator, ops::BitXorAssign};
+use std::ops::{BitXor, BitXorAssign};
 
 use chomp3rs::{F2, Ring};
 #[cfg(feature = "serde")]
@@ -110,8 +110,11 @@ impl F2Vector {
     }
 
     /// Iterates the entries in index order.
-    pub fn iter(&self) -> impl Iterator<Item = F2> + '_ {
-        (0..self.len).map(|index| self.get(index))
+    pub fn iter(&self) -> Iter<'_> {
+        Iter {
+            vector: self,
+            index: 0,
+        }
     }
 
     /// Iterates the indices at which the vector is nonzero, in ascending order.
@@ -182,11 +185,26 @@ impl BitXorAssign<&F2Vector> for F2Vector {
 }
 
 impl<'a> IntoIterator for &'a F2Vector {
-    type IntoIter = Box<dyn Iterator<Item = F2> + 'a>;
+    type IntoIter = Iter<'a>;
     type Item = F2;
 
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.iter())
+        self.iter()
+    }
+}
+
+impl BitXor<&F2Vector> for &F2Vector {
+    type Output = F2Vector;
+
+    /// XORs two vectors element-wise into a new vector.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the two vectors have different lengths.
+    fn bitxor(self, rhs: &F2Vector) -> F2Vector {
+        let mut output = self.clone();
+        output ^= rhs;
+        output
     }
 }
 
@@ -195,6 +213,35 @@ impl From<&F2Vector> for Vec<F2> {
         vector.iter().collect()
     }
 }
+
+/// Iterator over the entries of an [`F2Vector`] in index order.
+///
+/// Created by [`F2Vector::iter`] or by `IntoIterator` on `&F2Vector`.
+#[must_use]
+pub struct Iter<'a> {
+    vector: &'a F2Vector,
+    index: usize,
+}
+
+impl Iterator for Iter<'_> {
+    type Item = F2;
+
+    fn next(&mut self) -> Option<F2> {
+        if self.index >= self.vector.len() {
+            return None;
+        }
+        let value = self.vector.get(self.index);
+        self.index += 1;
+        Some(value)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.vector.len() - self.index;
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for Iter<'_> {}
 
 #[cfg(test)]
 mod tests {

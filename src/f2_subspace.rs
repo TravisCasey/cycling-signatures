@@ -109,7 +109,7 @@ impl F2Subspace {
         self.basis.len()
     }
 
-    /// The number of homology generators (ambient dimension).
+    /// The ambient dimension `n` for which this subspace lies in `F_2^n`.
     #[must_use]
     pub fn num_generators(&self) -> usize {
         self.num_generators
@@ -214,31 +214,43 @@ impl PartialOrd for F2Subspace {
             self.num_generators, other.num_generators,
             "comparing subspaces with different generator counts",
         );
-        let self_in_other = self.basis.iter().all(|vector| other.contains(vector));
-        let other_in_self = other.basis.iter().all(|vector| self.contains(vector));
-        match (self_in_other, other_in_self) {
-            (true, true) => Some(Ordering::Equal),
-            (true, false) => Some(Ordering::Less),
-            (false, true) => Some(Ordering::Greater),
-            (false, false) => None,
+        // Different ranks rule out equality and one inclusion direction; only
+        // the larger-ranked side can possibly contain the smaller, so we test
+        // a single direction.
+        match self.rank().cmp(&other.rank()) {
+            Ordering::Less => self
+                .basis
+                .iter()
+                .all(|vector| other.contains(vector))
+                .then_some(Ordering::Less),
+            Ordering::Greater => other
+                .basis
+                .iter()
+                .all(|vector| self.contains(vector))
+                .then_some(Ordering::Greater),
+            Ordering::Equal => self
+                .basis
+                .iter()
+                .all(|vector| other.contains(vector))
+                .then_some(Ordering::Equal),
         }
     }
 }
 
 impl fmt::Display for F2Subspace {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
+        write!(
             formatter,
             "F2Subspace(rank={}, generators={})",
             self.rank(),
             self.num_generators(),
         )?;
         for basis_vector in &self.basis {
-            for entry in basis_vector.iter() {
+            writeln!(formatter)?;
+            for entry in basis_vector {
                 let glyph = if entry == F2::one() { '1' } else { '0' };
                 write!(formatter, "{glyph}")?;
             }
-            writeln!(formatter)?;
         }
         Ok(())
     }
