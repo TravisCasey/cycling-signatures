@@ -22,10 +22,15 @@ allow = [
     "Apache-2.0",
     "MIT",
     "Unicode-3.0",
-    "BSD-3-Clause",
-    "ISC",
-    "MPL-2.0",
 ]
+
+# gmp-mpfr-sys (transitive via chomp3rs -> flint-sys) declares its license
+# as the deprecated SPDX form "LGPL-3.0+". Clarify it to the modern
+# equivalent so cargo-deny does not warn on the deprecated identifier.
+[[licenses.clarify]]
+crate = "gmp-mpfr-sys"
+expression = "LGPL-3.0-or-later"
+license-files = []
 
 [bans]
 multiple-versions = "deny"
@@ -35,4 +40,4 @@ skip = []
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = []
+allow-git = ["https://github.com/TravisCasey/CHomP3-rs.git"]

@@ -5,5 +5,11 @@
 //! dynamical systems.
 
 pub mod error;
+pub mod f2_vector;
 
-pub use crate::error::{Error, Result};
+pub use chomp3rs::{Cyclic, F2};
+
+pub use crate::{
+    error::{Error, Result},
+    f2_vector::F2Vector,
+};
