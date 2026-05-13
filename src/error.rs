@@ -21,6 +21,34 @@ pub enum Error {
         /// The expected length.
         expected: usize,
     },
+
+    /// An interpolator was constructed with fewer than two knots.
+    #[error("interpolation requires at least two knots, got {actual}")]
+    InterpolationKnotCount {
+        /// Number of knots supplied.
+        actual: usize,
+    },
+
+    /// Knot count and value row count disagreed.
+    #[error("interpolation has {knots} knots and {value_rows} value rows")]
+    InterpolationShapeMismatch {
+        /// Number of knots supplied.
+        knots: usize,
+        /// Number of value rows supplied.
+        value_rows: usize,
+    },
+
+    /// Interpolation values had zero columns.
+    #[error("interpolation values have zero columns")]
+    InterpolationEmptyValues,
+
+    /// Interpolation knots were not strictly increasing.
+    #[error("interpolation knots are not strictly increasing at index {index}")]
+    InterpolationKnotsNotIncreasing {
+        /// Position in the knots array of the first non-increasing pair.
+        /// The offending pair is `knots[index]` and `knots[index + 1]`.
+        index: usize,
+    },
 }
 
 /// Convenience alias for [`std::result::Result`] with this crate's [`Error`].

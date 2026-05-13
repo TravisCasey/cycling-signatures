@@ -362,16 +362,16 @@ mod tests {
     #[test]
     fn new_row_length_mismatch_returns_err() {
         let mismatched = vec![vector(3, &[0]), vector(4, &[1])];
-        let outcome = F2Subspace::new(&mismatched, 3);
-        let err = outcome.unwrap_err();
-        let Error::F2SubspaceVectorLength {
-            index,
-            actual,
-            expected,
-        } = err;
-        assert_eq!(index, 1);
-        assert_eq!(actual, 4);
-        assert_eq!(expected, 3);
+        let err = F2Subspace::new(&mismatched, 3).unwrap_err();
+        // Second vector (index 1) has length 4, not the expected 3.
+        assert!(matches!(
+            err,
+            Error::F2SubspaceVectorLength {
+                index: 1,
+                actual: 4,
+                expected: 3
+            }
+        ));
     }
 
     #[test]
