@@ -10,6 +10,7 @@ pub mod f2_vector;
 pub mod interpolation;
 pub mod metric;
 pub mod prelude;
+pub mod trajectory;
 
 pub use chomp3rs::{Cyclic, F2};
 
@@ -21,4 +22,5 @@ pub use crate::{
         ChebyshevSphereBundleInterpolator, CubicSpline, DerivativeInterpolator, Interpolator,
     },
     metric::{Chebyshev, Euclidean, Metric, SphereBundleMetric},
+    trajectory::Trajectory,
 };

@@ -57,6 +57,27 @@ pub enum Error {
         /// The rejected weight.
         value: f64,
     },
+
+    /// Trajectory input had zero rows.
+    #[error("trajectory input has zero rows")]
+    TrajectoryEmpty,
+
+    /// A trajectory coordinate was non-finite.
+    #[error("trajectory coordinate at row {row}, column {column} is not finite")]
+    TrajectoryNonFinite {
+        /// Row of the offending coordinate in the trajectory points matrix.
+        row: usize,
+        /// Column of the offending coordinate.
+        column: usize,
+    },
+
+    /// Bisection in `Trajectory::resample` could not bring consecutive
+    /// samples within the requested bound at machine precision.
+    #[error("trajectory bisection stagnated near parameter {time}")]
+    ResampleStagnation {
+        /// The parameter value at which bisection stagnated.
+        time: f64,
+    },
 }
 
 /// Convenience alias for [`std::result::Result`] with this crate's [`Error`].

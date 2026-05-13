@@ -1,4 +1,5 @@
-28
+31
+2D
 Chebyshev
 Hien
 Junge
@@ -21,6 +22,8 @@ interpolators
 invariants
 iterator's
 positionally
+resample
+resamples
 rescaling
 serializer
 subspaces

@@ -20,4 +20,5 @@ pub use crate::{
         ChebyshevSphereBundleInterpolator, CubicSpline, DerivativeInterpolator, Interpolator,
     },
     metric::{Chebyshev, Euclidean, Metric, SphereBundleMetric},
+    trajectory::Trajectory,
 };
