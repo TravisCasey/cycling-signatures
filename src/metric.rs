@@ -9,6 +9,10 @@ use std::fmt;
 
 use ndarray::ArrayView1;
 
+pub mod sphere_bundle;
+
+pub use sphere_bundle::SphereBundleMetric;
+
 /// A distance function over rows of a trajectory.
 pub trait Metric: Clone + Send + Sync + fmt::Debug + 'static {
     /// A unique identifier for this metric.
@@ -63,8 +67,13 @@ impl Metric for Chebyshev {
     }
 }
 
+/// The Euclidean distance between two equal-length slices.
+///
+/// # Panics
+///
+/// Panics if `point.len() != other.len()`.
 #[allow(clippy::needless_pass_by_value)]
-fn euclidean_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
+pub(crate) fn euclidean_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
     assert_eq!(point.len(), other.len(), "dimension mismatch");
     point
         .iter()

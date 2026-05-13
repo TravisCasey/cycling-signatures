@@ -49,6 +49,14 @@ pub enum Error {
         /// The offending pair is `knots[index]` and `knots[index + 1]`.
         index: usize,
     },
+
+    /// Sphere bundle metric direction weight must be finite and strictly
+    /// positive.
+    #[error("sphere bundle direction weight {value} must be finite and strictly positive")]
+    SphereBundleMetricWeight {
+        /// The rejected weight.
+        value: f64,
+    },
 }
 
 /// Convenience alias for [`std::result::Result`] with this crate's [`Error`].

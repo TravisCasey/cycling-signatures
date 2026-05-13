@@ -1,7 +1,8 @@
-25
+28
 Chebyshev
 Hien
 Junge
+L2
 Mischaikow
 RREF
 Serde
@@ -15,10 +16,12 @@ halfspan
 homological
 homology
 interpolator
+interpolator's
 interpolators
 invariants
 iterator's
 positionally
+rescaling
 serializer
 subspaces
 tridiagonal
