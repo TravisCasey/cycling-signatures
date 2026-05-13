@@ -16,4 +16,5 @@ pub use crate::{
     error::{Error, Result},
     f2_subspace::F2Subspace,
     f2_vector::F2Vector,
+    metric::{Chebyshev, Euclidean, Metric},
 };

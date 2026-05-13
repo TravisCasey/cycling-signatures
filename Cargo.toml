@@ -13,6 +13,7 @@ resolver = "3"
 
 [dependencies]
 chomp3rs = { git = "https://github.com/TravisCasey/CHomP3-rs.git", rev = "ba91cb5bfc530a5bd0115034452e674cbb749aab", version = "0.3.7", default-features = false }
+ndarray = "0.17.2"
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 thiserror = "2.0.18"
 
