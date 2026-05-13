@@ -16,10 +16,9 @@ use crate::interpolation::{DerivativeInterpolator, Interpolator};
 /// the position, the second half is the scaled direction.
 ///
 /// The radius is set indirectly through a `cube_halfspan: u32` and is fixed at
-/// `cube_halfspan + 0.5`. This half-integer offset keeps the L-infinity-
-/// extremal direction coordinate away from integer cube boundaries, where
-/// `floor` is asymmetric between positive and negative values and the
-/// downstream cubical embedding behaves unevenly across sign.
+/// `cube_halfspan + 0.5`. The half-integer offset keeps every direction
+/// coordinate strictly between two integers, so a coordinate of an extremal
+/// component never lands exactly where the floor function is sign-asymmetric.
 #[derive(Debug, Clone)]
 pub struct ChebyshevSphereBundleInterpolator<Inner> {
     inner: Inner,

@@ -50,9 +50,9 @@ pub enum Error {
         index: usize,
     },
 
-    /// Sphere bundle metric direction weight must be finite and strictly
+    /// Sphere bundle metric direction weight was not finite or not strictly
     /// positive.
-    #[error("sphere bundle direction weight {value} must be finite and strictly positive")]
+    #[error("sphere bundle direction weight {value} is not finite or not strictly positive")]
     SphereBundleMetricWeight {
         /// The rejected weight.
         value: f64,

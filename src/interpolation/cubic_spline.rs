@@ -45,17 +45,15 @@ impl CubicSpline {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InterpolationKnotCount`] if fewer than two knots are
-    /// supplied.
+    /// Returns
     ///
-    /// Returns [`Error::InterpolationShapeMismatch`] if the number of rows in
-    /// `values` does not match the number of knots.
-    ///
-    /// Returns [`Error::InterpolationEmptyValues`] if `values` has zero
-    /// columns.
-    ///
-    /// Returns [`Error::InterpolationKnotsNotIncreasing`] if `knots` is not
-    /// strictly increasing.
+    /// - [`Error::InterpolationKnotCount`] if fewer than two knots are
+    ///   supplied.
+    /// - [`Error::InterpolationShapeMismatch`] if the number of rows in
+    ///   `values` does not match the number of knots.
+    /// - [`Error::InterpolationEmptyValues`] if `values` has zero columns.
+    /// - [`Error::InterpolationKnotsNotIncreasing`] if `knots` is not strictly
+    ///   increasing.
     #[allow(clippy::needless_pass_by_value, clippy::missing_panics_doc)]
     pub fn new(knots: Array1<f64>, values: ArrayView2<'_, f64>) -> Result<Self> {
         let num_knots = knots.len();
@@ -92,7 +90,7 @@ impl CubicSpline {
     }
 
     /// Fits a natural cubic spline through `values` with knots
-    /// `0, 1, ..., values.nrows()`.
+    /// `0, 1, ..., values.nrows() - 1`.
     ///
     /// # Errors
     ///
