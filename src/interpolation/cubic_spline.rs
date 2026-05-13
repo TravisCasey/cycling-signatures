@@ -271,7 +271,10 @@ mod tests {
     use ndarray::{Array2, array};
 
     use super::CubicSpline;
-    use crate::interpolation::{DerivativeInterpolator, Interpolator};
+    use crate::{
+        error::Error,
+        interpolation::{DerivativeInterpolator, Interpolator},
+    };
 
     fn linear_spline() -> CubicSpline {
         // Linear data: values[k] = k along axis 0, constant 0 along axis 1.
@@ -284,10 +287,12 @@ mod tests {
     fn construction_rejects_single_knot() {
         let knots = array![0.0];
         let values = array![[1.0]];
+
         let result = CubicSpline::new(knots, values.view());
+
         assert!(matches!(
             result,
-            Err(crate::Error::InterpolationKnotCount { actual: 1 })
+            Err(Error::InterpolationKnotCount { actual: 1 })
         ));
     }
 
@@ -295,10 +300,12 @@ mod tests {
     fn construction_rejects_shape_mismatch() {
         let knots = array![0.0, 1.0];
         let values = array![[1.0], [2.0], [3.0]];
+
         let result = CubicSpline::new(knots, values.view());
+
         assert!(matches!(
             result,
-            Err(crate::Error::InterpolationShapeMismatch {
+            Err(Error::InterpolationShapeMismatch {
                 knots: 2,
                 value_rows: 3
             })
@@ -309,19 +316,22 @@ mod tests {
     fn construction_rejects_empty_values() {
         let knots = array![0.0, 1.0];
         let values = Array2::<f64>::zeros((2, 0));
+
         let result = CubicSpline::new(knots, values.view());
-        assert!(matches!(
-            result,
-            Err(crate::Error::InterpolationEmptyValues)
-        ));
+
+        assert!(matches!(result, Err(Error::InterpolationEmptyValues)));
     }
 
     #[test]
     fn construction_rejects_non_increasing_knots() {
-        let result = CubicSpline::new(array![0.0, 2.0, 1.0], array![[0.0], [1.0], [2.0]].view());
+        let knots = array![0.0, 2.0, 1.0];
+        let values = array![[0.0], [1.0], [2.0]];
+
+        let result = CubicSpline::new(knots, values.view());
+
         assert!(matches!(
             result,
-            Err(crate::Error::InterpolationKnotsNotIncreasing { index: 1 })
+            Err(Error::InterpolationKnotsNotIncreasing { index: 1 })
         ));
     }
 

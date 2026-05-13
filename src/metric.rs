@@ -109,17 +109,8 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "dimension mismatch")]
-    fn euclidean_dimension_mismatch_panics() {
+    fn distance_dimension_mismatch_panics() {
         let metric = Euclidean;
-        let short = array![0.0, 0.0];
-        let longer = array![1.0, 2.0, 3.0];
-        let _ = metric.distance(short.view(), longer.view());
-    }
-
-    #[test]
-    #[should_panic(expected = "dimension mismatch")]
-    fn chebyshev_dimension_mismatch_panics() {
-        let metric = Chebyshev;
         let short = array![0.0, 0.0];
         let longer = array![1.0, 2.0, 3.0];
         let _ = metric.distance(short.view(), longer.view());
