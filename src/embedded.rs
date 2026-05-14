@@ -178,9 +178,8 @@ fn binary_search_cube(cubes: ArrayView2<'_, i64>, target: &[i64]) -> Option<usiz
     while low < high {
         let mid = low + (high - low) / 2;
         let row = cubes.row(mid);
-        let row_slice: Vec<i64> = row.to_vec();
 
-        match row_slice.as_slice().cmp(target) {
+        match row.iter().copied().cmp(target.iter().copied()) {
             Ordering::Less => low = mid + 1,
             Ordering::Greater => high = mid,
             Ordering::Equal => return Some(mid),

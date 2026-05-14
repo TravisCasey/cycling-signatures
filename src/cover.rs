@@ -79,6 +79,9 @@ impl CubicalCover {
     }
 
     /// The spatial dimension of each cube.
+    ///
+    /// Must equal [`Trajectory::dimension`](crate::Trajectory::dimension) when
+    /// paired in an [`EmbeddedTrajectory`](crate::EmbeddedTrajectory).
     #[must_use]
     pub fn dimension(&self) -> usize {
         self.cubes.ncols()
@@ -100,7 +103,7 @@ impl CubicalCover {
         &self.generators
     }
 
-    /// Sums the `F_2` homology class contributions of `edges` over Z/2Z.
+    /// Returns the `F_2` homology class of the chain formed by `edges`.
     ///
     /// Edges not present in any generator chain contribute nothing. The
     /// returned vector has length [`num_generators`](Self::num_generators).
@@ -146,6 +149,8 @@ fn compute_generators(
 ) -> Vec<Chain<Cube, F2>> {
     let dimension = canonical_cubes.ncols();
 
+    // `from_cubes` rejects zero-row input before calling this helper, so
+    // every column has at least one entry.
     let minimum_orthant: Orthant = (0..dimension)
         .map(|axis| {
             canonical_cubes
@@ -153,7 +158,7 @@ fn compute_generators(
                 .iter()
                 .copied()
                 .min()
-                .map_or(0_i16, |value| value as i16)
+                .expect("canonical_cubes has at least one row") as i16
         })
         .collect();
 
@@ -164,7 +169,7 @@ fn compute_generators(
                 .iter()
                 .copied()
                 .max()
-                .map_or(0_i16, |value| value as i16)
+                .expect("canonical_cubes has at least one row") as i16
                 + 1
         })
         .collect();
