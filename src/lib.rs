@@ -13,6 +13,7 @@ pub mod interpolation;
 pub mod metric;
 pub mod prelude;
 pub mod trajectory;
+pub mod util;
 
 pub use chomp3rs::{Chain, Cube, Cyclic, ExecutionBackend, F2};
 
