@@ -14,20 +14,22 @@ use crate::{
 
 /// A trajectory of points in a metric space.
 ///
-/// Carries the metric and the maximum metric distance between
-/// consecutive points (the threshold). The threshold is computed at
-/// construction; it is never supplied directly.
+/// Carries the metric and the maximum metric distance between consecutive
+/// points (referred to as the threshold). The threshold is computed when this
+/// type is constructed; it can be set below a certain value using interpolation
+/// with the [`resample()`](Self::resample) method.
 #[derive(Clone, Debug)]
 pub struct Trajectory<M: Metric> {
     points: Array2<f64>,
     metric: M,
     threshold: f64,
+    original_indices: Vec<usize>,
 }
 
 impl<M: Metric> Trajectory<M> {
-    /// Takes the input points as already satisfying the metric contract.
-    /// Computes the maximum consecutive metric distance and records it as
-    /// the threshold. Single-row input is accepted with `threshold == 0.0`.
+    /// Computes the maximum consecutive metric distance between the given
+    /// `points` and records it as the threshold. Single-row input is accepted
+    /// with `threshold == 0.0`.
     ///
     /// # Examples
     ///
@@ -47,7 +49,7 @@ impl<M: Metric> Trajectory<M> {
     ///
     /// - [`Error::TrajectoryEmpty`] if `points` has zero rows.
     /// - [`Error::TrajectoryNonFinite`] if any coordinate is not finite.
-    #[allow(clippy::needless_pass_by_value)] // ArrayView2 is Copy; by-value is idiomatic ndarray.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(points: ArrayView2<'_, f64>, metric: M) -> Result<Self> {
         if points.nrows() == 0 {
             return Err(Error::TrajectoryEmpty);
@@ -60,16 +62,19 @@ impl<M: Metric> Trajectory<M> {
             }
         }
         let threshold = max_consecutive_distance(points, &metric);
+        let original_indices = (0..points.nrows()).collect();
         Ok(Self {
             points: points.to_owned(),
             metric,
             threshold,
+            original_indices,
         })
     }
 
-    /// Resamples `interpolator` so consecutive output samples are within
-    /// `bound` metric distance. The recorded `threshold()` is the achieved
-    /// maximum and is at most `bound`.
+    /// Resamples `interpolator` so that consecutive output samples are within
+    /// `bound` metric distance. The recorded
+    /// [`threshold()`](Self::threshold) is the achieved maximum and is at most
+    /// `bound`.
     ///
     /// # Examples
     ///
@@ -106,6 +111,7 @@ impl<M: Metric> Trajectory<M> {
         let first_sample = interpolator.sample(knots[0]);
         assert_finite_sample(&first_sample, 0)?;
         samples.push(first_sample);
+        let mut original_indices: Vec<usize> = vec![0];
 
         for pair in knots.windows(2) {
             let (parameter_lower, parameter_upper) = (pair[0], pair[1]);
@@ -141,6 +147,7 @@ impl<M: Metric> Trajectory<M> {
                 stack.push(right);
                 stack.push(left);
             }
+            original_indices.push(samples.len() - 1);
         }
 
         let dimension = samples[0].len();
@@ -153,6 +160,7 @@ impl<M: Metric> Trajectory<M> {
             points,
             metric,
             threshold,
+            original_indices,
         })
     }
 
@@ -184,6 +192,28 @@ impl<M: Metric> Trajectory<M> {
     #[must_use]
     pub fn dimension(&self) -> usize {
         self.points.ncols()
+    }
+
+    /// For each original input row, returns the corresponding index in
+    /// [`points`](Self::points).
+    ///
+    /// For trajectories built with [`new`](Self::new), this is the identity map
+    /// `0..len()`. For trajectories built with [`resample`](Self::resample),
+    /// each interpolator knot maps to its preserved position in the resampled
+    /// sample array; bisection-inserted points have no original index.
+    #[must_use]
+    pub fn original_indices(&self) -> &[usize] {
+        &self.original_indices
+    }
+
+    /// The number of original input rows.
+    ///
+    /// Equals [`len`](Self::len) for trajectories built with
+    /// [`new`](Self::new); equals the interpolator's knot count for
+    /// trajectories built with [`resample`](Self::resample).
+    #[must_use]
+    pub fn original_count(&self) -> usize {
+        self.original_indices.len()
     }
 }
 
@@ -276,6 +306,8 @@ mod tests {
         assert!((trajectory.threshold() - 5.0).abs() < 1e-12);
         assert_eq!(trajectory.len(), 3);
         assert_eq!(trajectory.dimension(), 2);
+        assert_eq!(trajectory.original_indices(), &[0, 1, 2]);
+        assert_eq!(trajectory.original_count(), 3);
     }
 
     #[test]
@@ -322,6 +354,14 @@ mod tests {
                 trajectory.points().row(index + 1),
             );
             assert!(distance <= bound + 1e-12);
+        }
+
+        let indices = trajectory.original_indices();
+        assert_eq!(indices.len(), 5);
+        assert_eq!(indices[0], 0);
+        assert_eq!(indices[4], trajectory.len() - 1);
+        for window in indices.windows(2) {
+            assert!(window[0] < window[1]);
         }
     }
 
