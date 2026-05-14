@@ -15,21 +15,21 @@ use crate::{
 /// A trajectory of points in a metric space.
 ///
 /// Carries the metric and the maximum metric distance between consecutive
-/// points (referred to as the threshold). The threshold is computed when this
-/// type is constructed; it can be set below a certain value using interpolation
-/// with the [`resample()`](Self::resample) method.
+/// points. The bound is computed when this type is constructed; it can be
+/// set below a certain value using interpolation with the
+/// [`resample()`](Self::resample) method.
 #[derive(Clone, Debug)]
 pub struct Trajectory<M: Metric> {
     points: Array2<f64>,
     metric: M,
-    threshold: f64,
+    bound: f64,
     original_indices: Vec<usize>,
 }
 
 impl<M: Metric> Trajectory<M> {
     /// Computes the maximum consecutive metric distance between the given
-    /// `points` and records it as the threshold. Single-row input is accepted
-    /// with `threshold == 0.0`.
+    /// `points` and records it as the bound. Single-row input is accepted with
+    /// `bound == 0.0`.
     ///
     /// # Examples
     ///
@@ -40,7 +40,7 @@ impl<M: Metric> Trajectory<M> {
     /// let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]];
     /// let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
     /// // Max consecutive Euclidean distance is sqrt(3^2 + 4^2) = 5.
-    /// assert!((trajectory.threshold() - 5.0).abs() < 1e-12);
+    /// assert!((trajectory.bound() - 5.0).abs() < 1e-12);
     /// ```
     ///
     /// # Errors
@@ -61,20 +61,19 @@ impl<M: Metric> Trajectory<M> {
                 }
             }
         }
-        let threshold = max_consecutive_distance(points, &metric);
+        let bound = max_consecutive_distance(points, &metric);
         let original_indices = (0..points.nrows()).collect();
         Ok(Self {
             points: points.to_owned(),
             metric,
-            threshold,
+            bound,
             original_indices,
         })
     }
 
     /// Resamples `interpolator` so that consecutive output samples are within
-    /// `bound` metric distance. The recorded
-    /// [`threshold()`](Self::threshold) is the achieved maximum and is at most
-    /// `bound`.
+    /// `bound` metric distance. The recorded [`bound()`](Self::bound) is the
+    /// achieved maximum and is at most `bound`.
     ///
     /// # Examples
     ///
@@ -86,7 +85,7 @@ impl<M: Metric> Trajectory<M> {
     /// let values = array![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0]];
     /// let spline = CubicSpline::new(knots, values.view()).unwrap();
     /// let trajectory = Trajectory::resample(&spline, Euclidean, 0.5).unwrap();
-    /// assert!(trajectory.threshold() <= 0.5);
+    /// assert!(trajectory.bound() <= 0.5);
     /// ```
     ///
     /// # Errors
@@ -155,11 +154,11 @@ impl<M: Metric> Trajectory<M> {
         for (row, sample) in samples.iter().enumerate() {
             points.index_axis_mut(Axis(0), row).assign(sample);
         }
-        let threshold = max_consecutive_distance(points.view(), &metric);
+        let bound = max_consecutive_distance(points.view(), &metric);
         Ok(Self {
             points,
             metric,
-            threshold,
+            bound,
             original_indices,
         })
     }
@@ -176,10 +175,11 @@ impl<M: Metric> Trajectory<M> {
         &self.metric
     }
 
-    /// The maximum metric distance between consecutive points.
+    /// The maximum metric distance between any pair of consecutive points: the
+    /// achieved upper bound on consecutive-distance for this trajectory.
     #[must_use]
-    pub fn threshold(&self) -> f64 {
-        self.threshold
+    pub fn bound(&self) -> f64 {
+        self.bound
     }
 
     /// The number of points in the trajectory.
@@ -303,7 +303,7 @@ mod tests {
         let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]];
         let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
 
-        assert!((trajectory.threshold() - 5.0).abs() < 1e-12);
+        assert!((trajectory.bound() - 5.0).abs() < 1e-12);
         assert_eq!(trajectory.len(), 3);
         assert_eq!(trajectory.dimension(), 2);
         assert_eq!(trajectory.original_indices(), &[0, 1, 2]);
@@ -311,11 +311,11 @@ mod tests {
     }
 
     #[test]
-    fn new_single_point_threshold_zero() {
+    fn new_single_point_bound_zero() {
         let points = array![[1.0, 2.0, 3.0]];
         let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
 
-        assert!(trajectory.threshold() < f64::EPSILON);
+        assert!(trajectory.bound() < f64::EPSILON);
         assert_eq!(trajectory.len(), 1);
     }
 
@@ -347,7 +347,7 @@ mod tests {
 
         let trajectory = Trajectory::resample(&spline, Euclidean, bound).unwrap();
 
-        assert!(trajectory.threshold() <= bound);
+        assert!(trajectory.bound() <= bound);
         for index in 0..trajectory.len() - 1 {
             let distance = Euclidean.distance(
                 trajectory.points().row(index),
