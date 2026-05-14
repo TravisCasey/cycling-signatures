@@ -14,6 +14,7 @@ pub use chomp3rs::{Chain, Cube, Cyclic, ExecutionBackend, F2};
 
 pub use crate::{
     cover::CubicalCover,
+    embedded::EmbeddedTrajectory,
     error::{Error, Result},
     f2_subspace::F2Subspace,
     f2_vector::F2Vector,

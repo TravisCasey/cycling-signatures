@@ -82,6 +82,23 @@ pub enum Error {
     #[error("cubical cover requires at least one spatial dimension, got zero")]
     CubicalCoverZeroDimension,
 
+    /// An [`EmbeddedTrajectory`](crate::EmbeddedTrajectory)'s trajectory and
+    /// cover disagree on dimension.
+    #[error("embedded trajectory dimension mismatch: trajectory {trajectory}, cover {cover}")]
+    EmbeddedDimensionMismatch {
+        /// The trajectory's embedding dimension.
+        trajectory: usize,
+        /// The cover's spatial dimension.
+        cover: usize,
+    },
+
+    /// A trajectory point's cube is not present in the supplied cover.
+    #[error("trajectory point at index {point_index} maps to a cube not present in the cover")]
+    EmbeddedCubeNotInCover {
+        /// The index in `trajectory.points()` of the offending point.
+        point_index: usize,
+    },
+
     /// Trajectory input had zero rows.
     #[error("trajectory input has zero rows")]
     TrajectoryEmpty,
