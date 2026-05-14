@@ -4,6 +4,7 @@
 //! Algebraic topological descriptions of recurrent motions in high-dimensional
 //! dynamical systems.
 
+pub mod cover;
 pub mod error;
 pub mod f2_subspace;
 pub mod f2_vector;
@@ -12,9 +13,10 @@ pub mod metric;
 pub mod prelude;
 pub mod trajectory;
 
-pub use chomp3rs::{Cyclic, F2};
+pub use chomp3rs::{Chain, Cube, Cyclic, ExecutionBackend, F2};
 
 pub use crate::{
+    cover::CubicalCover,
     error::{Error, Result},
     f2_subspace::F2Subspace,
     f2_vector::F2Vector,

@@ -37,7 +37,11 @@ license-files = []
 [bans]
 multiple-versions = "deny"
 wildcards = "warn"
-skip = []
+skip = [
+    # rustc-hash 1.1.0 is a transitive dependency via chomp3rs -> bindgen;
+    # cycling_signatures itself uses 2.1.2 directly.
+    { name = "rustc-hash", version = "=1.1.0" },
+]
 
 [sources]
 unknown-registry = "deny"

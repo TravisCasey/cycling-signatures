@@ -58,6 +58,30 @@ pub enum Error {
         value: f64,
     },
 
+    /// A cube coordinate is outside the range the cubical-homology backend
+    /// accepts.
+    #[error(
+        "cube coordinate {value} at axis {axis} is outside the allowed range [{}, {}]",
+        i16::MIN,
+        i16::MAX - 1
+    )]
+    CubeCoordinateOutOfRange {
+        /// The axis (cube column) of the offending coordinate.
+        axis: usize,
+        /// The rejected coordinate.
+        value: i64,
+    },
+
+    /// [`CubicalCover::from_cubes`](crate::CubicalCover::from_cubes) was called
+    /// with zero rows.
+    #[error("cubical cover requires at least one cube, got zero")]
+    CubicalCoverEmptyCubes,
+
+    /// [`CubicalCover::from_cubes`](crate::CubicalCover::from_cubes) was called
+    /// with zero columns.
+    #[error("cubical cover requires at least one spatial dimension, got zero")]
+    CubicalCoverZeroDimension,
+
     /// Trajectory input had zero rows.
     #[error("trajectory input has zero rows")]
     TrajectoryEmpty,

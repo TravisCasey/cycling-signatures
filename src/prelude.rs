@@ -10,9 +10,10 @@
 //! use cycling_signatures::prelude::*;
 //! ```
 
-pub use chomp3rs::{Cyclic, F2};
+pub use chomp3rs::{Chain, Cube, Cyclic, ExecutionBackend, F2};
 
 pub use crate::{
+    cover::CubicalCover,
     error::{Error, Result},
     f2_subspace::F2Subspace,
     f2_vector::F2Vector,

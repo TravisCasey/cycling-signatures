@@ -1,5 +1,6 @@
-32
+39
 2D
+2Z
 Chebyshev
 Hien
 Junge
@@ -8,7 +9,11 @@ Mischaikow
 RREF
 Serde
 XORs
+backend
 canonicalize
+chomp3rs
+deduplicated
+deduplicates
 deserialization
 deserialized
 enum
@@ -21,6 +26,7 @@ interpolator's
 interpolators
 invariants
 iterator's
+lexicographically
 positionally
 resample
 resampled
@@ -31,3 +37,4 @@ subspaces
 tridiagonal
 wildcard
 workflow
+cohomology
