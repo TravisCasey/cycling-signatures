@@ -5,6 +5,7 @@
 //! dynamical systems.
 
 pub mod cover;
+pub mod distance;
 pub mod embedded;
 pub mod error;
 pub mod f2_subspace;
