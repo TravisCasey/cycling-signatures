@@ -119,6 +119,71 @@ pub enum Error {
         /// The parameter value at which bisection stagnated.
         time: f64,
     },
+
+    /// Consecutive trajectory points land in cubes differing by more than 1 in
+    /// some axis. The cube embedding requires trajectory sampling fine enough
+    /// that consecutive points stay in adjacent cubes; callers should resample
+    /// with a smaller bound or rescale coordinates.
+    #[error(
+        "consecutive trajectory points {point_index} and {} land in cubes differing by {delta} in \
+        axis {axis}",
+        point_index + 1
+    )]
+    ConsecutiveCubesNonAdjacent {
+        /// Index in `trajectory.points()` of the first point of the offending
+        /// pair.
+        point_index: usize,
+        /// Spatial axis on which the cubes differ by more than 1.
+        axis: usize,
+        /// Signed coordinate difference between the two cubes on that axis.
+        delta: i64,
+    },
+
+    /// A trajectory segment passed to a window or cycle query falls outside
+    /// the valid range of the trajectory.
+    #[error(
+        "trajectory segment {start}..{end} does not fit in a trajectory of length \
+         {trajectory_length}"
+    )]
+    WindowOutOfBounds {
+        /// Start of the offending range.
+        start: usize,
+        /// End (exclusive) of the offending range.
+        end: usize,
+        /// Number of points in the trajectory.
+        trajectory_length: usize,
+    },
+
+    /// A cycle-detection threshold below the trajectory's recorded
+    /// consecutive-distance bound: cycles below this resolution are not
+    /// meaningfully detectable.
+    #[error(
+        "adjacency threshold {given} is below the trajectory's consecutive-distance bound \
+         {trajectory_bound}"
+    )]
+    ThresholdBelowTrajectoryBound {
+        /// The threshold the caller supplied.
+        given: f64,
+        /// The trajectory's recorded consecutive-distance bound.
+        trajectory_bound: f64,
+    },
+
+    /// A cycle's endpoint cubes differ by more than 1 in some axis; the
+    /// closing step of the walker requires adjacency.
+    #[error(
+        "cycle endpoints at trajectory indices {start} and {} land in cubes differing by {delta} in axis {axis}",
+        end - 1
+    )]
+    CycleEndpointsNonAdjacent {
+        /// Inclusive start of the offending cycle's segment.
+        start: usize,
+        /// Exclusive end of the offending cycle's segment.
+        end: usize,
+        /// Spatial axis on which the endpoint cubes differ by more than 1.
+        axis: usize,
+        /// Signed coordinate difference between the two cubes on that axis.
+        delta: i64,
+    },
 }
 
 /// Convenience alias for [`std::result::Result`] with this crate's [`Error`].

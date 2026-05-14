@@ -1,4 +1,4 @@
-39
+40
 2D
 2Z
 Chebyshev
@@ -31,6 +31,7 @@ positionally
 resample
 resampled
 resamples
+rescale
 rescaling
 serializer
 subspaces
