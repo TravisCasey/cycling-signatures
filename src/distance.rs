@@ -1,7 +1,8 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Distance matrices over trajectory segments.
+//! Connected components of below-threshold pair-edges over a trajectory
+//! segment.
 
 use std::ops::{Range, RangeBounds};
 
@@ -14,38 +15,66 @@ use crate::{
     util::{disjoint::DisjointSet, range::normalize_segment},
 };
 
-/// Pairwise metric distances over a contiguous segment of a trajectory.
+/// Connected components of below-threshold pair-edges over a trajectory
+/// segment.
 ///
-/// Built from a [`Trajectory<M>`](crate::Trajectory) and a segment of
-/// trajectory-point indices. Entries are indexed by `(row, col)`: `row` is the
-/// segment-local offset of the first trajectory point and `col` is the gap to
-/// the second, so [`get`](Self::get) returns the metric distance between
-/// trajectory points at absolute indices `start + row` and `start + row + col`,
-/// where `start` is the segment's first absolute index. Self-comparisons
-/// (`col == 0`) are zero.
-#[derive(Debug, Clone)]
-pub struct DistanceMatrix {
-    data: Vec<f64>,
-    range: Range<usize>,
+/// Each entry of the pairwise distance matrix over
+/// `trajectory.points()[segment]` represents a cycle segment that walks the
+/// trajectory between its two endpoint indices and closes directly. Two such
+/// entries merge into the same component when both:
+///
+/// - their cycle segments share exactly one endpoint, with the other two
+///   endpoints adjacent in trajectory-index space, and
+/// - the three trajectory points involved (the shared endpoint and the two
+///   distinct endpoints) satisfy [`Metric::covers_triple`] with `radius =
+///   threshold / 2`.
+///
+/// The transitive closure of this relation partitions the below-threshold
+/// entries. Adjacency preserves cycling signature: every cycle in a given
+/// component has the same homology class.
+///
+/// When `threshold >= trajectory.bound()`, every below-threshold entry's
+/// cycle segment is a closed loop in the cubical cover with a well-defined
+/// signature, and components group entries by signature equivalence.
+/// Components reachable from a matrix-diagonal entry (a self-comparison,
+/// `col == 0`, carrying the trivial cycle) inherit the trivial signature
+/// and are filtered before return.
+///
+/// Each component is returned as the list of its cycle segments
+/// (`Range<usize>`, in trajectory-index space).
+///
+/// # Errors
+///
+/// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a valid
+///   sub-range of `trajectory.points()`.
+/// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
+///   trajectory.bound()`.
+#[allow(dead_code)]
+pub(crate) fn detect_components<M: Metric>(
+    trajectory: &Trajectory<M>,
+    segment: impl RangeBounds<usize>,
+    threshold: f64,
+) -> Result<Vec<Vec<Range<usize>>>> {
+    let range = normalize_segment(segment, trajectory.len())?;
+    let trajectory_bound = trajectory.bound();
+    if threshold < trajectory_bound {
+        return Err(Error::ThresholdBelowTrajectoryBound {
+            given: threshold,
+            trajectory_bound,
+        });
+    }
+    let matrix = DistanceMatrix::new(trajectory, range);
+    Ok(matrix.detect_components(threshold))
 }
 
-impl DistanceMatrix {
-    /// Computes the matrix for the segment of `trajectory.points()`
-    /// named by `segment`.
-    ///
-    /// `segment` is any `RangeBounds<usize>` (`a..b`, `a..=b`, `..b`, `..`, and
-    /// so on). The resulting matrix covers exactly the trajectory points the
-    /// segment describes, with self-comparisons set to zero.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::WindowOutOfBounds`] if `segment` falls outside
-    /// `trajectory.points()`.
-    pub fn from_trajectory<M: Metric>(
-        trajectory: &Trajectory<M>,
-        segment: impl RangeBounds<usize>,
-    ) -> Result<Self> {
-        let range = normalize_segment(segment, trajectory.len())?;
+struct DistanceMatrix<'a, M: Metric> {
+    data: Vec<f64>,
+    range: Range<usize>,
+    trajectory: &'a Trajectory<M>,
+}
+
+impl<'a, M: Metric> DistanceMatrix<'a, M> {
+    fn new(trajectory: &'a Trajectory<M>, range: Range<usize>) -> Self {
         let size = range.end - range.start;
         let points = trajectory.points();
         let metric = trajectory.metric();
@@ -64,88 +93,41 @@ impl DistanceMatrix {
             }
         }
 
-        Ok(Self { data, range })
+        Self {
+            data,
+            range,
+            trajectory,
+        }
     }
 
-    /// Iterates the matrix's `(row, col)` pairs in anti-diagonal order:
-    /// ascending `row + col`, ties broken by ascending `row`. The returned
-    /// iterator implements `Clone`, so callers can take two independent passes
-    /// from the same starting position.
-    pub(crate) fn iter_anti_diagonal(&self) -> impl Iterator<Item = (usize, usize)> + Clone {
-        let size = self.size();
-        (0..size).flat_map(move |diagonal| (0..=diagonal).map(move |row| (row, diagonal - row)))
-    }
-
-    /// The half-open range of trajectory-point indices the matrix covers.
-    #[must_use]
-    pub fn range(&self) -> Range<usize> {
-        self.range.clone()
-    }
-
-    /// Number of trajectory points in the segment.
-    #[must_use]
-    pub fn size(&self) -> usize {
+    fn size(&self) -> usize {
         self.range.end - self.range.start
     }
 
-    /// Connected components of below-threshold matrix entries.
-    ///
-    /// Each entry represents a cycle segment that walks the trajectory
-    /// between its two endpoint indices and closes directly. Two entries
-    /// merge into the same component when both:
-    ///
-    /// - their cycle segments share exactly one endpoint, with the other two
-    ///   endpoints adjacent in trajectory-index space, and
-    /// - the three trajectory points involved (the shared endpoint and the two
-    ///   distinct endpoints) satisfy [`Metric::covers_triple`] with `radius =
-    ///   threshold / 2`.
-    ///
-    /// The transitive closure of this relation partitions the entries.
-    /// Connectivity preserves cycling signature: all cycles within one
-    /// component share a homology class.
-    ///
-    /// When `threshold` exceeds `trajectory.bound()`, every sub-threshold
-    /// entry's cycle segment is a closed loop in the cubical cover with a
-    /// well-defined signature, and components group entries by signature
-    /// equivalence. Components reachable from a matrix-diagonal entry (a
-    /// self-comparison, `col == 0`, carrying the trivial cycle) inherit the
-    /// trivial signature and are filtered at emission.
-    ///
-    /// Each component is returned as the list of its cycle segments
-    /// (`Range<usize>`, in trajectory-index space).
-    ///
-    /// `trajectory` must be the same trajectory the matrix was constructed
-    /// from; the matrix carries no provenance for this and trusts the
-    /// caller.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::ThresholdBelowTrajectoryBound`] if
-    /// `threshold < trajectory.bound()`.
-    pub fn detect_components<M: Metric>(
-        &self,
-        trajectory: &Trajectory<M>,
-        threshold: f64,
-    ) -> Result<Vec<Vec<Range<usize>>>> {
-        let trajectory_bound = trajectory.bound();
-        if threshold < trajectory_bound {
-            return Err(Error::ThresholdBelowTrajectoryBound {
-                given: threshold,
-                trajectory_bound,
-            });
-        }
-
-        let points = trajectory.points();
-        let metric = trajectory.metric();
-        let ball_radius = threshold / 2.0;
-        let base = self.range.start;
+    fn get(&self, row: usize, col: usize) -> f64 {
         let size = self.size();
-        let anti_diagonal = self.iter_anti_diagonal();
+        assert!(
+            row + col < size,
+            "distance matrix index ({row}, {col}) out of bounds for size {size}",
+        );
+        let offset = row * size - row.saturating_sub(1) * row / 2 + col;
+        self.data[offset]
+    }
+
+    fn iter_anti_diagonal(&self) -> impl Iterator<Item = (usize, usize)> {
+        (0..self.size())
+            .flat_map(move |diagonal| (0..=diagonal).map(move |row| (row, diagonal - row)))
+    }
+
+    fn detect_components(&self, threshold: f64) -> Vec<Vec<Range<usize>>> {
+        let points = self.trajectory.points();
+        let metric = self.trajectory.metric();
+        let base = self.range.start;
 
         let mut disjoint = DisjointSet::new(0);
         let mut entry_ids: FxHashMap<(usize, usize), usize> = FxHashMap::default();
 
-        for (row, col) in anti_diagonal.clone() {
+        for (row, col) in self.iter_anti_diagonal() {
             if self.get(row, col) > threshold {
                 continue;
             }
@@ -160,7 +142,7 @@ impl DistanceMatrix {
                     points.row(base + row),
                     points.row(base + row + col - 1),
                     points.row(base + row + col),
-                    ball_radius,
+                    threshold / 2.0,
                 )
             {
                 disjoint.union(id, left_id);
@@ -169,13 +151,13 @@ impl DistanceMatrix {
             // Up-right neighbor (row - 1, col + 1): shared endpoint x[base + row + col].
             // Triple: (x[base + row], x[base + row - 1], x[base + row + col]).
             if row > 0
-                && col + 1 < size
+                && col + 1 < self.size()
                 && let Some(&up_id) = entry_ids.get(&(row - 1, col + 1))
                 && metric.covers_triple(
                     points.row(base + row),
                     points.row(base + row - 1),
                     points.row(base + row + col),
-                    ball_radius,
+                    threshold / 2.0,
                 )
             {
                 disjoint.union(id, up_id);
@@ -184,7 +166,7 @@ impl DistanceMatrix {
 
         let mut bucket_index: FxHashMap<usize, usize> = FxHashMap::default();
         let mut components: Vec<Vec<Range<usize>>> = Vec::new();
-        for (row, col) in anti_diagonal {
+        for (row, col) in self.iter_anti_diagonal() {
             let Some(&id) = entry_ids.get(&(row, col)) else {
                 continue;
             };
@@ -199,24 +181,7 @@ impl DistanceMatrix {
         }
 
         components.retain(|cycles| !cycles.iter().any(|cycle| cycle.end <= cycle.start + 1));
-        Ok(components)
-    }
-
-    /// The metric distance at local `(row, col)`. See the type-level
-    /// documentation for the indexing convention.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `row + col >= self.size()`.
-    #[must_use]
-    pub fn get(&self, row: usize, col: usize) -> f64 {
-        let size = self.size();
-        assert!(
-            row + col < size,
-            "distance matrix index ({row}, {col}) out of bounds for size {size}",
-        );
-        let offset = row * size - row.saturating_sub(1) * row / 2 + col;
-        self.data[offset]
+        components
     }
 }
 
@@ -224,44 +189,25 @@ impl DistanceMatrix {
 mod tests {
     use ndarray::array;
 
-    use super::DistanceMatrix;
+    use super::detect_components;
     use crate::{Trajectory, metric::Euclidean};
 
     fn small_trajectory() -> Trajectory<Euclidean> {
-        // Five points along a 2D path, all pairwise distances finite.
         let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0], [2.0, 0.0]];
         Trajectory::new(points.view(), Euclidean).unwrap()
     }
 
     #[test]
-    fn from_trajectory_validates_segment_bounds() {
+    fn rejects_segment_out_of_bounds() {
         let trajectory = small_trajectory();
-        let err = DistanceMatrix::from_trajectory(&trajectory, 0..10).unwrap_err();
+        let err = detect_components(&trajectory, 0..10, 0.5).unwrap_err();
         assert!(matches!(err, crate::error::Error::WindowOutOfBounds { .. }));
     }
 
     #[test]
-    fn get_diagonal_is_zero_and_off_diagonal_matches_metric() {
+    fn rejects_threshold_below_trajectory_bound() {
         let trajectory = small_trajectory();
-        let matrix = DistanceMatrix::from_trajectory(&trajectory, 0..5).unwrap();
-
-        // Self-comparisons are hard-coded to 0.0 in the constructor; exact
-        // equality is the correct test, not an epsilon tolerance.
-        #[allow(clippy::float_cmp)]
-        for row in 0..matrix.size() {
-            assert_eq!(matrix.get(row, 0), 0.0);
-        }
-
-        // Off-diagonal: (row=0, col=2) is points[0] to points[2], distance 1.0.
-        assert!((matrix.get(0, 2) - 1.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn detect_components_rejects_threshold_below_min() {
-        let trajectory = small_trajectory();
-        let matrix = DistanceMatrix::from_trajectory(&trajectory, 0..5).unwrap();
-        // small_trajectory has consecutive distance 0.5, so trajectory.bound() == 0.5.
-        let err = matrix.detect_components(&trajectory, 0.1).unwrap_err();
+        let err = detect_components(&trajectory, 0..5, 0.1).unwrap_err();
         assert!(matches!(
             err,
             crate::error::Error::ThresholdBelowTrajectoryBound { given, trajectory_bound }
@@ -270,14 +216,9 @@ mod tests {
     }
 
     #[test]
-    fn detect_components_filters_trivial_diagonal_and_emits_no_real_recurrence() {
-        // A straight-line trajectory of 5 points has no genuine recurrence.
-        // All cycles in the distance matrix are either zero-length
-        // (col=0) or chain into the trivial component via the col=0 spine.
-        // detect_components filters the trivial component and returns empty.
+    fn straight_line_trajectory_emits_no_real_recurrence() {
         let trajectory = small_trajectory();
-        let matrix = DistanceMatrix::from_trajectory(&trajectory, 0..5).unwrap();
-        let components = matrix.detect_components(&trajectory, 0.5).unwrap();
+        let components = detect_components(&trajectory, 0..5, 0.5).unwrap();
         assert!(
             components.is_empty(),
             "expected no non-trivial components for a straight-line trajectory, got {components:?}",
@@ -285,8 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn detect_components_finds_a_known_recurrence() {
-        // Trajectory that comes back near its start: a small square loop.
+    fn detects_a_known_loop_closure() {
         let points = array![
             [0.0, 0.0],
             [0.5, 0.0],
@@ -299,12 +239,8 @@ mod tests {
             [0.0, 0.0],
         ];
         let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let matrix = DistanceMatrix::from_trajectory(&trajectory, ..).unwrap();
-        let components = matrix.detect_components(&trajectory, 0.6).unwrap();
+        let components = detect_components(&trajectory, .., 0.6).unwrap();
 
-        // The loop-closure pair (0, 8) is below threshold (distance 0).
-        // Should appear in at least one non-trivial component containing
-        // the cycle segment 0..9.
         let found = components.iter().any(|component| {
             component
                 .iter()
