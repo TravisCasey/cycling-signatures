@@ -123,7 +123,7 @@ impl<'a, M: Metric> DistanceMatrix<'a, M> {
         let metric = self.trajectory.metric();
         let base = self.range.start;
 
-        let mut disjoint = DisjointSet::new(0);
+        let mut disjoint = DisjointSet::new();
         let mut entry_ids: FxHashMap<(usize, usize), usize> = FxHashMap::default();
 
         for (row, col) in self.iter_anti_diagonal() {
@@ -163,20 +163,19 @@ impl<'a, M: Metric> DistanceMatrix<'a, M> {
             }
         }
 
-        let mut bucket_index: FxHashMap<usize, usize> = FxHashMap::default();
+        let mut component_index: FxHashMap<usize, usize> = FxHashMap::default();
         let mut components: Vec<Vec<Range<usize>>> = Vec::new();
         for (row, col) in self.iter_anti_diagonal() {
             let Some(&id) = entry_ids.get(&(row, col)) else {
                 continue;
             };
-            let representative = disjoint.find(id);
-            let bucket_id = *bucket_index.entry(representative).or_insert_with(|| {
+            let component_id = *component_index.entry(disjoint.find(id)).or_insert_with(|| {
                 components.push(Vec::new());
                 components.len() - 1
             });
             let start = base + row;
             let end = base + row + col + 1;
-            components[bucket_id].push(start..end);
+            components[component_id].push(start..end);
         }
 
         components.retain(|cycles| !cycles.iter().any(|cycle| cycle.end <= cycle.start + 1));

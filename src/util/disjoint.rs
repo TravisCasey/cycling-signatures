@@ -16,13 +16,12 @@ pub struct DisjointSet {
 }
 
 impl DisjointSet {
-    /// Creates an empty set. `capacity` is a hint for the expected element
-    /// count and does not bound how many elements may be inserted.
+    /// Creates an empty set.
     #[must_use]
-    pub fn new(capacity: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            parent: Vec::with_capacity(capacity),
-            rank: Vec::with_capacity(capacity),
+            parent: Vec::new(),
+            rank: Vec::new(),
         }
     }
 
@@ -40,7 +39,8 @@ impl DisjointSet {
     ///
     /// # Panics
     ///
-    /// Panics if `id >= self.len()`.
+    /// Panics if `id` was not returned by a prior call to
+    /// [`insert`](Self::insert).
     #[must_use]
     pub fn find(&mut self, id: usize) -> usize {
         let mut cursor = id;
@@ -56,7 +56,8 @@ impl DisjointSet {
     ///
     /// # Panics
     ///
-    /// Panics if `a >= self.len()` or `b >= self.len()`.
+    /// Panics if either `a` or `b` was not returned by a prior call to
+    /// [`insert`](Self::insert).
     pub fn union(&mut self, a: usize, b: usize) {
         let root_a = self.find(a);
         let root_b = self.find(b);
@@ -74,12 +75,6 @@ impl DisjointSet {
             },
         }
     }
-
-    /// Returns the number of elements in the set.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.parent.len()
-    }
 }
 
 #[cfg(test)]
@@ -88,7 +83,7 @@ mod tests {
 
     #[test]
     fn insert_find_union_groups_correctly() {
-        let mut set = DisjointSet::new(0);
+        let mut set = DisjointSet::new();
         let elements: Vec<usize> = (0..5).map(|_| set.insert()).collect();
         // Initially every element is its own representative.
         for &id in &elements {

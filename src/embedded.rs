@@ -244,8 +244,12 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     ///   valid sub-range of the trajectory.
     /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
     ///   self.trajectory().bound()`.
-    /// - [`Error::CycleEndpointsNonAdjacent`] propagated from the walker when a
-    ///   detected cycle's endpoint cubes differ by more than 1 in some axis.
+    /// - [`Error::ConsecutiveCubesNonAdjacent`] when a detected cycle contains
+    ///   consecutive points in non-adjacent cubes. This is only possible when
+    ///   using [`from_parts`](Self::from_parts)-constructed trajectories that
+    ///   bypassed the adjacency check in [`new`](Self::new).
+    /// - [`Error::CycleEndpointsNonAdjacent`] when a detected cycle's endpoint
+    ///   cubes differ by more than 1 in some axis.
     #[allow(clippy::missing_panics_doc)]
     pub fn signature(
         &self,
@@ -258,7 +262,7 @@ impl<M: Metric> EmbeddedTrajectory<M> {
         for cycles in components {
             let representative = cycles
                 .first()
-                .expect("detect_components emits non-empty components");
+                .expect("connected components are nonempty by construction");
             let class = self.cycle_class(representative.clone())?;
             if !class.is_zero() {
                 survivors.push(CycleComponent { cycles, class });

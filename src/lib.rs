@@ -5,7 +5,7 @@
 //! dynamical systems.
 
 pub mod cover;
-pub mod distance;
+pub(crate) mod distance;
 pub mod embedded;
 pub mod error;
 pub mod f2_subspace;
@@ -15,7 +15,7 @@ pub mod metric;
 pub mod prelude;
 pub mod signature;
 pub mod trajectory;
-pub mod util;
+pub(crate) mod util;
 
 pub use chomp3rs::{Chain, Cube, Cyclic, ExecutionBackend, F2};
 
@@ -31,5 +31,4 @@ pub use crate::{
     metric::{Chebyshev, Euclidean, Metric, SphereBundleMetric},
     signature::{CycleComponent, CyclingSignature},
     trajectory::Trajectory,
-    util::disjoint::DisjointSet,
 };

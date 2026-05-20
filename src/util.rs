@@ -3,5 +3,5 @@
 
 //! Low-level utilities used across the crate.
 
-pub mod disjoint;
-pub mod range;
+pub(crate) mod disjoint;
+pub(crate) mod range;

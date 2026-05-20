@@ -31,6 +31,9 @@ pub struct CyclingSignature {
 
 /// One connected component of below-threshold recurrent segments, together with
 /// the homology class shared by every cycle in the component.
+///
+/// When constructed through [`CyclingSignature::components`], the `cycles`
+/// field is non-empty: every component carries at least one detected cycle.
 #[derive(Debug, Clone)]
 pub struct CycleComponent {
     /// The cycle segments grouped into this component, each a half-open range
@@ -43,6 +46,10 @@ pub struct CycleComponent {
 }
 
 impl CyclingSignature {
+    /// Constructs the signature from a vector of `CycleComponent`s. Every
+    /// component's `class` is taken as a generator of the spanned subspace.
+    /// `num_generators` is the dimension of the ambient space (matching the
+    /// cover's generator count); every component's class must have this length.
     #[must_use]
     pub(crate) fn from_components(components: Vec<CycleComponent>, num_generators: usize) -> Self {
         let classes: Vec<F2Vector> = components
