@@ -36,8 +36,26 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     ///
     /// # Errors
     ///
-    /// Returns any error from [`CubicalCover::from_cubes`].
+    /// - [`Error::ConsecutiveCubesNonAdjacent`] if consecutive trajectory
+    ///   points land in cubes differing by more than 1 in some axis.
+    /// - Any error from [`CubicalCover::from_cubes`].
     pub fn new(trajectory: Trajectory<M>, backend: &ExecutionBackend) -> Result<Self> {
+        let points = trajectory.points();
+        for index in 0..(points.nrows().saturating_sub(1)) {
+            for axis in 0..points.ncols() {
+                let current = points[(index, axis)].floor() as i64;
+                let next = points[(index + 1, axis)].floor() as i64;
+                let delta = next - current;
+                if delta.abs() > 1 {
+                    return Err(Error::ConsecutiveCubesNonAdjacent {
+                        point_index: index,
+                        axis,
+                        delta,
+                    });
+                }
+            }
+        }
+
         let (canonical_cubes, point_to_cube) = walk_and_canonicalize(&trajectory);
         let cover = CubicalCover::from_cubes(canonical_cubes.view(), backend)?;
         Ok(Self {
@@ -80,6 +98,13 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     ///
     /// Validates that the cover's dimension matches the trajectory's and that
     /// every point's cube is present in the cover.
+    ///
+    /// Unlike [`new`](Self::new), this constructor does **not** validate the
+    /// consecutive-cube-adjacency invariant: it accepts trajectories where
+    /// consecutive points land in cubes differing by more than 1 in some axis.
+    /// Signature queries still detect non-adjacent forward steps and fail with
+    /// [`Error::ConsecutiveCubesNonAdjacent`], but the failure is raised
+    /// per-query rather than at construction.
     ///
     /// # Errors
     ///
@@ -275,6 +300,22 @@ mod tests {
                 trajectory: 3,
                 cover: 2,
             },
+        ));
+    }
+
+    #[test]
+    fn new_rejects_consecutive_cubes_non_adjacent() {
+        // Two consecutive points whose floor cubes differ by 3 in axis 0.
+        let points = array![[0.5, 0.5], [3.5, 0.5]];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let err = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::Error::ConsecutiveCubesNonAdjacent {
+                point_index: 0,
+                axis: 0,
+                delta: 3,
+            }
         ));
     }
 }
