@@ -29,5 +29,7 @@ pub use crate::{
         ChebyshevSphereBundleInterpolator, CubicSpline, DerivativeInterpolator, Interpolator,
     },
     metric::{Chebyshev, Euclidean, Metric, SphereBundleMetric},
+    signature::{CycleComponent, CyclingSignature},
     trajectory::Trajectory,
+    util::disjoint::DisjointSet,
 };
