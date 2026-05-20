@@ -4,16 +4,21 @@
 //! Embedded trajectory: a `Trajectory` paired with a `CubicalCover` and the
 //! mapping from trajectory point to cube index.
 
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    ops::{Range, RangeBounds},
+};
 
-use chomp3rs::ExecutionBackend;
+use chomp3rs::{Cube, ExecutionBackend, Orthant};
 use ndarray::{Array2, ArrayView2};
 
 use crate::{
+    F2Vector,
     cover::CubicalCover,
     error::{Error, Result},
     metric::Metric,
     trajectory::Trajectory,
+    util::range::normalize_segment,
 };
 
 /// Pairs a [`Trajectory<M>`](Trajectory) with a [`CubicalCover`] and the
@@ -143,6 +148,193 @@ impl<M: Metric> EmbeddedTrajectory<M> {
             point_to_cube,
         })
     }
+
+    /// The sequence of 1-cube edges traversed when walking the cycle
+    /// described by `segment`: forward along the trajectory from
+    /// `points()[segment.start]` to `points()[segment.end - 1]`, then a
+    /// closing direct cube-to-cube path back to `points()[segment.start]`.
+    ///
+    /// Useful for visualizing the cubical representation of a particular cycle.
+    /// For the homology class only, prefer [`cycle_class`](Self::cycle_class),
+    /// which avoids materializing the edge list.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
+    ///   valid sub-range.
+    /// - [`Error::ConsecutiveCubesNonAdjacent`] if any forward step inside the
+    ///   segment lands in cubes differing by more than 1 in some axis.
+    ///   [`EmbeddedTrajectory::new`] catches this eagerly across the whole
+    ///   trajectory; this variant surfaces here for
+    ///   [`EmbeddedTrajectory::from_parts`]-constructed trajectories whose
+    ///   queried segment violates the invariant.
+    /// - [`Error::CycleEndpointsNonAdjacent`] if the cubes of
+    ///   `points()[segment.start]` and `points()[segment.end - 1]` differ by
+    ///   more than 1 in some axis.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the normalized segment contains fewer than 2 points.
+    pub fn walk_cycle(&self, segment: impl RangeBounds<usize>) -> Result<Vec<Cube>> {
+        let segment = normalize_segment(segment, self.trajectory.len())?;
+        assert!(
+            segment.end > segment.start + 1,
+            "cycle segment must contain at least two points",
+        );
+
+        // Endpoint adjacency: the cycle's closing step requires the cubes of
+        // points[segment.start] and points[segment.end - 1] to differ by at
+        // most 1 in each axis.
+        let cubes = self.cover.cubes();
+        let start_cube_index = self.point_to_cube(segment.start);
+        let end_cube_index = self.point_to_cube(segment.end - 1);
+        for axis in 0..cubes.ncols() {
+            let delta = cubes[(start_cube_index, axis)] - cubes[(end_cube_index, axis)];
+            if delta.abs() > 1 {
+                return Err(Error::CycleEndpointsNonAdjacent {
+                    start: segment.start,
+                    end: segment.end,
+                    axis,
+                    delta,
+                });
+            }
+        }
+
+        let mut edges = Vec::new();
+        for_each_cycle_edge(self, segment, |edge| edges.push(edge.clone()))?;
+        Ok(edges)
+    }
+
+    /// The `F_2` homology class of the cycle described by `segment`,
+    /// expressed in the cover's generator basis.
+    ///
+    /// Use this when only the class is needed. To inspect the underlying
+    /// cubical edge sequence, call [`walk_cycle`](Self::walk_cycle) instead.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`walk_cycle`](Self::walk_cycle).
+    ///
+    /// # Panics
+    ///
+    /// Same as [`walk_cycle`](Self::walk_cycle).
+    pub fn cycle_class(&self, segment: impl RangeBounds<usize>) -> Result<F2Vector> {
+        let edges = self.walk_cycle(segment)?;
+        Ok(self.cover.chain_class(edges.iter()))
+    }
+}
+
+/// Walks the cubical path of the cycle described by `segment`, invoking
+/// `visit` once per 1-cube edge traversed.
+///
+/// `segment` is the already-normalized half-open range; the caller must have
+/// asserted `segment.end > segment.start + 1` and validated endpoint cube
+/// adjacency. The forward path walks trajectory points
+/// `segment.start..segment.end` in order; the closing path connects
+/// `points[segment.end - 1]` back to `points[segment.start]` via direct
+/// cube-to-cube steps.
+///
+/// Each step validates that the cube delta is in `{-1, 0, 1}` per axis,
+/// returning `ConsecutiveCubesNonAdjacent` on violation.
+fn for_each_cycle_edge<M, F>(
+    embedded: &EmbeddedTrajectory<M>,
+    segment: Range<usize>,
+    mut visit: F,
+) -> Result<()>
+where
+    M: Metric,
+    F: FnMut(&Cube),
+{
+    let cubes = embedded.cover().cubes();
+    let point_to_cube = |index: usize| -> Vec<i64> {
+        let cube_index = embedded.point_to_cube(index);
+        (0..cubes.ncols())
+            .map(|axis| cubes[(cube_index, axis)])
+            .collect()
+    };
+
+    let dimension = cubes.ncols();
+    let start_cube = point_to_cube(segment.start);
+    let mut base: Orthant = start_cube.iter().map(|&value| value as i16).collect();
+    let mut dual: Orthant = start_cube.iter().map(|&value| value as i16 - 1).collect();
+
+    // Forward path: each consecutive pair of trajectory points.
+    for index in segment.start..(segment.end - 1) {
+        let from = point_to_cube(index);
+        let to = point_to_cube(index + 1);
+        step_between_cubes(
+            &from, &to, dimension, &mut base, &mut dual, &mut visit, index,
+        )?;
+    }
+
+    // Closing step: from points[end - 1] to points[start].
+    let end_cube = point_to_cube(segment.end - 1);
+    step_between_cubes(
+        &end_cube,
+        &start_cube,
+        dimension,
+        &mut base,
+        &mut dual,
+        &mut visit,
+        segment.end - 1,
+    )?;
+
+    Ok(())
+}
+
+/// Steps from `from` cube to `to` cube one axis-aligned unit at a time.
+/// Positive axis diffs are processed first (axis 0..dim), then negative
+/// diffs. Each unit step emits one 1-cube edge via `visit`.
+///
+/// `point_index` is the trajectory-point index this step is leaving; it appears
+/// in the error if any axis diff exceeds 1 in magnitude. For the cycle's
+/// closing step the caller passes `point_index = segment.end - 1`.
+fn step_between_cubes<F>(
+    from: &[i64],
+    to: &[i64],
+    dimension: usize,
+    base: &mut Orthant,
+    dual: &mut Orthant,
+    visit: &mut F,
+    point_index: usize,
+) -> Result<()>
+where
+    F: FnMut(&Cube),
+{
+    for axis in 0..dimension {
+        let delta = to[axis] - from[axis];
+        if delta.abs() > 1 {
+            return Err(Error::ConsecutiveCubesNonAdjacent {
+                point_index,
+                axis,
+                delta,
+            });
+        }
+    }
+
+    // Positive diffs first.
+    for axis in 0..dimension {
+        if to[axis] - from[axis] != 1 {
+            continue;
+        }
+        dual[axis] += 1;
+        let edge = Cube::new(base.clone(), dual.clone());
+        visit(&edge);
+        base[axis] += 1;
+    }
+
+    // Negative diffs second.
+    for axis in 0..dimension {
+        if to[axis] - from[axis] != -1 {
+            continue;
+        }
+        base[axis] -= 1;
+        let edge = Cube::new(base.clone(), dual.clone());
+        visit(&edge);
+        dual[axis] -= 1;
+    }
+
+    Ok(())
 }
 
 /// Walks `trajectory.points()`, floors each row to its `i64` cube, and returns
@@ -220,6 +412,101 @@ mod tests {
 
     use super::EmbeddedTrajectory;
     use crate::{cover::CubicalCover, error::Error, metric::Euclidean, trajectory::Trajectory};
+
+    #[test]
+    fn walk_cycle_returns_expected_edges_for_known_loop() {
+        // Square loop in 2D: 4 points, each adjacent in one axis to the next.
+        // Cubes visited:  (0,0) -> (1,0) -> (1,1) -> (0,1) -> (0,0).
+        // Forward edges: 3 edges. Closing edge: 1 edge from (0,1)->(0,0)
+        // is a unit step in axis 1 (negative direction).
+        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let embedded =
+            EmbeddedTrajectory::new(trajectory, &chomp3rs::ExecutionBackend::default()).unwrap();
+
+        let edges = embedded.walk_cycle(0..4).unwrap();
+        // 3 forward edges + 1 closing edge = 4 edges total.
+        assert_eq!(edges.len(), 4);
+    }
+
+    #[test]
+    fn cycle_class_of_boundary_loop_is_nontrivial() {
+        // Boundary of a 3x3 grid, leaving the center cube (1,1) absent. The
+        // cover's first cohomology has rank 1; the loop encircling the hole is
+        // the generator.
+        //
+        // Cubes visited (in order): (0,0),(1,0),(2,0),(2,1),(2,2),(1,2),(0,2),(0,1).
+        // Each consecutive pair is adjacent, and the closing step (0,1)->(0,0)
+        // differs by 1 in axis 1 only, so the cycle is valid.
+        let points = array![
+            [0.5, 0.5],
+            [1.5, 0.5],
+            [2.5, 0.5],
+            [2.5, 1.5],
+            [2.5, 2.5],
+            [1.5, 2.5],
+            [0.5, 2.5],
+            [0.5, 1.5],
+        ];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let embedded =
+            EmbeddedTrajectory::new(trajectory, &chomp3rs::ExecutionBackend::default()).unwrap();
+
+        let class = embedded.cycle_class(0..8).unwrap();
+        assert!(
+            !class.is_zero(),
+            "boundary-loop cycle class should be nontrivial; got {class:?}"
+        );
+    }
+
+    #[test]
+    fn walk_cycle_rejects_non_adjacent_endpoints() {
+        // Trajectory whose first and last points are 3 cubes apart in axis 0:
+        // (0.5, 0.5), (1.5, 0.5), (2.5, 0.5), (3.5, 0.5). Endpoints of the
+        // segment 0..4 are at cubes (0, 0) and (3, 0), which differ by 3
+        // in axis 0. The forward path is fine (each consecutive pair
+        // differs by 1); the closing step fails.
+        let points = array![[0.5, 0.5], [1.5, 0.5], [2.5, 0.5], [3.5, 0.5]];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let embedded =
+            EmbeddedTrajectory::new(trajectory, &chomp3rs::ExecutionBackend::default()).unwrap();
+
+        let err = embedded.walk_cycle(0..4).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::CycleEndpointsNonAdjacent {
+                start: 0,
+                end: 4,
+                axis: 0,
+                delta: -3 | 3,
+            }
+        ));
+    }
+
+    #[test]
+    fn walk_cycle_rejects_non_adjacent_forward_step() {
+        // A trajectory whose forward step from index 0 to index 1 jumps 4 cubes
+        // in axis 0, but whose endpoints (indices 0 and 2) share a cube so the
+        // endpoint-adjacency check passes. EmbeddedTrajectory::new would reject
+        // this eagerly; we use `from_parts` to bypass that check and confirm the
+        // walker surfaces the forward-step failure lazily.
+        let points = array![[0.5, 0.5], [4.5, 0.5], [0.5, 0.5]];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let cubes = ndarray::array![[0_i64, 0], [4, 0]];
+        let cover =
+            CubicalCover::from_cubes(cubes.view(), &chomp3rs::ExecutionBackend::default()).unwrap();
+        let embedded = EmbeddedTrajectory::from_parts(trajectory, cover).unwrap();
+
+        let err = embedded.walk_cycle(0..3).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::ConsecutiveCubesNonAdjacent {
+                point_index: 0,
+                axis: 0,
+                delta: 4,
+            }
+        ));
+    }
 
     #[test]
     fn new_walks_trajectory_with_deduplication() {
@@ -311,7 +598,7 @@ mod tests {
         let err = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap_err();
         assert!(matches!(
             err,
-            crate::error::Error::ConsecutiveCubesNonAdjacent {
+            Error::ConsecutiveCubesNonAdjacent {
                 point_index: 0,
                 axis: 0,
                 delta: 3,
