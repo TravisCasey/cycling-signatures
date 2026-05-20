@@ -49,7 +49,6 @@ use crate::{
 ///   sub-range of `trajectory.points()`.
 /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
 ///   trajectory.bound()`.
-#[allow(dead_code)]
 pub(crate) fn detect_components<M: Metric>(
     trajectory: &Trajectory<M>,
     segment: impl RangeBounds<usize>,

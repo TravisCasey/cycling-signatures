@@ -13,6 +13,7 @@ pub mod f2_vector;
 pub mod interpolation;
 pub mod metric;
 pub mod prelude;
+pub mod signature;
 pub mod trajectory;
 pub mod util;
 

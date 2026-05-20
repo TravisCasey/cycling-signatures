@@ -15,8 +15,10 @@ use ndarray::{Array2, ArrayView2};
 use crate::{
     F2Vector,
     cover::CubicalCover,
+    distance::detect_components,
     error::{Error, Result},
     metric::Metric,
+    signature::{CycleComponent, CyclingSignature},
     trajectory::Trajectory,
     util::range::normalize_segment,
 };
@@ -221,6 +223,52 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     pub fn cycle_class(&self, segment: impl RangeBounds<usize>) -> Result<F2Vector> {
         let edges = self.walk_cycle(segment)?;
         Ok(self.cover.chain_class(edges.iter()))
+    }
+
+    /// The cycling signature of the trajectory over the given segment.
+    ///
+    /// Returns the `F_2` subspace spanned by the non-trivial homology
+    /// classes of recurrent cycles whose endpoint pairs fall within
+    /// `segment`, together with the per-component decomposition (each
+    /// component's cycle segments and shared class) accessible through
+    /// [`CyclingSignature::components`].
+    ///
+    /// `threshold` is the adjacency threshold for cycle detection: pairs of
+    /// trajectory points with metric distance `<= threshold` are candidate
+    /// cycle endpoints, and union-find merges are gated by
+    /// [`Metric::covers_triple`].
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
+    ///   valid sub-range of the trajectory.
+    /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
+    ///   self.trajectory().bound()`.
+    /// - [`Error::CycleEndpointsNonAdjacent`] propagated from the walker when a
+    ///   detected cycle's endpoint cubes differ by more than 1 in some axis.
+    #[allow(clippy::missing_panics_doc)]
+    pub fn signature(
+        &self,
+        segment: impl RangeBounds<usize>,
+        threshold: f64,
+    ) -> Result<CyclingSignature> {
+        let components = detect_components(&self.trajectory, segment, threshold)?;
+
+        let mut survivors: Vec<CycleComponent> = Vec::new();
+        for cycles in components {
+            let representative = cycles
+                .first()
+                .expect("detect_components emits non-empty components");
+            let class = self.cycle_class(representative.clone())?;
+            if !class.is_zero() {
+                survivors.push(CycleComponent { cycles, class });
+            }
+        }
+
+        Ok(CyclingSignature::from_components(
+            survivors,
+            self.cover.num_generators(),
+        ))
     }
 }
 
@@ -604,5 +652,41 @@ mod tests {
                 delta: 3,
             }
         ));
+    }
+
+    #[test]
+    fn signature_on_straight_line_trajectory_is_trivial() {
+        // Four collinear points spaced 0.5 apart. Threshold 0.6 admits the
+        // consecutive pairs (distance 0.5) but no genuine recurrence exists.
+        let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0]];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+
+        let signature = embedded.signature(.., 0.6).unwrap();
+        assert_eq!(signature.rank(), 0);
+        assert!(signature.components().is_empty());
+    }
+
+    #[test]
+    fn signature_on_recurrent_loop_returns_rank_one() {
+        // 8-cube ring around a missing center cube at (1, 1). The cubical
+        // cover has H^1 of rank 1; the loop's class is the generator.
+        let points = array![
+            [0.5, 0.5],
+            [1.5, 0.5],
+            [2.5, 0.5],
+            [2.5, 1.5],
+            [2.5, 2.5],
+            [1.5, 2.5],
+            [0.5, 2.5],
+            [0.5, 1.5],
+            [0.5, 0.5],
+        ];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+
+        let signature = embedded.signature(.., 1.5).unwrap();
+        assert_eq!(signature.rank(), 1);
+        assert!(!signature.components().is_empty());
     }
 }
