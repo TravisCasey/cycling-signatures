@@ -256,7 +256,12 @@ impl<M: Metric> EmbeddedTrajectory<M> {
         segment: impl RangeBounds<usize>,
         threshold: f64,
     ) -> Result<CyclingSignature> {
-        let components = detect_components(&self.trajectory, segment, threshold)?;
+        let components = detect_components(
+            &self.trajectory,
+            segment,
+            threshold,
+            self.trajectory.original_count(),
+        )?;
 
         let mut survivors: Vec<CycleComponent> = Vec::new();
         for cycles in components {
