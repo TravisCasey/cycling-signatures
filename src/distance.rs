@@ -232,7 +232,7 @@ mod tests {
     use ndarray::array;
 
     use super::detect_components;
-    use crate::{Trajectory, metric::Euclidean};
+    use crate::{Trajectory, error::Error, metric::Euclidean};
 
     fn small_trajectory() -> Trajectory<Euclidean> {
         let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0], [2.0, 0.0]];
@@ -243,7 +243,7 @@ mod tests {
     fn rejects_segment_out_of_bounds() {
         let trajectory = small_trajectory();
         let err = detect_components(&trajectory, 0..10, 0.5, 5).unwrap_err();
-        assert!(matches!(err, crate::error::Error::WindowOutOfBounds { .. }));
+        assert!(matches!(err, Error::WindowOutOfBounds { .. }));
     }
 
     #[test]
@@ -252,7 +252,7 @@ mod tests {
         let err = detect_components(&trajectory, 0..5, 0.1, 5).unwrap_err();
         assert!(matches!(
             err,
-            crate::error::Error::ThresholdBelowTrajectoryBound { given, trajectory_bound }
+            Error::ThresholdBelowTrajectoryBound { given, trajectory_bound }
                 if (given - 0.1).abs() < 1e-12 && (trajectory_bound - 0.5).abs() < 1e-12
         ));
     }

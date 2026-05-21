@@ -25,11 +25,6 @@ use crate::{
 
 /// Pairs a [`Trajectory<M>`](Trajectory) with a [`CubicalCover`] and the
 /// per-point cube-index map.
-///
-/// The bridge is resample-agnostic: `point_to_cube(i)` operates in
-/// `trajectory.points()`-index space. Callers holding original-input
-/// indices translate first via
-/// [`Trajectory::original_indices`](Trajectory::original_indices).
 #[derive(Debug)]
 pub struct EmbeddedTrajectory<M: Metric> {
     trajectory: Trajectory<M>,
@@ -48,14 +43,14 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     /// - Any error from [`CubicalCover::from_cubes`].
     pub fn new(trajectory: Trajectory<M>, backend: &ExecutionBackend) -> Result<Self> {
         let points = trajectory.points();
-        for index in 0..(points.nrows().saturating_sub(1)) {
+        for point_index in 0..(points.nrows().saturating_sub(1)) {
             for axis in 0..points.ncols() {
-                let current = points[(index, axis)].floor() as i64;
-                let next = points[(index + 1, axis)].floor() as i64;
+                let current = points[(point_index, axis)].floor() as i64;
+                let next = points[(point_index + 1, axis)].floor() as i64;
                 let delta = next - current;
                 if delta.abs() > 1 {
                     return Err(Error::ConsecutiveCubesNonAdjacent {
-                        point_index: index,
+                        point_index,
                         axis,
                         delta,
                     });
@@ -84,20 +79,15 @@ impl<M: Metric> EmbeddedTrajectory<M> {
         &self.cover
     }
 
-    /// The cube index in [`cover().cubes()`](CubicalCover::cubes) of trajectory
-    /// point at `point_index`.
-    ///
-    /// `point_index` is in `trajectory.points()`-index space (the same units as
-    /// `trajectory.len()`). For resampled trajectories this includes
-    /// bisection-inserted points; callers holding original input indices
-    /// translate first via
-    /// [`Trajectory::original_indices`](Trajectory::original_indices).
+    /// The cube index in `cover().cubes()` of the dense-array row at
+    /// `point_index` (an index into `trajectory.points()`, not a sample
+    /// index).
     ///
     /// # Panics
     ///
     /// Panics if `point_index >= trajectory.len()`.
     #[must_use]
-    pub fn point_to_cube(&self, point_index: usize) -> usize {
+    pub(crate) fn point_to_cube(&self, point_index: usize) -> usize {
         self.point_to_cube[point_index]
     }
 
@@ -178,18 +168,22 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     ///
     /// Panics if the normalized segment contains fewer than 2 points.
     pub fn walk_cycle(&self, segment: impl RangeBounds<usize>) -> Result<Vec<Cube>> {
-        let segment = normalize_segment(segment, self.trajectory.len())?;
+        let segment = normalize_segment(segment, self.trajectory.original_count())?;
         assert!(
             segment.end > segment.start + 1,
             "cycle segment must contain at least two points",
         );
 
+        let original_indices = self.trajectory.original_indices();
+        let start_point = original_indices[segment.start];
+        let end_point = original_indices[segment.end - 1];
+
         // Endpoint adjacency: the cycle's closing step requires the cubes of
-        // points[segment.start] and points[segment.end - 1] to differ by at
-        // most 1 in each axis.
+        // the first and last original-index positions to differ by at most 1
+        // in each axis.
         let cubes = self.cover.cubes();
-        let start_cube_index = self.point_to_cube(segment.start);
-        let end_cube_index = self.point_to_cube(segment.end - 1);
+        let start_cube_index = self.point_to_cube(start_point);
+        let end_cube_index = self.point_to_cube(end_point);
         for axis in 0..cubes.ncols() {
             let delta = cubes[(start_cube_index, axis)] - cubes[(end_cube_index, axis)];
             if delta.abs() > 1 {
@@ -203,7 +197,9 @@ impl<M: Metric> EmbeddedTrajectory<M> {
         }
 
         let mut edges = Vec::new();
-        for_each_cycle_edge(self, segment, |edge| edges.push(edge.clone()))?;
+        for_each_cycle_edge(self, start_point..(end_point + 1), |edge| {
+            edges.push(edge.clone());
+        })?;
         Ok(edges)
     }
 
@@ -284,9 +280,10 @@ impl<M: Metric> EmbeddedTrajectory<M> {
 /// Walks the cubical path of the cycle described by `segment`, invoking
 /// `visit` once per 1-cube edge traversed.
 ///
-/// `segment` is the already-normalized half-open range; the caller must have
-/// asserted `segment.end > segment.start + 1` and validated endpoint cube
-/// adjacency. The forward path walks trajectory points
+/// `segment` is the already-normalized half-open range in **point-index
+/// space** (i.e., indices into `trajectory.points()`); the caller has
+/// translated from sample-index space if needed and validated endpoint
+/// cube adjacency. The forward path walks consecutive points
 /// `segment.start..segment.end` in order; the closing path connects
 /// `points[segment.end - 1]` back to `points[segment.start]` via direct
 /// cube-to-cube steps.
@@ -303,29 +300,35 @@ where
     F: FnMut(&Cube),
 {
     let cubes = embedded.cover().cubes();
-    let point_to_cube = |index: usize| -> Vec<i64> {
-        let cube_index = embedded.point_to_cube(index);
+    let point_to_cube_coords = |point_index: usize| -> Vec<i64> {
+        let cube_index = embedded.point_to_cube(point_index);
         (0..cubes.ncols())
             .map(|axis| cubes[(cube_index, axis)])
             .collect()
     };
 
     let dimension = cubes.ncols();
-    let start_cube = point_to_cube(segment.start);
+    let start_cube = point_to_cube_coords(segment.start);
     let mut base: Orthant = start_cube.iter().map(|&value| value as i16).collect();
     let mut dual: Orthant = start_cube.iter().map(|&value| value as i16 - 1).collect();
 
-    // Forward path: each consecutive pair of trajectory points.
-    for index in segment.start..(segment.end - 1) {
-        let from = point_to_cube(index);
-        let to = point_to_cube(index + 1);
+    // Forward path: each consecutive pair of points.
+    for point_index in segment.start..(segment.end - 1) {
+        let from = point_to_cube_coords(point_index);
+        let to = point_to_cube_coords(point_index + 1);
         step_between_cubes(
-            &from, &to, dimension, &mut base, &mut dual, &mut visit, index,
+            &from,
+            &to,
+            dimension,
+            &mut base,
+            &mut dual,
+            &mut visit,
+            point_index,
         )?;
     }
 
     // Closing step: from points[end - 1] to points[start].
-    let end_cube = point_to_cube(segment.end - 1);
+    let end_cube = point_to_cube_coords(segment.end - 1);
     step_between_cubes(
         &end_cube,
         &start_cube,
@@ -403,39 +406,39 @@ fn walk_and_canonicalize<M: Metric>(trajectory: &Trajectory<M>) -> (Array2<i64>,
     let dimension = points.ncols();
     let num_rows = points.nrows();
 
-    // (cube_vector, original_row_index) pairs.
+    // (cube_vector, point_index) pairs.
     let mut pairs: Vec<(Vec<i64>, usize)> = (0..num_rows)
-        .map(|row| {
+        .map(|point_index| {
             let cube: Vec<i64> = points
-                .row(row)
+                .row(point_index)
                 .iter()
                 .map(|&value| value.floor() as i64)
                 .collect();
-            (cube, row)
+            (cube, point_index)
         })
         .collect();
 
     // Sort by cube vector lexicographically
     pairs.sort_by(|left, right| left.0.cmp(&right.0));
 
-    // Build the deduplicated cube list and a (row -> cube_index) map.
+    // Build the deduplicated cube list and a point-index -> cube-index map.
     let mut unique_cubes: Vec<Vec<i64>> = Vec::new();
     let mut point_to_cube: Vec<usize> = vec![0; num_rows];
-    for (cube, row) in pairs {
-        let index = match unique_cubes.last() {
+    for (cube, point_index) in pairs {
+        let cube_index = match unique_cubes.last() {
             Some(last) if *last == cube => unique_cubes.len() - 1,
             _ => {
                 unique_cubes.push(cube);
                 unique_cubes.len() - 1
             },
         };
-        point_to_cube[row] = index;
+        point_to_cube[point_index] = cube_index;
     }
 
     let mut canonical = Array2::<i64>::zeros((unique_cubes.len(), dimension));
-    for (row, cube_vec) in unique_cubes.iter().enumerate() {
+    for (cube_index, cube_vec) in unique_cubes.iter().enumerate() {
         for (column, &value) in cube_vec.iter().enumerate() {
-            canonical[(row, column)] = value;
+            canonical[(cube_index, column)] = value;
         }
     }
 
@@ -468,7 +471,10 @@ mod tests {
     use ndarray::array;
 
     use super::EmbeddedTrajectory;
-    use crate::{cover::CubicalCover, error::Error, metric::Euclidean, trajectory::Trajectory};
+    use crate::{
+        cover::CubicalCover, error::Error, interpolation::CubicSpline, metric::Euclidean,
+        trajectory::Trajectory,
+    };
 
     #[test]
     fn walk_cycle_returns_expected_edges_for_known_loop() {
@@ -478,8 +484,7 @@ mod tests {
         // is a unit step in axis 1 (negative direction).
         let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
         let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded =
-            EmbeddedTrajectory::new(trajectory, &chomp3rs::ExecutionBackend::default()).unwrap();
+        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
 
         let edges = embedded.walk_cycle(0..4).unwrap();
         // 3 forward edges + 1 closing edge = 4 edges total.
@@ -506,8 +511,7 @@ mod tests {
             [0.5, 1.5],
         ];
         let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded =
-            EmbeddedTrajectory::new(trajectory, &chomp3rs::ExecutionBackend::default()).unwrap();
+        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
 
         let class = embedded.cycle_class(0..8).unwrap();
         assert!(
@@ -525,8 +529,7 @@ mod tests {
         // differs by 1); the closing step fails.
         let points = array![[0.5, 0.5], [1.5, 0.5], [2.5, 0.5], [3.5, 0.5]];
         let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded =
-            EmbeddedTrajectory::new(trajectory, &chomp3rs::ExecutionBackend::default()).unwrap();
+        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
 
         let err = embedded.walk_cycle(0..4).unwrap_err();
         assert!(matches!(
@@ -550,8 +553,7 @@ mod tests {
         let points = array![[0.5, 0.5], [4.5, 0.5], [0.5, 0.5]];
         let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
         let cubes = ndarray::array![[0_i64, 0], [4, 0]];
-        let cover =
-            CubicalCover::from_cubes(cubes.view(), &chomp3rs::ExecutionBackend::default()).unwrap();
+        let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
         let embedded = EmbeddedTrajectory::from_parts(trajectory, cover).unwrap();
 
         let err = embedded.walk_cycle(0..3).unwrap_err();
@@ -601,10 +603,10 @@ mod tests {
         let embedded_via_from_parts =
             EmbeddedTrajectory::from_parts(trajectory, fresh_cover).unwrap();
 
-        for index in 0..points.nrows() {
+        for point_index in 0..points.nrows() {
             assert_eq!(
-                embedded_via_new.point_to_cube(index),
-                embedded_via_from_parts.point_to_cube(index),
+                embedded_via_new.point_to_cube(point_index),
+                embedded_via_from_parts.point_to_cube(point_index),
             );
         }
     }
@@ -674,6 +676,29 @@ mod tests {
         let signature = embedded.signature(.., 0.6).unwrap();
         assert_eq!(signature.rank(), 0);
         assert!(signature.components().is_empty());
+    }
+
+    #[test]
+    fn walk_cycle_on_resampled_trajectory_translates_segment() {
+        // Two anchors in adjacent cubes (0, 0) and (1, 0). The cubic spline
+        // through them resampled to a fine bound produces a strict subset
+        // `original_indices = [0, N]` with intermediate fills at 1..N.
+        let knots = array![0.0, 1.0];
+        let values = array![[0.5, 0.5], [1.5, 0.5]];
+        let spline = CubicSpline::new(knots, values.view()).unwrap();
+        let trajectory = Trajectory::resample(&spline, Euclidean, 0.2).unwrap();
+        assert!(
+            trajectory.len() > trajectory.original_count(),
+            "fixture must have resampled fill points",
+        );
+        assert_eq!(trajectory.original_count(), 2);
+
+        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+        let edges = embedded.walk_cycle(0..2).unwrap();
+        assert!(
+            !edges.is_empty(),
+            "expected a non-empty edge sequence for the two-anchor cycle",
+        );
     }
 
     #[test]

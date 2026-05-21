@@ -18,6 +18,35 @@ use crate::{
 /// points. The bound is computed when this type is constructed; it can be
 /// set below a certain value using interpolation with the
 /// [`resample()`](Self::resample) method.
+///
+/// # Sample vs. point indices
+///
+/// A trajectory carries two index spaces:
+///
+/// - **Sample index** (`0..self.original_count()`): an index into the user's
+///   input data. This is the default user-facing index space. Every public
+///   method elsewhere in the crate that takes a trajectory index (segment
+///   ranges for
+///   [`EmbeddedTrajectory::walk_cycle`](crate::EmbeddedTrajectory::walk_cycle),
+///   [`EmbeddedTrajectory::cycle_class`](crate::EmbeddedTrajectory::cycle_class),
+///   [`EmbeddedTrajectory::signature`](crate::EmbeddedTrajectory::signature),
+///   etc.) interprets it as a sample index unless explicitly stated otherwise.
+///
+/// - **Point index** (`0..self.len()`): an index into
+///   [`points()`](Self::points), the dense row array stored internally. For
+///   trajectories built with [`new`](Self::new), point index equals sample
+///   index. For trajectories built with [`resample`](Self::resample), point
+///   indices additionally cover the bisection-inserted fill rows that densify
+///   the trajectory for downstream cube-adjacency invariants.
+///
+/// [`original_indices()`](Self::original_indices) is the bridge: sample
+/// index `i` corresponds to point index `original_indices()[i]`. Every
+/// sample is a point; not every point is a sample.
+///
+/// Direct access to the dense form ([`points()`](Self::points),
+/// [`len()`](Self::len)) is advanced. Most callers interact with the
+/// trajectory by passing it to higher-level types and never touch the dense
+/// form directly.
 #[derive(Clone, Debug)]
 pub struct Trajectory<M: Metric> {
     points: Array2<f64>,
@@ -163,7 +192,11 @@ impl<M: Metric> Trajectory<M> {
         })
     }
 
-    /// The trajectory points as a 2D view, rows indexed by sample position.
+    /// The dense row array as a 2D view, indexed by point index.
+    ///
+    /// Advanced: most callers operate in sample-index space and reach for the
+    /// sample-only accessors instead. The dense form includes any
+    /// bisection-inserted fill rows from [`resample`](Self::resample).
     #[must_use]
     pub fn points(&self) -> ArrayView2<'_, f64> {
         self.points.view()
@@ -182,7 +215,11 @@ impl<M: Metric> Trajectory<M> {
         self.bound
     }
 
-    /// The number of points in the trajectory.
+    /// The number of dense rows in [`points`](Self::points).
+    ///
+    /// Advanced. Equals [`original_count`](Self::original_count) for
+    /// trajectories built with [`new`](Self::new); strictly greater for
+    /// trajectories built with [`resample`](Self::resample).
     #[must_use]
     pub fn len(&self) -> usize {
         self.points.nrows()
@@ -194,23 +231,26 @@ impl<M: Metric> Trajectory<M> {
         self.points.ncols()
     }
 
-    /// For each original input row, returns the corresponding index in
-    /// [`points`](Self::points).
+    /// The point-index of each sample.
     ///
-    /// For trajectories built with [`new`](Self::new), this is the identity map
-    /// `0..len()`. For trajectories built with [`resample`](Self::resample),
-    /// each interpolator knot maps to its preserved position in the resampled
-    /// sample array; bisection-inserted points have no original index.
+    /// The bridge between sample-index space (`0..original_count()`) and
+    /// point-index space (`0..len()`): sample `i` lives at point
+    /// `original_indices()[i]`. Bisection-inserted fill rows from
+    /// [`resample`](Self::resample) have no sample index.
+    ///
+    /// For trajectories built with [`new`](Self::new), this is the identity
+    /// map `0..len()`.
     #[must_use]
     pub fn original_indices(&self) -> &[usize] {
         &self.original_indices
     }
 
-    /// The number of original input rows.
+    /// The number of samples in the trajectory.
     ///
-    /// Equals [`len`](Self::len) for trajectories built with
-    /// [`new`](Self::new); equals the interpolator's knot count for
-    /// trajectories built with [`resample`](Self::resample).
+    /// The user-facing length. For trajectories built with
+    /// [`new`](Self::new), this equals [`len`](Self::len); for trajectories
+    /// built with [`resample`](Self::resample), it equals the interpolator's
+    /// knot count.
     #[must_use]
     pub fn original_count(&self) -> usize {
         self.original_indices.len()
@@ -266,8 +306,8 @@ impl Interval {
 #[allow(clippy::needless_pass_by_value)]
 fn max_consecutive_distance<M: Metric>(points: ArrayView2<'_, f64>, metric: &M) -> f64 {
     let mut max = 0.0_f64;
-    for index in 0..points.nrows().saturating_sub(1) {
-        let distance = metric.distance(points.row(index), points.row(index + 1));
+    for point_index in 0..points.nrows().saturating_sub(1) {
+        let distance = metric.distance(points.row(point_index), points.row(point_index + 1));
         if distance > max {
             max = distance;
         }
@@ -348,10 +388,10 @@ mod tests {
         let trajectory = Trajectory::resample(&spline, Euclidean, bound).unwrap();
 
         assert!(trajectory.bound() <= bound);
-        for index in 0..trajectory.len() - 1 {
+        for point_index in 0..trajectory.len() - 1 {
             let distance = Euclidean.distance(
-                trajectory.points().row(index),
-                trajectory.points().row(index + 1),
+                trajectory.points().row(point_index),
+                trajectory.points().row(point_index + 1),
             );
             assert!(distance <= bound + 1e-12);
         }
