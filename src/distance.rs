@@ -4,8 +4,12 @@
 //! Connected components of below-threshold pair-edges over a trajectory
 //! segment.
 
-use std::ops::{Range, RangeBounds};
+use std::{
+    collections::hash_map::Entry,
+    ops::{Range, RangeBounds},
+};
 
+use chomp3rs::ExecutionBackend;
 use ndarray::{Array2, ArrayView2};
 use rustc_hash::FxHashMap;
 
@@ -15,6 +19,107 @@ use crate::{
     trajectory::Trajectory,
     util::{disjoint::DisjointSet, range::normalize_segment},
 };
+
+/// Lays out tile column ranges across `range` with stride `tile_width -
+/// (max_length - 1)`. The last tile is right-clipped to the extent; all
+/// preceding tiles have full width.
+#[allow(dead_code)]
+fn enumerate_tile_column_ranges(
+    range: Range<usize>,
+    tile_width: usize,
+    max_length: usize,
+) -> Vec<Range<usize>> {
+    if max_length == 0 {
+        return Vec::new();
+    }
+
+    let overlap = max_length - 1;
+    let stride = tile_width - overlap;
+    let mut column_ranges = Vec::new();
+    let mut base = range.start;
+    while base < range.end {
+        let column_end = (base + tile_width).min(range.end);
+        column_ranges.push(base..column_end);
+        if column_end >= range.end {
+            break;
+        }
+        base += stride;
+    }
+    column_ranges
+}
+
+/// Merges per-tile component partitions into a single global partition.
+///
+/// Input is the per-tile result vector in tile-index order; per-tile cycles
+/// are deduplicated across tiles via their original-index ranges. When a
+/// tile-component contains cycles previously assigned to different global ids,
+/// those ids are merged via the global union-find; the final compaction
+/// renumbers representatives to a contiguous range.
+#[allow(dead_code)]
+fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Range<usize>>> {
+    let mut global_id_of_cycle: FxHashMap<(usize, usize), u32> = FxHashMap::default();
+    let mut union_find = DisjointSet::new();
+    // Per-global-id cycle accumulator. Outer index is the global id;
+    // inner is the cycles registered under that id (before union compaction).
+    let mut tile_cycle_lists: Vec<Vec<Range<usize>>> = Vec::new();
+
+    for tile_components in per_tile {
+        for tile_component in tile_components {
+            // Collect existing global ids already assigned to cycles in this
+            // tile-component (from earlier overlapping tiles).
+            let mut existing_ids: Vec<u32> = tile_component
+                .iter()
+                .filter_map(|cycle| global_id_of_cycle.get(&(cycle.start, cycle.end)).copied())
+                .collect();
+            existing_ids.sort_unstable();
+            existing_ids.dedup();
+
+            // Pick the chosen id: reuse the smallest existing, or allocate.
+            let chosen_id = if let Some(&first) = existing_ids.first() {
+                first
+            } else {
+                let id = u32::try_from(union_find.insert())
+                    .expect("global component id exceeds u32::MAX");
+                tile_cycle_lists.push(Vec::new());
+                id
+            };
+
+            // Union any other distinct ids into chosen_id.
+            for &other_id in existing_ids.iter().skip(1) {
+                union_find.union(chosen_id as usize, other_id as usize);
+            }
+
+            // Register every previously-unseen cycle under chosen_id.
+            for cycle in tile_component {
+                let key = (cycle.start, cycle.end);
+                if let Entry::Vacant(entry) = global_id_of_cycle.entry(key) {
+                    tile_cycle_lists[chosen_id as usize].push(cycle.clone());
+                    entry.insert(chosen_id);
+                }
+            }
+        }
+    }
+
+    // Compaction: collapse each cycle's global id through union-find, then
+    // renumber representatives to a contiguous range.
+    let mut representative_to_compact: FxHashMap<usize, usize> = FxHashMap::default();
+    let mut result: Vec<Vec<Range<usize>>> = Vec::new();
+
+    for (global_id, cycles) in tile_cycle_lists.into_iter().enumerate() {
+        for cycle in cycles {
+            let representative = union_find.find(global_id);
+            let compact_id = *representative_to_compact
+                .entry(representative)
+                .or_insert_with(|| {
+                    result.push(Vec::new());
+                    result.len() - 1
+                });
+            result[compact_id].push(cycle);
+        }
+    }
+
+    result
+}
 
 /// Connected components of below-threshold pair-edges over a trajectory
 /// segment, with a cycle-length cap.
@@ -65,6 +170,70 @@ pub(crate) fn detect_components<M: Metric>(
         trajectory,
         base,
         threshold,
+    ))
+}
+
+/// Connected components of below-threshold pair-edges over `range`, streamed
+/// across tiles of width `tile_width`.
+///
+/// Per-tile work (distance-tile construction plus `detect_components_in_tile`)
+/// is dispatched through `backend`. The stitching pass that merges per-tile
+/// partitions into a global partition runs on the dispatching process.
+///
+/// # Errors
+///
+/// - [`Error::WindowOutOfBounds`] if `range` is outside the trajectory's
+///   original-index space.
+/// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
+///   trajectory.bound()`.
+/// - [`Error::InvalidMaxLength`] if `max_length > tile_width`.
+#[allow(dead_code)]
+pub(crate) fn detect_components_streaming<M: Metric>(
+    trajectory: &Trajectory<M>,
+    range: Range<usize>,
+    threshold: f64,
+    max_length: usize,
+    tile_width: usize,
+    _backend: &ExecutionBackend,
+) -> Result<Vec<Vec<Range<usize>>>> {
+    if range.start > range.end || range.end > trajectory.original_count() {
+        return Err(Error::WindowOutOfBounds {
+            start: range.start,
+            end: range.end,
+            trajectory_length: trajectory.original_count(),
+        });
+    }
+    let trajectory_bound = trajectory.bound();
+    if threshold < trajectory_bound {
+        return Err(Error::ThresholdBelowTrajectoryBound {
+            given: threshold,
+            trajectory_bound,
+        });
+    }
+    if max_length > tile_width {
+        return Err(Error::InvalidMaxLength { value: max_length });
+    }
+
+    let tile_column_ranges = enumerate_tile_column_ranges(range, tile_width, max_length);
+    let mut per_tile: Vec<(usize, Vec<Vec<Range<usize>>>)> = tile_column_ranges
+        .into_iter()
+        .map(|column_range| {
+            let start = column_range.start;
+            let tile = build_distance_tile(trajectory, column_range, max_length)?;
+            let components = detect_components_in_tile(tile.view(), trajectory, start, threshold);
+            Ok((start, components))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    // Stitching is order-sensitive: it must see tiles in column-range order
+    // to produce a deterministic global partition. Parallel dispatch returns
+    // items in arbitrary order, so sort before stitching.
+    per_tile.sort_by_key(|&(start, _)| start);
+    Ok(stitch_per_tile_results(
+        per_tile
+            .into_iter()
+            .map(|(_, components)| components)
+            .collect(),
     ))
 }
 
@@ -229,7 +398,10 @@ fn build_distance_tile<M: Metric>(
 
 #[cfg(test)]
 mod tests {
-    use ndarray::array;
+    use std::{collections::BTreeSet, ops::Range};
+
+    use chomp3rs::ExecutionBackend;
+    use ndarray::{Array2, array};
 
     use super::detect_components;
     use crate::{Trajectory, error::Error, metric::Euclidean};
@@ -305,6 +477,55 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Renders a component partition as sets-of-sets for equality testing
+    fn canonicalize(components: Vec<Vec<Range<usize>>>) -> BTreeSet<BTreeSet<(usize, usize)>> {
+        components
+            .into_iter()
+            .map(|cycles| {
+                cycles
+                    .into_iter()
+                    .map(|cycle_range| (cycle_range.start, cycle_range.end))
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn streaming_single_tile_matches_multi_tile() {
+        // Build a small 1D trajectory that forms a known recurrent loop and
+        // exercises multiple tiles when tile_width is small.
+        let positions: Vec<f64> = (0..30)
+            .map(|index| (index as f64 * 0.4).sin() * 2.0)
+            .collect();
+        let points = Array2::from_shape_vec((30, 1), positions).unwrap();
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let threshold = trajectory.bound().max(0.5);
+        let max_length = 5;
+        let range = 0..30;
+
+        let single_tile = super::detect_components_streaming(
+            &trajectory,
+            range.clone(),
+            threshold,
+            max_length,
+            range.len(),
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        let multi_tile = super::detect_components_streaming(
+            &trajectory,
+            range.clone(),
+            threshold,
+            max_length,
+            8,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        assert_eq!(canonicalize(single_tile), canonicalize(multi_tile));
     }
 
     #[test]
