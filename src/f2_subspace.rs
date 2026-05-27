@@ -115,16 +115,6 @@ impl F2Subspace {
         self.num_generators
     }
 
-    /// The basis vector at the given index, in pivot-column order.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `index` is out of bounds.
-    #[must_use]
-    pub fn column(&self, index: usize) -> &F2Vector {
-        &self.basis[index]
-    }
-
     /// The basis vectors as a slice, in pivot-column order.
     #[must_use]
     pub fn basis_vectors(&self) -> &[F2Vector] {
@@ -305,16 +295,6 @@ mod tests {
         let first = F2Subspace::new(&[vector(3, &[0, 1]), vector(3, &[1])], 3).unwrap();
         let second = F2Subspace::new(&[vector(3, &[0]), vector(3, &[1])], 3).unwrap();
         assert_eq!(first, second);
-    }
-
-    #[test]
-    fn column_basis_vectors_consistency() {
-        let subspace = F2Subspace::new(&[vector(4, &[0, 2]), vector(4, &[1])], 4).unwrap();
-        assert_eq!(subspace.rank(), 2);
-        assert_eq!(subspace.num_generators(), 4);
-        for index in 0..subspace.rank() {
-            assert_eq!(subspace.column(index), &subspace.basis_vectors()[index]);
-        }
     }
 
     #[test]
