@@ -14,6 +14,7 @@ pub mod interpolation;
 pub mod metric;
 pub mod prelude;
 pub mod signature;
+pub mod storage;
 pub mod trajectory;
 pub(crate) mod util;
 

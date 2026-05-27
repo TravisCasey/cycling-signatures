@@ -32,7 +32,7 @@ unreadable_literal = "allow"
 [features]
 serde = ["dep:serde", "chomp3rs/serde"]
 rayon = ["chomp3rs/rayon"]
-mpi = ["chomp3rs/mpi"]
+mpi = ["chomp3rs/mpi", "serde"]
 
 [package.metadata.docs.rs]
 all-features = true

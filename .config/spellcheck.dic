@@ -1,4 +1,4 @@
-45
+47
 2D
 2Z
 Chebyshev
@@ -43,3 +43,5 @@ Cech
 bucketing
 collinear
 accessor
+deduplication
+subsumption

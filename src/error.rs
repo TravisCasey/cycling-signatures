@@ -184,6 +184,14 @@ pub enum Error {
         /// Signed coordinate difference between the two cubes on that axis.
         delta: i64,
     },
+
+    /// A `max_length` value below the structure's minimum, or above the
+    /// streaming tile width.
+    #[error("cycle length cap {value} is invalid")]
+    InvalidMaxLength {
+        /// The rejected value.
+        value: usize,
+    },
 }
 
 /// Convenience alias for [`std::result::Result`] with this crate's [`Error`].
