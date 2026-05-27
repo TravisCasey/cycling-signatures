@@ -93,11 +93,13 @@ impl IntervalSubsumptionIndex {
     }
 
     /// The stored intervals, in `(begin, end)`-ascending order.
+    #[allow(dead_code)]
     pub(crate) fn intervals(&self) -> &[StoredInterval] {
         &self.intervals
     }
 
     /// Number of stored intervals after deduplication.
+    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         self.intervals.len()
     }

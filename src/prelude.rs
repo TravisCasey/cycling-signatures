@@ -23,5 +23,6 @@ pub use crate::{
     },
     metric::{Chebyshev, Euclidean, Metric, SphereBundleMetric},
     signature::{CycleComponent, CyclingSignature},
+    storage::cycle_storage::{Component, Cycle, CycleStorage},
     trajectory::Trajectory,
 };

@@ -8,5 +8,5 @@
 //! grouped by their connected component in the below-threshold distance
 //! graph, paired with the homology class shared across the component.
 
-#[allow(dead_code)]
+pub mod cycle_storage;
 pub(crate) mod interval_subsumption;

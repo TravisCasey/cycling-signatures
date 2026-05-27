@@ -23,7 +23,6 @@ use crate::{
 /// Lays out tile column ranges across `range` with stride `tile_width -
 /// (max_length - 1)`. The last tile is right-clipped to the extent; all
 /// preceding tiles have full width.
-#[allow(dead_code)]
 fn enumerate_tile_column_ranges(
     range: Range<usize>,
     tile_width: usize,
@@ -55,7 +54,6 @@ fn enumerate_tile_column_ranges(
 /// tile-component contains cycles previously assigned to different global ids,
 /// those ids are merged via the global union-find; the final compaction
 /// renumbers representatives to a contiguous range.
-#[allow(dead_code)]
 fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Range<usize>>> {
     let mut global_id_of_cycle: FxHashMap<(usize, usize), u32> = FxHashMap::default();
     let mut union_find = DisjointSet::new();
@@ -187,7 +185,6 @@ pub(crate) fn detect_components<M: Metric>(
 /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
 ///   trajectory.bound()`.
 /// - [`Error::InvalidMaxLength`] if `max_length > tile_width`.
-#[allow(dead_code)]
 pub(crate) fn detect_components_streaming<M: Metric>(
     trajectory: &Trajectory<M>,
     range: Range<usize>,
