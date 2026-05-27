@@ -9,7 +9,7 @@ use std::{
     ops::{Range, RangeBounds},
 };
 
-use chomp3rs::ExecutionBackend;
+use chomp3rs::{ExecutionBackend, parallel::map::ParallelMap};
 use ndarray::{Array2, ArrayView2};
 use rustc_hash::FxHashMap;
 
@@ -194,7 +194,7 @@ pub(crate) fn detect_components_streaming<M: Metric>(
     threshold: f64,
     max_length: usize,
     tile_width: usize,
-    _backend: &ExecutionBackend,
+    backend: &ExecutionBackend,
 ) -> Result<Vec<Vec<Range<usize>>>> {
     if range.start > range.end || range.end > trajectory.original_count() {
         return Err(Error::WindowOutOfBounds {
@@ -215,15 +215,21 @@ pub(crate) fn detect_components_streaming<M: Metric>(
     }
 
     let tile_column_ranges = enumerate_tile_column_ranges(range, tile_width, max_length);
-    let mut per_tile: Vec<(usize, Vec<Vec<Range<usize>>>)> = tile_column_ranges
-        .into_iter()
-        .map(|column_range| {
+
+    // `build_distance_tile`'s only failure mode is `WindowOutOfBounds`,
+    // already validated above against `trajectory.original_count()` before
+    // dispatch. The closure is thus infallible at this point, so the per-tile
+    // result is unwrapped inside the closure rather than returning a `Result`
+    let mut per_tile: Vec<(usize, Vec<Vec<Range<usize>>>)> = ParallelMap::new(backend).run(
+        tile_column_ranges.into_iter(),
+        |column_range: Range<usize>| {
             let start = column_range.start;
-            let tile = build_distance_tile(trajectory, column_range, max_length)?;
+            let tile = build_distance_tile(trajectory, column_range, max_length)
+                .expect("tile column range fits inside the validated window");
             let components = detect_components_in_tile(tile.view(), trajectory, start, threshold);
-            Ok((start, components))
-        })
-        .collect::<Result<Vec<_>>>()?;
+            vec![(start, components)]
+        },
+    );
 
     // Stitching is order-sensitive: it must see tiles in column-range order
     // to produce a deterministic global partition. Parallel dispatch returns
