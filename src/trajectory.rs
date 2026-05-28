@@ -10,6 +10,7 @@ use crate::{
     error::{Error, Result},
     interpolation::Interpolator,
     metric::Metric,
+    util::fingerprint::Fingerprint,
 };
 
 /// A trajectory of points in a metric space.
@@ -254,6 +255,28 @@ impl<M: Metric> Trajectory<M> {
     #[must_use]
     pub fn original_count(&self) -> usize {
         self.original_indices.len()
+    }
+
+    /// A stable 64-bit fingerprint of this trajectory's content.
+    ///
+    /// Derived from the metric name, the points, the recorded bound, and the
+    /// original-index map. Two trajectories with the same content fingerprint
+    /// identically; changing any of those inputs changes the fingerprint.
+    #[must_use]
+    pub fn fingerprint(&self) -> u64 {
+        let mut hasher = Fingerprint::new();
+        hasher.write(self.metric.name().as_bytes());
+        hasher.write(&(self.points.nrows() as u64).to_le_bytes());
+        hasher.write(&(self.points.ncols() as u64).to_le_bytes());
+        for &value in &self.points {
+            hasher.write(&value.to_le_bytes());
+        }
+        hasher.write(&self.bound.to_bits().to_le_bytes());
+        hasher.write(&(self.original_indices.len() as u64).to_le_bytes());
+        for &index in &self.original_indices {
+            hasher.write(&(index as u64).to_le_bytes());
+        }
+        hasher.finish()
     }
 }
 

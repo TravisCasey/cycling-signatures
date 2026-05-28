@@ -4,4 +4,5 @@
 //! Low-level utilities used across the crate.
 
 pub(crate) mod disjoint;
+pub(crate) mod fingerprint;
 pub(crate) mod range;

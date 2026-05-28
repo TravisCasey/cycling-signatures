@@ -20,7 +20,7 @@ use crate::{
     metric::Metric,
     signature::{CycleComponent, CyclingSignature},
     trajectory::Trajectory,
-    util::range::normalize_segment,
+    util::{fingerprint::Fingerprint, range::normalize_segment},
 };
 
 /// Pairs a [`Trajectory<M>`](Trajectory) with a [`CubicalCover`] and the
@@ -219,6 +219,18 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     pub fn cycle_class(&self, segment: impl RangeBounds<usize>) -> Result<F2Vector> {
         let edges = self.walk_cycle(segment)?;
         Ok(self.cover.chain_class(edges.iter()))
+    }
+
+    /// A stable 64-bit fingerprint combining the trajectory and cover.
+    ///
+    /// The per-point cube map is not hashed: it is fully determined by the
+    /// trajectory points and the cover cubes, both already covered.
+    #[must_use]
+    pub fn fingerprint(&self) -> u64 {
+        let mut hasher = Fingerprint::new();
+        hasher.write(&self.trajectory.fingerprint().to_le_bytes());
+        hasher.write(&self.cover.fingerprint().to_le_bytes());
+        hasher.finish()
     }
 
     /// The cycling signature of the trajectory over the given segment.
@@ -475,6 +487,17 @@ mod tests {
         cover::CubicalCover, error::Error, interpolation::CubicSpline, metric::Euclidean,
         trajectory::Trajectory,
     };
+
+    #[test]
+    fn fingerprint_is_stable_golden_value() {
+        // Locks the whole fingerprint stack (trajectory feed, cubes-only cover
+        // feed, and their composition) to a pinned value.
+        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+
+        assert_eq!(embedded.fingerprint(), 0xe156_dbcc_88c8_c664);
+    }
 
     #[test]
     fn walk_cycle_returns_expected_edges_for_known_loop() {

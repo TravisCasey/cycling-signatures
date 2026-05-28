@@ -14,6 +14,7 @@ use rustc_hash::FxHashMap;
 use crate::{
     error::{Error, Result},
     f2_vector::F2Vector,
+    util::fingerprint::Fingerprint,
 };
 
 /// A cubical cover with computed cohomology generators over `F_2`.
@@ -119,6 +120,23 @@ impl CubicalCover {
             }
         }
         accumulator
+    }
+
+    /// A stable 64-bit fingerprint of this cover's content.
+    ///
+    /// Derived from the cube set only. The cohomology generators are
+    /// deliberately excluded: the same cubes may yield a different generator
+    /// basis across builds, so hashing the cubes keeps the fingerprint a
+    /// function of the canonical data.
+    #[must_use]
+    pub fn fingerprint(&self) -> u64 {
+        let mut hasher = Fingerprint::new();
+        hasher.write(&(self.cubes.nrows() as u64).to_le_bytes());
+        hasher.write(&(self.cubes.ncols() as u64).to_le_bytes());
+        for &value in &self.cubes {
+            hasher.write(&value.to_le_bytes());
+        }
+        hasher.finish()
     }
 }
 
