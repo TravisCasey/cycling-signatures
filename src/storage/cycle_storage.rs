@@ -313,7 +313,7 @@ impl CycleStorage {
     /// [`Error::WindowOutOfBounds`] if `segment` does not fit inside
     /// [`Self::extent`].
     #[allow(clippy::missing_panics_doc)]
-    pub fn segment_signature(&self, segment: impl RangeBounds<usize>) -> Result<F2Subspace> {
+    pub fn signature(&self, segment: impl RangeBounds<usize>) -> Result<F2Subspace> {
         let range = normalize_segment(segment, self.extent.end as usize)?;
         if (range.start as u32) < self.extent.start {
             return Err(Error::WindowOutOfBounds {
@@ -363,22 +363,6 @@ impl CycleStorage {
             }
         }
         ids
-    }
-
-    /// The `F_2` subspace spanned by classes of all components covering
-    /// `point`.
-    ///
-    /// Empty subspace when `point` is outside [`Self::extent`].
-    #[allow(clippy::missing_panics_doc)]
-    #[must_use]
-    pub fn coverage_signature(&self, point: usize) -> F2Subspace {
-        let ids = self.components_covering(point);
-        let vectors: Vec<F2Vector> = ids
-            .iter()
-            .map(|&id| self.classes[self.components[id as usize].class_id as usize].clone())
-            .collect();
-        F2Subspace::new(&vectors, self.num_generators)
-            .expect("class vector lengths match num_generators by construction")
     }
 
     /// Constructs a [`CycleStorage`] from already-computed parts.
@@ -547,7 +531,7 @@ mod tests {
             &[0..embedded.trajectory().original_count(), 0..4, 4..9, 2..7];
         for segment in segments {
             let embedded_span = embedded.signature(segment.clone(), threshold).unwrap();
-            let storage_span = storage.segment_signature(segment.clone()).unwrap();
+            let storage_span = storage.signature(segment.clone()).unwrap();
             assert_eq!(embedded_span.span(), &storage_span, "segment {segment:?}");
         }
     }
@@ -610,8 +594,6 @@ mod tests {
              {covering_30:?}"
         );
 
-        assert_eq!(storage.coverage_signature(12).rank(), 1);
-
         // Rank-2 union: a second fixture where two components both have an
         // active cycle covering the same point.
         let component_a = Component {
@@ -639,6 +621,6 @@ mod tests {
             vec![component_a, component_b],
         );
         // Point 7 is in both [0, 10) and [5, 15).
-        assert_eq!(union_storage.coverage_signature(7).rank(), 2);
+        assert_eq!(union_storage.components_covering(7), vec![0, 1]);
     }
 }
