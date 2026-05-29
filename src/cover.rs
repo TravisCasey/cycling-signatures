@@ -17,6 +17,9 @@ use crate::{
     util::fingerprint::Fingerprint,
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize, de::Error as DeserializeError};
+
 /// A cubical cover with computed cohomology generators over `F_2`.
 ///
 /// Built from an explicit set of integer cube coordinates. Stores cubes in
@@ -268,6 +271,65 @@ fn compute_edge_classes(generators: &[Chain<Cube, F2>]) -> FxHashMap<Cube, F2Vec
         }
     }
     edge_classes
+}
+
+#[cfg(feature = "serde")]
+#[derive(Serialize, Deserialize)]
+struct CoverData {
+    #[serde(with = "crate::persistence::npy_field")]
+    cubes: Array2<i64>,
+    generators: Vec<Vec<Cube>>,
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for CubicalCover {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let generators: Vec<Vec<Cube>> = self
+            .generators
+            .iter()
+            .map(|generator| {
+                let mut cubes: Vec<Cube> = generator
+                    .iter()
+                    .filter(|(_, coefficient)| **coefficient != F2::zero())
+                    .map(|(cube, _)| cube.clone())
+                    .collect();
+                cubes.sort();
+                cubes
+            })
+            .collect();
+        CoverData {
+            cubes: self.cubes.clone(),
+            generators,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for CubicalCover {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let data = CoverData::deserialize(deserializer)?;
+        if data.cubes.nrows() == 0 {
+            return Err(D::Error::custom("cubical cover requires at least one cube"));
+        }
+        let generators: Vec<Chain<Cube, F2>> = data
+            .generators
+            .into_iter()
+            .map(|cubes| cubes.into_iter().map(|cube| (cube, F2::one())).collect())
+            .collect();
+        let edge_classes = compute_edge_classes(&generators);
+        Ok(Self {
+            cubes: data.cubes,
+            generators,
+            edge_classes,
+        })
+    }
 }
 
 #[cfg(test)]
