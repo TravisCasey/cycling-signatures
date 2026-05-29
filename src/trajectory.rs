@@ -49,7 +49,9 @@ use crate::{
 /// trajectory by passing it to higher-level types and never touch the dense
 /// form directly.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Trajectory<M: Metric> {
+    #[cfg_attr(feature = "serde", serde(with = "crate::persistence::npy_field"))]
     points: Array2<f64>,
     metric: M,
     bound: f64,

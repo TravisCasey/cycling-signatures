@@ -22,6 +22,7 @@ use crate::{
 
 /// A detected cycle paired with the metric distance between its endpoints.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cycle {
     range: Range<u32>,
     birth: f64,
@@ -50,6 +51,7 @@ impl Cycle {
 /// One connected component of below-threshold near-recurrence, together with
 /// the homology class shared by every cycle in the component.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Component {
     class_id: u32,
     coverage: Range<u32>,

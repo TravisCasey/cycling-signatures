@@ -53,6 +53,7 @@ pub trait Metric: Clone + Send + Sync + fmt::Debug + 'static {
 ///
 /// Distance is the square root of the sum of squared coordinate differences.
 #[derive(Clone, Copy, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Euclidean;
 
 impl Metric for Euclidean {
@@ -82,6 +83,7 @@ impl Metric for Euclidean {
 ///
 /// Distance is the largest absolute coordinate difference.
 #[derive(Clone, Copy, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Chebyshev;
 
 impl Metric for Chebyshev {
