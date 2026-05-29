@@ -192,7 +192,63 @@ pub enum Error {
         /// The rejected value.
         value: usize,
     },
+
+    /// A persisted file's format version does not match this build's
+    /// supported version.
+    #[error("persisted format version {found} does not match the supported version {expected}")]
+    FormatVersionMismatch {
+        /// The version this build writes and expects.
+        expected: u32,
+        /// The version found in the file.
+        found: u32,
+    },
+
+    /// A loaded cycle storage's recorded fingerprint does not match the
+    /// embedded trajectory it was loaded against.
+    #[error("stored fingerprint {found} does not match the embedded trajectory fingerprint {expected}")]
+    FingerprintMismatch {
+        /// The embedded trajectory's fingerprint.
+        expected: u64,
+        /// The fingerprint recorded in the loaded storage.
+        found: u64,
+    },
+
+    /// Serialization, deserialization, or input/output failure in the storage
+    /// layer.
+    #[error("storage input/output failure")]
+    Storage {
+        /// The underlying failure.
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 /// Convenience alias for [`std::result::Result`] with this crate's [`Error`].
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(feature = "serde")]
+impl From<std::io::Error> for Error {
+    fn from(source: std::io::Error) -> Self {
+        Error::Storage {
+            source: Box::new(source),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl From<rmp_serde::encode::Error> for Error {
+    fn from(source: rmp_serde::encode::Error) -> Self {
+        Error::Storage {
+            source: Box::new(source),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl From<rmp_serde::decode::Error> for Error {
+    fn from(source: rmp_serde::decode::Error) -> Self {
+        Error::Storage {
+            source: Box::new(source),
+        }
+    }
+}
