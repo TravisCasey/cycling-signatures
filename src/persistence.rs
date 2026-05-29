@@ -15,7 +15,7 @@ use std::{
     path::Path,
 };
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::error::{Error, Result};
 
@@ -26,7 +26,7 @@ pub(crate) mod npy_field;
 pub(crate) const FORMAT_VERSION: u32 = 1;
 
 /// The envelope wrapping every persisted payload with its format version.
-#[derive(Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub(crate) struct Versioned<T> {
     pub(crate) format_version: u32,
     pub(crate) payload: T,

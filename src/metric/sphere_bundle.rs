@@ -53,7 +53,7 @@ fn split_and_normalize(point: ArrayView1<'_, f64>) -> (Array1<f64>, Array1<f64>)
 /// )
 /// ```
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SphereBundleMetric {
     direction_weight: f64,
 }
@@ -138,6 +138,21 @@ impl Metric for SphereBundleMetric {
                 direction3.view(),
                 radius / self.direction_weight,
             )
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for SphereBundleMetric {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct Fields {
+            direction_weight: f64,
+        }
+        let fields = Fields::deserialize(deserializer)?;
+        SphereBundleMetric::new(fields.direction_weight).map_err(serde::de::Error::custom)
     }
 }
 
@@ -253,5 +268,20 @@ mod tests {
         // 1/sqrt(3) circumradius) is accepted, confirming the smallest-
         // enclosing-ball cutoff is what's controlling the outcome.
         assert!(metric.covers_triple(p1.view(), p2.view(), p3.view(), 0.6));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn deserialize_rejects_non_positive_weight() {
+        #[derive(serde::Serialize)]
+        struct Raw {
+            direction_weight: f64,
+        }
+        let bytes = rmp_serde::to_vec_named(&Raw {
+            direction_weight: 0.0,
+        })
+        .unwrap();
+        let outcome = rmp_serde::from_slice::<SphereBundleMetric>(&bytes);
+        assert!(outcome.is_err());
     }
 }

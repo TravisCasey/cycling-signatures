@@ -16,6 +16,8 @@ use ndarray::{Array2, ArrayView2};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+#[cfg(feature = "serde")]
+use crate::persistence::{load_from_path, save_to_path};
 use crate::{
     F2Vector,
     cover::CubicalCover,
@@ -247,7 +249,7 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     where
         M: Serialize,
     {
-        crate::persistence::save_to_path(path, self)
+        save_to_path(path, self)
     }
 
     /// Reads an embedded trajectory written by [`save`](Self::save).
@@ -255,15 +257,16 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     /// # Errors
     ///
     /// - [`Error::FormatVersionMismatch`] if the file's format version differs.
-    /// - [`Error::Storage`] on deserialization or input/output failure,
-    ///   including a trajectory and cover that fail
-    ///   [`from_parts`](Self::from_parts) reconstruction.
+    /// - [`Error::Storage`] on deserialization or input/output failure, or when
+    ///   the file's trajectory and cover are inconsistent (for example,
+    ///   mismatched dimensions, or a trajectory point whose cube is absent from
+    ///   the cover).
     #[cfg(feature = "serde")]
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self>
     where
         M: DeserializeOwned,
     {
-        crate::persistence::load_from_path(path)
+        load_from_path(path)
     }
 
     /// The cycling signature of the trajectory over the given segment.
@@ -553,7 +556,6 @@ impl<'de, M: Metric + DeserializeOwned> Deserialize<'de> for EmbeddedTrajectory<
 
 #[cfg(test)]
 mod tests {
-
     use chomp3rs::ExecutionBackend;
     use ndarray::array;
 

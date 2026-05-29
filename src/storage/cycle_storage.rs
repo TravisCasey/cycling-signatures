@@ -19,6 +19,8 @@ use rustc_hash::FxHashSet;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "serde")]
+use crate::persistence::save_to_path;
 use crate::{
     EmbeddedTrajectory, F2Subspace, F2Vector,
     distance::detect_components_streaming,
@@ -387,10 +389,8 @@ impl CycleStorage {
     /// Assembles a [`CycleStorage`] from already-computed parts, recomputing
     /// the internal subsumption index from `components`.
     ///
-    /// Used by deserialization and by tests assembling fixtures without going
-    /// through [`Self::build`]. Component invariants (`coverage` bounds the
-    /// cycle ranges, `class_id` is in range, cycles are non-empty) are the
-    /// caller's responsibility.
+    /// Component invariants (`coverage` bounds the cycle ranges, `class_id` is
+    /// in range, cycles are non-empty) are the caller's responsibility.
     #[cfg(any(test, feature = "serde"))]
     fn from_parts(
         fingerprint: u64,
@@ -430,7 +430,7 @@ impl CycleStorage {
     /// [`Error::Storage`] on serialization or input/output failure.
     #[cfg(feature = "serde")]
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        crate::persistence::save_to_path(path, self)
+        save_to_path(path, self)
     }
 
     /// Reads a storage written by [`save`](Self::save) and verifies it was

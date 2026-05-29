@@ -217,7 +217,7 @@ pub enum Error {
 
     /// Serialization, deserialization, or input/output failure in the storage
     /// layer.
-    #[error("storage input/output failure")]
+    #[error("storage serialization or input/output failure")]
     Storage {
         /// The underlying failure.
         #[source]
