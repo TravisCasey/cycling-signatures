@@ -4,6 +4,8 @@
 //! Embedded trajectory: a `Trajectory` paired with a `CubicalCover` and the
 //! mapping from trajectory point to cube index.
 
+#[cfg(feature = "serde")]
+use std::path::Path;
 use std::{
     cmp::Ordering,
     ops::{Range, RangeBounds},
@@ -11,6 +13,8 @@ use std::{
 
 use chomp3rs::{Cube, ExecutionBackend, Orthant};
 use ndarray::{Array2, ArrayView2};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
     F2Vector,
@@ -231,6 +235,35 @@ impl<M: Metric> EmbeddedTrajectory<M> {
         hasher.write(&self.trajectory.fingerprint().to_le_bytes());
         hasher.write(&self.cover.fingerprint().to_le_bytes());
         hasher.finish()
+    }
+
+    /// Writes this embedded trajectory to `path` in the crate's binary format.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Storage`] on serialization or input/output failure.
+    #[cfg(feature = "serde")]
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()>
+    where
+        M: Serialize,
+    {
+        crate::persistence::save_to_path(path, self)
+    }
+
+    /// Reads an embedded trajectory written by [`save`](Self::save).
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::FormatVersionMismatch`] if the file's format version differs.
+    /// - [`Error::Storage`] on deserialization or input/output failure,
+    ///   including a trajectory and cover that fail
+    ///   [`from_parts`](Self::from_parts) reconstruction.
+    #[cfg(feature = "serde")]
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self>
+    where
+        M: DeserializeOwned,
+    {
+        crate::persistence::load_from_path(path)
     }
 
     /// The cycling signature of the trajectory over the given segment.
@@ -477,12 +510,59 @@ fn binary_search_cube(cubes: ArrayView2<'_, i64>, target: &[i64]) -> Option<usiz
     None
 }
 
+#[cfg(feature = "serde")]
+#[derive(Serialize)]
+struct EmbeddedRef<'a, M: Metric> {
+    trajectory: &'a Trajectory<M>,
+    cover: &'a CubicalCover,
+}
+
+#[cfg(feature = "serde")]
+#[derive(Deserialize)]
+#[serde(bound = "M: Metric + DeserializeOwned")]
+struct EmbeddedData<M: Metric> {
+    trajectory: Trajectory<M>,
+    cover: CubicalCover,
+}
+
+#[cfg(feature = "serde")]
+impl<M: Metric + Serialize> Serialize for EmbeddedTrajectory<M> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        EmbeddedRef {
+            trajectory: &self.trajectory,
+            cover: &self.cover,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, M: Metric + DeserializeOwned> Deserialize<'de> for EmbeddedTrajectory<M> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let data = EmbeddedData::<M>::deserialize(deserializer)?;
+        EmbeddedTrajectory::from_parts(data.trajectory, data.cover)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
     use chomp3rs::ExecutionBackend;
     use ndarray::array;
 
     use super::EmbeddedTrajectory;
+    #[cfg(feature = "serde")]
+    use crate::{
+        Result,
+        persistence::{Versioned, load_from_reader, save_to_writer},
+    };
     use crate::{
         cover::CubicalCover, error::Error, interpolation::CubicSpline, metric::Euclidean,
         trajectory::Trajectory,
@@ -745,5 +825,71 @@ mod tests {
         let signature = embedded.signature(.., 1.5).unwrap();
         assert_eq!(signature.rank(), 1);
         assert!(!signature.components().is_empty());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn save_load_round_trip_preserves_content() {
+        let points = array![
+            [0.5, 0.5],
+            [1.5, 0.5],
+            [2.5, 0.5],
+            [2.5, 1.5],
+            [2.5, 2.5],
+            [1.5, 2.5],
+            [0.5, 2.5],
+            [0.5, 1.5],
+        ];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+
+        let mut buffer: Vec<u8> = Vec::new();
+        save_to_writer(&mut buffer, &embedded).unwrap();
+        let loaded: EmbeddedTrajectory<Euclidean> = load_from_reader(&buffer[..]).unwrap();
+
+        assert_eq!(loaded.trajectory().points(), embedded.trajectory().points());
+        assert_eq!(loaded.cover().cubes(), embedded.cover().cubes());
+        assert_eq!(
+            loaded.cover().num_generators(),
+            embedded.cover().num_generators()
+        );
+        for point_index in 0..embedded.trajectory().len() {
+            assert_eq!(
+                loaded.point_to_cube(point_index),
+                embedded.point_to_cube(point_index),
+            );
+        }
+        // The reloaded cover carries the same basis, so a known cycle's class is
+        // unchanged.
+        assert_eq!(
+            loaded.cycle_class(0..8).unwrap(),
+            embedded.cycle_class(0..8).unwrap(),
+        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn load_rejects_mismatched_format_version() {
+        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+
+        // Handwrite an envelope carrying an unsupported version, into a buffer.
+        let envelope = Versioned {
+            format_version: 999,
+            payload: &embedded,
+        };
+        let mut buffer: Vec<u8> = Vec::new();
+        rmp_serde::encode::write_named(&mut buffer, &envelope).unwrap();
+
+        let outcome: Result<EmbeddedTrajectory<Euclidean>> = load_from_reader(&buffer[..]);
+
+        assert!(matches!(
+            outcome,
+            Err(Error::FormatVersionMismatch {
+                expected: 1,
+                found: 999,
+            })
+        ));
     }
 }

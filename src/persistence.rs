@@ -11,7 +11,7 @@
 
 use std::{
     fs::File,
-    io::{BufReader, BufWriter, Write},
+    io::{BufReader, BufWriter, Read, Write},
     path::Path,
 };
 
@@ -32,8 +32,48 @@ pub(crate) struct Versioned<T> {
     pub(crate) payload: T,
 }
 
-/// Writes `payload` to `path` wrapped in the current-version envelope, as
+/// Writes `payload` to `writer` wrapped in the current-version envelope, as
 /// `MessagePack` with struct-map encoding.
+///
+/// # Errors
+///
+/// [`Error::Storage`] on serialization or input/output failure.
+pub(crate) fn save_to_writer<T, W>(mut writer: W, payload: &T) -> Result<()>
+where
+    T: Serialize,
+    W: Write,
+{
+    let versioned = Versioned {
+        format_version: FORMAT_VERSION,
+        payload,
+    };
+    rmp_serde::encode::write_named(&mut writer, &versioned)?;
+    writer.flush()?;
+    Ok(())
+}
+
+/// Reads a payload written by [`save_to_writer`], verifying the format version.
+///
+/// # Errors
+///
+/// - [`Error::FormatVersionMismatch`] if the payload's version differs.
+/// - [`Error::Storage`] on deserialization or input/output failure.
+pub(crate) fn load_from_reader<T, R>(reader: R) -> Result<T>
+where
+    T: DeserializeOwned,
+    R: Read,
+{
+    let versioned: Versioned<T> = rmp_serde::decode::from_read(reader)?;
+    if versioned.format_version != FORMAT_VERSION {
+        return Err(Error::FormatVersionMismatch {
+            expected: FORMAT_VERSION,
+            found: versioned.format_version,
+        });
+    }
+    Ok(versioned.payload)
+}
+
+/// Writes `payload` to `path` in the crate's binary format.
 ///
 /// # Errors
 ///
@@ -44,14 +84,7 @@ where
     P: AsRef<Path>,
 {
     let file = File::create(path)?;
-    let mut writer = BufWriter::new(file);
-    let versioned = Versioned {
-        format_version: FORMAT_VERSION,
-        payload,
-    };
-    rmp_serde::encode::write_named(&mut writer, &versioned)?;
-    writer.flush()?;
-    Ok(())
+    save_to_writer(BufWriter::new(file), payload)
 }
 
 /// Reads a payload written by [`save_to_path`], verifying the format version.
@@ -66,13 +99,5 @@ where
     P: AsRef<Path>,
 {
     let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let versioned: Versioned<T> = rmp_serde::decode::from_read(reader)?;
-    if versioned.format_version != FORMAT_VERSION {
-        return Err(Error::FormatVersionMismatch {
-            expected: FORMAT_VERSION,
-            found: versioned.format_version,
-        });
-    }
-    Ok(versioned.payload)
+    load_from_reader(BufReader::new(file))
 }

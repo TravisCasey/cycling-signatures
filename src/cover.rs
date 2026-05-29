@@ -10,15 +10,14 @@ use chomp3rs::{
 };
 use ndarray::{Array2, ArrayView2};
 use rustc_hash::FxHashMap;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize, de::Error as DeserializeError};
 
 use crate::{
     error::{Error, Result},
     f2_vector::F2Vector,
     util::fingerprint::Fingerprint,
 };
-
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize, de::Error as DeserializeError};
 
 /// A cubical cover with computed cohomology generators over `F_2`.
 ///

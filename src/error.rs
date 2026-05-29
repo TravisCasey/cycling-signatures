@@ -205,7 +205,9 @@ pub enum Error {
 
     /// A loaded cycle storage's recorded fingerprint does not match the
     /// embedded trajectory it was loaded against.
-    #[error("stored fingerprint {found} does not match the embedded trajectory fingerprint {expected}")]
+    #[error(
+        "stored fingerprint {found} does not match the embedded trajectory fingerprint {expected}"
+    )]
     FingerprintMismatch {
         /// The embedded trajectory's fingerprint.
         expected: u64,
