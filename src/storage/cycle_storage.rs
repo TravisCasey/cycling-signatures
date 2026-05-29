@@ -7,9 +7,17 @@ use std::{
     cmp::Reverse,
     ops::{Range, RangeBounds},
 };
+#[cfg(feature = "serde")]
+use std::{
+    fs::File,
+    io::{BufReader, Read},
+    path::Path,
+};
 
 use chomp3rs::ExecutionBackend;
 use rustc_hash::FxHashSet;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::{
     EmbeddedTrajectory, F2Subspace, F2Vector,
@@ -117,6 +125,7 @@ impl Component {
 /// Component-first cache of near-recurrent cycles over a trajectory extent.
 #[derive(Clone, Debug)]
 pub struct CycleStorage {
+    fingerprint: u64,
     extent: Range<u32>,
     max_length: u32,
     threshold: f64,
@@ -155,6 +164,7 @@ impl CycleStorage {
         backend: &ExecutionBackend,
     ) -> Result<Self> {
         let trajectory = embedded.trajectory();
+        let fingerprint = embedded.fingerprint();
         let range = normalize_segment(segment, trajectory.original_count())?;
         if max_length < 2 {
             return Err(Error::InvalidMaxLength { value: max_length });
@@ -240,6 +250,7 @@ impl CycleStorage {
         let num_generators = embedded.cover().num_generators();
 
         Ok(Self {
+            fingerprint,
             extent: u32::try_from(range.start).expect("extent start exceeds u32::MAX")
                 ..u32::try_from(range.end).expect("extent end exceeds u32::MAX"),
             max_length: u32::try_from(max_length).expect("cycle length cap exceeds u32::MAX"),
@@ -255,6 +266,12 @@ impl CycleStorage {
     #[must_use]
     pub fn extent(&self) -> Range<u32> {
         self.extent.clone()
+    }
+
+    /// The fingerprint of the embedded trajectory this storage was built from.
+    #[must_use]
+    pub fn fingerprint(&self) -> u64 {
+        self.fingerprint
     }
 
     /// Adjacency threshold the storage was built with.
@@ -367,17 +384,16 @@ impl CycleStorage {
         ids
     }
 
-    /// Constructs a [`CycleStorage`] from already-computed parts.
+    /// Assembles a [`CycleStorage`] from already-computed parts, recomputing
+    /// the internal subsumption index from `components`.
     ///
-    /// Used by tests to assemble fixtures without going through
-    /// [`Self::build`]. Recomputes the internal subsumption index from
-    /// `components`.
-    ///
-    /// Component invariants (`coverage` bounds the cycle ranges, `class_id` is
-    /// in range, cycles are non-empty) are the caller's responsibility.
-    #[cfg(test)]
-    #[must_use]
-    pub(crate) fn from_parts(
+    /// Used by deserialization and by tests assembling fixtures without going
+    /// through [`Self::build`]. Component invariants (`coverage` bounds the
+    /// cycle ranges, `class_id` is in range, cycles are non-empty) are the
+    /// caller's responsibility.
+    #[cfg(any(test, feature = "serde"))]
+    fn from_parts(
+        fingerprint: u64,
         extent: Range<u32>,
         max_length: u32,
         threshold: f64,
@@ -396,6 +412,7 @@ impl CycleStorage {
         }
         let index = IntervalSubsumptionIndex::new(all_cycle_records);
         Self {
+            fingerprint,
             extent,
             max_length,
             threshold,
@@ -405,16 +422,123 @@ impl CycleStorage {
             index,
         }
     }
+
+    /// Writes this storage to `path` in the crate's binary format.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Storage`] on serialization or input/output failure.
+    #[cfg(feature = "serde")]
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        crate::persistence::save_to_path(path, self)
+    }
+
+    /// Reads a storage written by [`save`](Self::save) and verifies it was
+    /// built from `embedded`.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::FormatVersionMismatch`] if the file's format version differs.
+    /// - [`Error::FingerprintMismatch`] if the stored fingerprint does not
+    ///   equal `embedded.fingerprint()`.
+    /// - [`Error::Storage`] on deserialization or input/output failure.
+    #[cfg(feature = "serde")]
+    pub fn load<M: Metric, P: AsRef<Path>>(
+        path: P,
+        embedded: &EmbeddedTrajectory<M>,
+    ) -> Result<Self> {
+        let file = File::open(path)?;
+        Self::load_from_reader(BufReader::new(file), embedded)
+    }
+
+    /// Reads a storage from `reader` and verifies it was built from `embedded`.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`load`](Self::load), minus the file-open failure.
+    #[cfg(feature = "serde")]
+    pub(crate) fn load_from_reader<M, R>(
+        reader: R,
+        embedded: &EmbeddedTrajectory<M>,
+    ) -> Result<Self>
+    where
+        M: Metric,
+        R: Read,
+    {
+        let storage: Self = crate::persistence::load_from_reader(reader)?;
+        let expected = embedded.fingerprint();
+        if storage.fingerprint != expected {
+            return Err(Error::FingerprintMismatch {
+                expected,
+                found: storage.fingerprint,
+            });
+        }
+        Ok(storage)
+    }
+}
+
+#[cfg(feature = "serde")]
+#[derive(Serialize, Deserialize)]
+struct CycleStorageData {
+    fingerprint: u64,
+    extent: Range<u32>,
+    max_length: u32,
+    threshold: f64,
+    num_generators: usize,
+    classes: Vec<F2Vector>,
+    components: Vec<Component>,
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for CycleStorage {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CycleStorageData {
+            fingerprint: self.fingerprint,
+            extent: self.extent.clone(),
+            max_length: self.max_length,
+            threshold: self.threshold,
+            num_generators: self.num_generators,
+            classes: self.classes.clone(),
+            components: self.components.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for CycleStorage {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let data = CycleStorageData::deserialize(deserializer)?;
+        Ok(Self::from_parts(
+            data.fingerprint,
+            data.extent,
+            data.max_length,
+            data.threshold,
+            data.num_generators,
+            data.classes,
+            data.components,
+        ))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, ops::Range};
 
     use chomp3rs::ExecutionBackend;
     use ndarray::Array2;
+    #[cfg(feature = "serde")]
+    use ndarray::array;
 
     use super::{Component, Cycle, CycleStorage};
+    #[cfg(feature = "serde")]
+    use crate::persistence::{load_from_reader, save_to_writer};
     use crate::{EmbeddedTrajectory, F2Vector, Trajectory, error::Error, metric::Euclidean};
 
     /// Builds an embedded 2D trajectory that traces a recurrent loop around a
@@ -529,7 +653,7 @@ mod tests {
 
         // Several segments; each should produce the same span via the
         // in-memory walker path and the storage path.
-        let segments: &[std::ops::Range<usize>] =
+        let segments: &[Range<usize>] =
             &[0..embedded.trajectory().original_count(), 0..4, 4..9, 2..7];
         for segment in segments {
             let embedded_span = embedded.signature(segment.clone(), threshold).unwrap();
@@ -578,6 +702,7 @@ mod tests {
         };
 
         let storage = CycleStorage::from_parts(
+            0,
             0..100,
             10,
             1.5,
@@ -615,6 +740,7 @@ mod tests {
             }],
         };
         let union_storage = CycleStorage::from_parts(
+            0,
             0..20,
             10,
             1.5,
@@ -624,5 +750,73 @@ mod tests {
         );
         // Point 7 is in both [0, 10) and [5, 15).
         assert_eq!(union_storage.components_covering(7), vec![0, 1]);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn save_load_round_trip_preserves_queries() {
+        let embedded = loop_trajectory();
+        let threshold = 1.5;
+        let max_length = embedded.trajectory().original_count();
+        let storage = CycleStorage::build(
+            &embedded,
+            ..,
+            threshold,
+            max_length,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        // Round-trip the embedded and the storage through in-memory buffers.
+        let mut embedded_buffer: Vec<u8> = Vec::new();
+        save_to_writer(&mut embedded_buffer, &embedded).unwrap();
+        let loaded_embedded: EmbeddedTrajectory<Euclidean> =
+            load_from_reader(&embedded_buffer[..]).unwrap();
+
+        let mut storage_buffer: Vec<u8> = Vec::new();
+        save_to_writer(&mut storage_buffer, &storage).unwrap();
+        let loaded_storage =
+            CycleStorage::load_from_reader(&storage_buffer[..], &loaded_embedded).unwrap();
+
+        let segments: &[Range<usize>] =
+            &[0..embedded.trajectory().original_count(), 0..4, 4..9, 2..7];
+        for segment in segments {
+            assert_eq!(
+                storage.signature(segment.clone()).unwrap(),
+                loaded_storage.signature(segment.clone()).unwrap(),
+                "signature differs after round-trip for segment {segment:?}",
+            );
+        }
+        for point in 0..embedded.trajectory().original_count() {
+            assert_eq!(
+                storage.components_covering(point),
+                loaded_storage.components_covering(point),
+                "coverage differs after round-trip at point {point}",
+            );
+        }
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn load_rejects_mismatched_embedded() {
+        let embedded = loop_trajectory();
+        let storage =
+            CycleStorage::build(&embedded, .., 1.5, 9, &ExecutionBackend::Sequential).unwrap();
+        let mut buffer: Vec<u8> = Vec::new();
+        save_to_writer(&mut buffer, &storage).unwrap();
+
+        // A different embedded trajectory (different points) has a different
+        // fingerprint, so the cross-check must reject it.
+        let other_points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let other_trajectory = Trajectory::new(other_points.view(), Euclidean).unwrap();
+        let other_embedded =
+            EmbeddedTrajectory::new(other_trajectory, &ExecutionBackend::Sequential).unwrap();
+
+        let outcome = CycleStorage::load_from_reader(&buffer[..], &other_embedded);
+        assert!(matches!(outcome, Err(Error::FingerprintMismatch { .. })));
+
+        // The matching embedded loads successfully.
+        let reloaded = CycleStorage::load_from_reader(&buffer[..], &embedded);
+        assert!(reloaded.is_ok());
     }
 }
