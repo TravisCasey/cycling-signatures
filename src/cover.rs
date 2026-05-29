@@ -34,7 +34,7 @@ impl CubicalCover {
     ///
     /// `cubes` has shape `(n, dimension)`; rows are deduplicated and
     /// sorted lexicographically. Coordinates must fit in
-    /// `[i16::MIN, i16::MAX - 1]`. Cohomology generators are computed via
+    /// `[i32::MIN, i32::MAX - 1]`. Cohomology generators are computed via
     /// `chomp3rs` using `backend`.
     ///
     /// # Errors
@@ -42,7 +42,7 @@ impl CubicalCover {
     /// - [`Error::CubicalCoverEmptyCubes`] if `cubes` has zero rows.
     /// - [`Error::CubicalCoverZeroDimension`] if `cubes` has zero columns.
     /// - [`Error::CubeCoordinateOutOfRange`] if any cube coordinate is outside
-    ///   `[i16::MIN, i16::MAX - 1]`.
+    ///   `[i32::MIN, i32::MAX - 1]`.
     #[allow(clippy::needless_pass_by_value)]
     pub fn from_cubes(cubes: ArrayView2<'_, i64>, backend: &ExecutionBackend) -> Result<Self> {
         if cubes.nrows() == 0 {
@@ -53,7 +53,7 @@ impl CubicalCover {
         }
         for row in cubes.outer_iter() {
             for (axis, &coordinate) in row.iter().enumerate() {
-                if coordinate < i64::from(i16::MIN) || coordinate > i64::from(i16::MAX) - 1 {
+                if coordinate < i64::from(i32::MIN) || coordinate > i64::from(i32::MAX) - 1 {
                     return Err(Error::CubeCoordinateOutOfRange {
                         axis,
                         value: coordinate,
@@ -176,7 +176,7 @@ fn compute_generators(
                 .iter()
                 .copied()
                 .min()
-                .expect("canonical_cubes has at least one row") as i16
+                .expect("canonical_cubes has at least one row") as i32
         })
         .collect();
 
@@ -187,14 +187,14 @@ fn compute_generators(
                 .iter()
                 .copied()
                 .max()
-                .expect("canonical_cubes has at least one row") as i16
+                .expect("canonical_cubes has at least one row") as i32
                 + 1
         })
         .collect();
 
     let orthants: Vec<Orthant> = canonical_cubes
         .outer_iter()
-        .map(|row| row.iter().map(|&value| value as i16).collect())
+        .map(|row| row.iter().map(|&value| value as i32).collect())
         .collect();
 
     let grading_function =
@@ -209,7 +209,7 @@ fn compute_generators(
     let top_matching = TopCubicalMatching::<F2, OrthantTrie>::builder()
         .max_grade(0)
         .max_dimension(2)
-        .subgrid_shape(vec![1_i16; dimension])
+        .subgrid_shape(vec![1_i32; dimension])
         .filter_orthants(orthants)
         .backend(backend.clone())
         .build(complex);
@@ -319,16 +319,17 @@ mod tests {
 
     #[test]
     fn from_cubes_rejects_out_of_range_coordinate() {
-        // i16::MAX - 1 is 32_766. The (1, 0) coordinate is 32_767, one past the max.
-        let input = array![[0_i64, 0], [1, 32_767]];
+        // The largest valid coordinate is i32::MAX - 1; i32::MAX is one past it,
+        // reserved as headroom for the half-open bounding orthant.
+        let input = array![[0_i64, 0], [1, i64::from(i32::MAX)]];
         let outcome = CubicalCover::from_cubes(input.view(), &ExecutionBackend::default());
 
         assert!(matches!(
             outcome.unwrap_err(),
             Error::CubeCoordinateOutOfRange {
                 axis: 1,
-                value: 32_767,
-            },
+                value,
+            } if value == i64::from(i32::MAX),
         ));
     }
 
@@ -408,8 +409,8 @@ mod tests {
         ];
         let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
 
-        let base: Orthant = [100_i16, 100_i16].into();
-        let dual: Orthant = [99_i16, 100_i16].into();
+        let base: Orthant = [100_i32, 100_i32].into();
+        let dual: Orthant = [99_i32, 100_i32].into();
         let off_edge = Cube::new(base, dual);
 
         let class = cover.chain_class(std::iter::once(&off_edge));

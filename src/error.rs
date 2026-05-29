@@ -62,8 +62,8 @@ pub enum Error {
     /// accepts.
     #[error(
         "cube coordinate {value} at axis {axis} is outside the allowed range [{}, {}]",
-        i16::MIN,
-        i16::MAX - 1
+        i32::MIN,
+        i32::MAX - 1
     )]
     CubeCoordinateOutOfRange {
         /// The axis (cube column) of the offending coordinate.

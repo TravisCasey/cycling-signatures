@@ -321,8 +321,8 @@ where
 
     let dimension = cubes.ncols();
     let start_cube = point_to_cube_coords(segment.start);
-    let mut base: Orthant = start_cube.iter().map(|&value| value as i16).collect();
-    let mut dual: Orthant = start_cube.iter().map(|&value| value as i16 - 1).collect();
+    let mut base: Orthant = start_cube.iter().map(|&value| value as i32).collect();
+    let mut dual: Orthant = start_cube.iter().map(|&value| value as i32 - 1).collect();
 
     // Forward path: each consecutive pair of points.
     for point_index in segment.start..(segment.end - 1) {
