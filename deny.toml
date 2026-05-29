@@ -18,7 +18,6 @@ ignore = []
 confidence-threshold = 0.93
 allow = [
     "GPL-3.0-or-later",
-    "LGPL-3.0-or-later",
     "Apache-2.0",
     "MIT",
     "Unicode-3.0",
@@ -26,24 +25,15 @@ allow = [
     "ISC",
 ]
 
-# gmp-mpfr-sys (transitive via chomp3rs -> flint-sys) declares its license
-# as the deprecated SPDX form "LGPL-3.0+". Clarify it to the modern
-# equivalent so cargo-deny does not warn on the deprecated identifier.
-[[licenses.clarify]]
-crate = "gmp-mpfr-sys"
-expression = "LGPL-3.0-or-later"
-license-files = []
-
 [bans]
 multiple-versions = "deny"
 wildcards = "warn"
-skip = [
-    # rustc-hash 1.1.0 is a transitive dependency via chomp3rs -> bindgen;
-    # cycling_signatures itself uses 2.1.2 directly.
-    { name = "rustc-hash", version = "=1.1.0" },
-]
+skip = []
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/TravisCasey/CHomP3-rs.git"]
+allow-git = [
+    "https://github.com/TravisCasey/CHomP3-rs.git",
+    "https://github.com/rsmpi/rsmpi",
+]

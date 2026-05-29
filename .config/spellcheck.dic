@@ -1,4 +1,4 @@
-48
+54
 2D
 2Z
 Chebyshev
@@ -47,3 +47,9 @@ deduplication
 subsumption
 accessors
 densify
+endianness
+structs
+deserializes
+serializer's
+deserializer's
+persistable
