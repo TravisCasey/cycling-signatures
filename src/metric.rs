@@ -14,7 +14,7 @@ pub mod sphere_bundle;
 pub use sphere_bundle::SphereBundleMetric;
 
 /// A distance function over rows of a trajectory.
-pub trait Metric: Clone + Send + Sync + fmt::Debug + 'static {
+pub trait Metric: Send + Sync + fmt::Debug + 'static {
     /// A unique identifier for this metric.
     #[must_use]
     fn name(&self) -> String;
