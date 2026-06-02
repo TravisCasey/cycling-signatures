@@ -3,7 +3,7 @@
 
 //! Metric on the L2 sphere bundle.
 
-use ndarray::{Array1, ArrayView1, s};
+use ndarray::{Array1, ArrayView1, ArrayView2, s};
 
 use crate::{
     error::{Error, Result},
@@ -111,6 +111,34 @@ impl Metric for SphereBundleMetric {
         let position_distance = euclidean_distance(position_point.view(), position_other.view());
         let direction_distance = euclidean_distance(direction_point.view(), direction_other.view());
         position_distance.max(self.direction_weight * direction_distance)
+    }
+
+    /// # Panics
+    ///
+    /// Panics if `out.len() != pairs.len()`, or if any index in `pairs` is out
+    /// of bounds for `points`, or if any row has odd length or a zero-norm
+    /// direction half, or if any two rows have mismatched lengths.
+    fn fill_distances(
+        &self,
+        points: ArrayView2<'_, f64>,
+        pairs: &[(usize, usize)],
+        out: &mut [f64],
+    ) {
+        assert_eq!(out.len(), pairs.len(), "out and pairs length mismatch");
+        for (slot, &(left, right)) in out.iter_mut().zip(pairs) {
+            let point = points.row(left);
+            let other = points.row(right);
+            assert_eq!(point.len(), other.len(), "dimension mismatch");
+
+            let (position_point, direction_point) = split_and_normalize(point);
+            let (position_other, direction_other) = split_and_normalize(other);
+            let position_distance =
+                euclidean_distance(position_point.view(), position_other.view());
+            let direction_distance =
+                euclidean_distance(direction_point.view(), direction_other.view());
+
+            *slot = position_distance.max(self.direction_weight * direction_distance);
+        }
     }
 
     /// # Panics
@@ -243,8 +271,6 @@ mod tests {
 
     #[test]
     fn covers_triple_rejects_where_default_would_accept() {
-        use ndarray::array;
-
         // Three sphere-bundle points whose position halves form an equilateral
         // triangle of side 1.0 in 2D, with identical direction halves.
         //
@@ -268,6 +294,28 @@ mod tests {
         // 1/sqrt(3) circumradius) is accepted, confirming the smallest-
         // enclosing-ball cutoff is what's controlling the outcome.
         assert!(metric.covers_triple(p1.view(), p2.view(), p3.view(), 0.6));
+    }
+
+    #[test]
+    fn fill_distances_matches_per_pair() {
+        // Two 4D sphere-bundle points; verifies the batched path agrees with
+        // the per-pair distance on a concrete fixture.
+        let points = array![
+            [0.0, 0.0, 1.0, 0.0],
+            [3.0, 4.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0, 1.0],
+        ];
+        let pairs = [(0, 1), (1, 2), (0, 2)];
+        let metric = SphereBundleMetric::new(0.5).unwrap();
+
+        let mut out = vec![0.0; pairs.len()];
+        metric.fill_distances(points.view(), &pairs, &mut out);
+        for (slot, &(left_index, right_index)) in out.iter().zip(&pairs) {
+            assert!(
+                (slot - metric.distance(points.row(left_index), points.row(right_index))).abs()
+                    < 1e-12
+            );
+        }
     }
 
     #[cfg(feature = "serde")]

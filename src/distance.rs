@@ -381,6 +381,8 @@ fn build_distance_tile<M: Metric>(
     let points = trajectory.points();
 
     let mut tile = Array2::<f64>::from_elem((height, width), f64::INFINITY);
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    let mut positions: Vec<(usize, usize)> = Vec::new();
     for col in 0..width {
         let start_index = original_indices[base + col];
         // Row 0: self-comparison.
@@ -392,8 +394,15 @@ fn build_distance_tile<M: Metric>(
                 break;
             }
             let end_index = original_indices[original_offset];
-            tile[(row, col)] = metric.distance(points.row(start_index), points.row(end_index));
+            pairs.push((start_index, end_index));
+            positions.push((row, col));
         }
+    }
+
+    let mut buffer = vec![0.0_f64; pairs.len()];
+    metric.fill_distances(points, &pairs, &mut buffer);
+    for (&(row, col), &distance) in positions.iter().zip(&buffer) {
+        tile[(row, col)] = distance;
     }
 
     Ok(tile)
