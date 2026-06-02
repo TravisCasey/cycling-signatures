@@ -352,10 +352,11 @@ impl CycleStorage {
             .expect("class vector lengths match num_generators by construction"))
     }
 
-    /// Component IDs whose stored cycles cover trajectory point `point`.
+    /// Component IDs whose stored cycles cover sample index `point`.
     ///
-    /// Returns an empty vector when `point` is outside [`Self::extent`]. IDs
-    /// are sorted ascending.
+    /// `point` is a sample index in original-index space, consistent with the
+    /// original indices stored in [`Self::extent`]. Returns an empty vector
+    /// when `point` is outside [`Self::extent`]. IDs are sorted ascending.
     #[allow(clippy::missing_panics_doc)]
     #[must_use]
     pub fn components_covering(&self, point: usize) -> Vec<u32> {

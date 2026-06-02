@@ -3,10 +3,10 @@
 
 //! Segment-containment index over intervals carrying integer payloads.
 //!
-//! [`IntervalSubsumptionIndex`] enables efficient queries of which stored
-//! intervals are fully contained in a given range?" Per-payload
-//! minimal-subsumption deduplication at construction drops intervals that
-//! strictly contain another with the same payload.
+//! [`IntervalSubsumptionIndex`] answers, for a given range, which stored
+//! intervals are fully contained in it. At construction, per-payload
+//! minimal-subsumption deduplication drops any interval that strictly contains
+//! another interval with the same payload.
 
 use std::ops::Range;
 

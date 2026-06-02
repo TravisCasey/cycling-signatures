@@ -186,9 +186,15 @@ impl EmbeddedTrajectory {
     }
 
     /// The sequence of 1-cube edges traversed when walking the cycle
-    /// described by `segment`: forward along the trajectory from
-    /// `points()[segment.start]` to `points()[segment.end - 1]`, then a
-    /// closing direct cube-to-cube path back to `points()[segment.start]`.
+    /// described by `segment`: forward along the trajectory from the sample at
+    /// `segment.start` to the sample at `segment.end - 1`, then a closing
+    /// direct cube-to-cube path back to the sample at `segment.start`.
+    ///
+    /// `segment` is interpreted in sample-index space
+    /// (`0..trajectory.original_count()`). For resampled trajectories, sample
+    /// indices are translated through
+    /// [`Trajectory::original_indices`](crate::Trajectory::original_indices)
+    /// to the corresponding dense-row positions before walking.
     ///
     /// Useful for visualizing the cubical representation of a particular cycle.
     /// For the homology class only, prefer [`cycle_class`](Self::cycle_class),
@@ -204,9 +210,9 @@ impl EmbeddedTrajectory {
     ///   trajectory; this variant surfaces here for
     ///   [`EmbeddedTrajectory::from_parts`]-constructed trajectories whose
     ///   queried segment violates the invariant.
-    /// - [`Error::CycleEndpointsNonAdjacent`] if the cubes of
-    ///   `points()[segment.start]` and `points()[segment.end - 1]` differ by
-    ///   more than 1 in some axis.
+    /// - [`Error::CycleEndpointsNonAdjacent`] if the cubes of the trajectory
+    ///   samples at `segment.start` and `segment.end - 1` differ by more than 1
+    ///   in some axis.
     ///
     /// # Panics
     ///

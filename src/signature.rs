@@ -7,8 +7,7 @@
 //! classes spanned by a trajectory's recurrent cycles, packaged together with
 //! the per-component decomposition that produced it. The decomposition is
 //! exposed as a slice of [`CycleComponent`] for inspection, each pairing a set
-//! of cycle segments in trajectory-index space with their shared homology
-//! class.
+//! of cycle segments in sample-index space with their shared homology class.
 
 use std::ops::Range;
 
@@ -37,8 +36,11 @@ pub struct CyclingSignature {
 #[derive(Debug, Clone)]
 pub struct CycleComponent {
     /// The cycle segments grouped into this component, each a half-open range
-    /// `start..end` in `trajectory.points()`-index space covering the points
-    /// `points()[start..end]`.
+    /// `start..end` in sample-index space (`0..trajectory.original_count()`).
+    /// Each range is ready to pass directly to
+    /// [`EmbeddedTrajectory::walk_cycle`](crate::EmbeddedTrajectory::walk_cycle)
+    /// or
+    /// [`EmbeddedTrajectory::cycle_class`](crate::EmbeddedTrajectory::cycle_class).
     pub cycles: Vec<Range<usize>>,
     /// The homology class in the cover's generator basis for every segment in
     /// this component.
