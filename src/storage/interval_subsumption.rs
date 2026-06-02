@@ -91,18 +91,6 @@ impl IntervalSubsumptionIndex {
             .take_while(move |interval| interval.begin < range.end)
             .filter(move |interval| interval.end <= range.end)
     }
-
-    /// The stored intervals, in `(begin, end)`-ascending order.
-    #[allow(dead_code)]
-    pub(crate) fn intervals(&self) -> &[StoredInterval] {
-        &self.intervals
-    }
-
-    /// Number of stored intervals after deduplication.
-    #[allow(dead_code)]
-    pub(crate) fn len(&self) -> usize {
-        self.intervals.len()
-    }
 }
 
 #[cfg(test)]
@@ -130,7 +118,7 @@ mod tests {
 
     fn index_as_set(index: &IntervalSubsumptionIndex) -> BTreeSet<(u32, u32, u32)> {
         index
-            .intervals()
+            .intervals
             .iter()
             .map(|interval| (interval.begin, interval.end, interval.payload))
             .collect()
@@ -183,7 +171,7 @@ mod tests {
     fn containment_oracle() {
         let raw: &[(Range<u32>, u32)] = &[(0..5, 0), (2..5, 1), (5..9, 2), (1..3, 3), (7..9, 4)];
         let index = IntervalSubsumptionIndex::new(raw.iter().cloned());
-        let stored: Vec<StoredInterval> = index.intervals().to_vec();
+        let stored: Vec<StoredInterval> = index.intervals.clone();
 
         let queries: &[Range<u32>] = &[
             0..10, // covers everything
