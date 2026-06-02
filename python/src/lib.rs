@@ -6,6 +6,7 @@
 mod errors;
 mod interpolation;
 mod metric;
+mod trajectory;
 
 use pyo3::prelude::*;
 
@@ -16,5 +17,6 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     errors::register(module)?;
     metric::register(module)?;
     interpolation::register(module)?;
+    trajectory::register(module)?;
     Ok(())
 }
