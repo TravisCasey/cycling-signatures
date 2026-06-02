@@ -134,7 +134,7 @@ fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Ran
 ///   with `radius = threshold / 2`.
 ///
 /// The transitive closure of this relation partitions the below-threshold
-/// candidates. Components that contain a length-1 entry (a self-comparison,
+/// candidates. Components that contain a length 1 entry (a self-comparison,
 /// carrying the trivial cycle) are filtered before return; all remaining
 /// components group cycles by signature equivalence.
 ///
@@ -153,15 +153,19 @@ pub(crate) fn detect_components(
     max_length: usize,
 ) -> Result<Vec<Vec<Range<usize>>>> {
     let range = normalize_segment(segment, trajectory.original_count())?;
-    let base = range.start;
-    let tile = build_distance_tile(trajectory, metric, range, max_length)?;
-    Ok(detect_components_in_tile(
-        tile.view(),
+    // A tile at least as wide as the segment holds the whole segment in one
+    // tile, so this routes through the streaming path without splitting into
+    // multiple tiles.
+    let tile_width = range.len().max(max_length);
+    detect_components_streaming(
         trajectory,
         metric,
-        base,
+        range,
         threshold,
-    ))
+        max_length,
+        tile_width,
+        &ExecutionBackend::Sequential,
+    )
 }
 
 /// Connected components of below-threshold pair-edges over `range`, streamed
