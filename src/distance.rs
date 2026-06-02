@@ -145,27 +145,20 @@ fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Ran
 ///
 /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a valid
 ///   sub-range of `0..trajectory.original_count()`.
-/// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
-///   trajectory.bound()`.
-pub(crate) fn detect_components<M: Metric>(
-    trajectory: &Trajectory<M>,
+pub(crate) fn detect_components(
+    trajectory: &Trajectory,
+    metric: &dyn Metric,
     segment: impl RangeBounds<usize>,
     threshold: f64,
     max_length: usize,
 ) -> Result<Vec<Vec<Range<usize>>>> {
     let range = normalize_segment(segment, trajectory.original_count())?;
-    let trajectory_bound = trajectory.bound();
-    if threshold < trajectory_bound {
-        return Err(Error::ThresholdBelowTrajectoryBound {
-            given: threshold,
-            trajectory_bound,
-        });
-    }
     let base = range.start;
-    let tile = build_distance_tile(trajectory, range, max_length)?;
+    let tile = build_distance_tile(trajectory, metric, range, max_length)?;
     Ok(detect_components_in_tile(
         tile.view(),
         trajectory,
+        metric,
         base,
         threshold,
     ))
@@ -182,11 +175,10 @@ pub(crate) fn detect_components<M: Metric>(
 ///
 /// - [`Error::WindowOutOfBounds`] if `range` is outside the trajectory's
 ///   original-index space.
-/// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
-///   trajectory.bound()`.
 /// - [`Error::InvalidMaxLength`] if `max_length > tile_width`.
-pub(crate) fn detect_components_streaming<M: Metric>(
-    trajectory: &Trajectory<M>,
+pub(crate) fn detect_components_streaming(
+    trajectory: &Trajectory,
+    metric: &dyn Metric,
     range: Range<usize>,
     threshold: f64,
     max_length: usize,
@@ -198,13 +190,6 @@ pub(crate) fn detect_components_streaming<M: Metric>(
             start: range.start,
             end: range.end,
             trajectory_length: trajectory.original_count(),
-        });
-    }
-    let trajectory_bound = trajectory.bound();
-    if threshold < trajectory_bound {
-        return Err(Error::ThresholdBelowTrajectoryBound {
-            given: threshold,
-            trajectory_bound,
         });
     }
     if max_length > tile_width {
@@ -221,9 +206,10 @@ pub(crate) fn detect_components_streaming<M: Metric>(
         tile_column_ranges.into_iter(),
         |column_range: Range<usize>| {
             let start = column_range.start;
-            let tile = build_distance_tile(trajectory, column_range, max_length)
+            let tile = build_distance_tile(trajectory, metric, column_range, max_length)
                 .expect("tile column range fits inside the validated window");
-            let components = detect_components_in_tile(tile.view(), trajectory, start, threshold);
+            let components =
+                detect_components_in_tile(tile.view(), trajectory, metric, start, threshold);
             vec![(start, components)]
         },
     );
@@ -254,14 +240,14 @@ pub(crate) fn detect_components_streaming<M: Metric>(
 /// original-index space. Any component that has merged with a length-1 entry
 /// (a self-comparison at `row = 0`) is filtered before return.
 #[allow(clippy::needless_pass_by_value)]
-fn detect_components_in_tile<M: Metric>(
+fn detect_components_in_tile(
     tile: ArrayView2<'_, f64>,
-    trajectory: &Trajectory<M>,
+    trajectory: &Trajectory,
+    metric: &dyn Metric,
     base: usize,
     threshold: f64,
 ) -> Vec<Vec<Range<usize>>> {
     let width = tile.ncols();
-    let metric = trajectory.metric();
     let points = trajectory.points();
     let original_indices = trajectory.original_indices();
     let ball_radius = threshold / 2.0;
@@ -359,8 +345,9 @@ fn detect_components_in_tile<M: Metric>(
 ///
 /// - [`Error::WindowOutOfBounds`] if `range` is not a valid sub-range of
 ///   `0..trajectory.original_count()`.
-fn build_distance_tile<M: Metric>(
-    trajectory: &Trajectory<M>,
+fn build_distance_tile(
+    trajectory: &Trajectory,
+    metric: &dyn Metric,
     range: Range<usize>,
     max_length: usize,
 ) -> Result<Array2<f64>> {
@@ -377,7 +364,6 @@ fn build_distance_tile<M: Metric>(
     let height = max_length;
     let base = range.start;
     let original_indices = trajectory.original_indices();
-    let metric = trajectory.metric();
     let points = trajectory.points();
 
     let mut tile = Array2::<f64>::from_elem((height, width), f64::INFINITY);
@@ -416,35 +402,26 @@ mod tests {
     use ndarray::{Array2, array};
 
     use super::detect_components;
-    use crate::{Trajectory, error::Error, metric::Euclidean};
+    use crate::{
+        Trajectory, error::Error, metric::Euclidean, trajectory::max_consecutive_distance,
+    };
 
-    fn small_trajectory() -> Trajectory<Euclidean> {
+    fn small_trajectory() -> Trajectory {
         let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0], [2.0, 0.0]];
-        Trajectory::new(points.view(), Euclidean).unwrap()
+        Trajectory::new(points.view()).unwrap()
     }
 
     #[test]
     fn rejects_segment_out_of_bounds() {
         let trajectory = small_trajectory();
-        let err = detect_components(&trajectory, 0..10, 0.5, 5).unwrap_err();
+        let err = detect_components(&trajectory, &Euclidean, 0..10, 0.5, 5).unwrap_err();
         assert!(matches!(err, Error::WindowOutOfBounds { .. }));
-    }
-
-    #[test]
-    fn rejects_threshold_below_trajectory_bound() {
-        let trajectory = small_trajectory();
-        let err = detect_components(&trajectory, 0..5, 0.1, 5).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::ThresholdBelowTrajectoryBound { given, trajectory_bound }
-                if (given - 0.1).abs() < 1e-12 && (trajectory_bound - 0.5).abs() < 1e-12
-        ));
     }
 
     #[test]
     fn straight_line_trajectory_emits_no_real_recurrence() {
         let trajectory = small_trajectory();
-        let components = detect_components(&trajectory, 0..5, 0.5, 5).unwrap();
+        let components = detect_components(&trajectory, &Euclidean, 0..5, 0.5, 5).unwrap();
         assert!(
             components.is_empty(),
             "expected no non-trivial components for a straight-line trajectory, got {components:?}",
@@ -468,8 +445,8 @@ mod tests {
             [0.0, 0.5],
             [0.0, 0.0],
         ];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let components = detect_components(&trajectory, .., 0.6, 15).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let components = detect_components(&trajectory, &Euclidean, .., 0.6, 15).unwrap();
 
         let found = components.iter().any(|component| {
             component
@@ -512,13 +489,15 @@ mod tests {
             .map(|index| (index as f64 * 0.4).sin() * 2.0)
             .collect();
         let points = Array2::from_shape_vec((30, 1), positions).unwrap();
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let threshold = trajectory.bound().max(0.5);
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let bound = max_consecutive_distance(trajectory.points(), &Euclidean);
+        let threshold = bound.max(0.5);
         let max_length = 5;
         let range = 0..30;
 
         let single_tile = super::detect_components_streaming(
             &trajectory,
+            &Euclidean,
             range.clone(),
             threshold,
             max_length,
@@ -529,6 +508,7 @@ mod tests {
 
         let multi_tile = super::detect_components_streaming(
             &trajectory,
+            &Euclidean,
             range.clone(),
             threshold,
             max_length,
@@ -553,8 +533,8 @@ mod tests {
             [0.0, 0.5],
             [0.0, 0.0],
         ];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let components = detect_components(&trajectory, .., 0.6, 9).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let components = detect_components(&trajectory, &Euclidean, .., 0.6, 9).unwrap();
 
         let found = components.iter().any(|component| {
             component

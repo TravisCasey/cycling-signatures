@@ -1,8 +1,7 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! A trajectory of points in a metric space, with a recorded
-//! consecutive-distance bound.
+//! A trajectory of points in a metric space.
 
 use ndarray::{Array2, ArrayView2, Axis};
 
@@ -15,10 +14,8 @@ use crate::{
 
 /// A trajectory of points in a metric space.
 ///
-/// Carries the metric and the maximum metric distance between consecutive
-/// points. The bound is computed when this type is constructed; it can be
-/// set below a certain value using interpolation with the
-/// [`resample()`](Self::resample) method.
+/// Pure data: the dense point array together with the map from each user-facing
+/// sample to its row in that array.
 ///
 /// # Sample vs. point indices
 ///
@@ -50,18 +47,15 @@ use crate::{
 /// form directly.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct Trajectory<M: Metric> {
+pub struct Trajectory {
     #[cfg_attr(feature = "serde", serde(with = "crate::persistence::npy_field"))]
     points: Array2<f64>,
-    metric: M,
-    bound: f64,
     original_indices: Vec<usize>,
 }
 
-impl<M: Metric> Trajectory<M> {
-    /// Computes the maximum consecutive metric distance between the given
-    /// `points` and records it as the bound. Single-row input is accepted with
-    /// `bound == 0.0`.
+impl Trajectory {
+    /// Builds a trajectory from a dense point array, mapping each row to a
+    /// sample index in order.
     ///
     /// # Examples
     ///
@@ -70,9 +64,8 @@ impl<M: Metric> Trajectory<M> {
     /// use ndarray::array;
     ///
     /// let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]];
-    /// let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-    /// // Max consecutive Euclidean distance is sqrt(3^2 + 4^2) = 5.
-    /// assert!((trajectory.bound() - 5.0).abs() < 1e-12);
+    /// let trajectory = Trajectory::new(points.view()).unwrap();
+    /// assert_eq!(trajectory.original_count(), 3);
     /// ```
     ///
     /// # Errors
@@ -82,7 +75,7 @@ impl<M: Metric> Trajectory<M> {
     /// - [`Error::TrajectoryEmpty`] if `points` has zero rows.
     /// - [`Error::TrajectoryNonFinite`] if any coordinate is not finite.
     #[allow(clippy::needless_pass_by_value)]
-    pub fn new(points: ArrayView2<'_, f64>, metric: M) -> Result<Self> {
+    pub fn new(points: ArrayView2<'_, f64>) -> Result<Self> {
         if points.nrows() == 0 {
             return Err(Error::TrajectoryEmpty);
         }
@@ -93,19 +86,15 @@ impl<M: Metric> Trajectory<M> {
                 }
             }
         }
-        let bound = max_consecutive_distance(points, &metric);
         let original_indices = (0..points.nrows()).collect();
         Ok(Self {
             points: points.to_owned(),
-            metric,
-            bound,
             original_indices,
         })
     }
 
     /// Resamples `interpolator` so that consecutive output samples are within
-    /// `bound` metric distance. The recorded [`bound()`](Self::bound) is the
-    /// achieved maximum and is at most `bound`.
+    /// `bound` metric distance under `metric`.
     ///
     /// # Examples
     ///
@@ -116,8 +105,14 @@ impl<M: Metric> Trajectory<M> {
     /// let knots = array![0.0, 1.0, 2.0];
     /// let values = array![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0]];
     /// let spline = CubicSpline::new(knots, values.view()).unwrap();
-    /// let trajectory = Trajectory::resample(&spline, Euclidean, 0.5).unwrap();
-    /// assert!(trajectory.bound() <= 0.5);
+    /// let trajectory = Trajectory::resample(&spline, &Euclidean, 0.5).unwrap();
+    /// let embedded = EmbeddedTrajectory::new(
+    ///     trajectory,
+    ///     Box::new(Euclidean),
+    ///     &ExecutionBackend::default(),
+    /// )
+    /// .unwrap();
+    /// assert!(embedded.bound() <= 0.5);
     /// ```
     ///
     /// # Errors
@@ -130,7 +125,11 @@ impl<M: Metric> Trajectory<M> {
     /// - [`Error::ResampleStagnation`] if bisection cannot reduce the metric
     ///   distance below `bound` at machine precision.
     #[allow(clippy::missing_panics_doc)]
-    pub fn resample<I: Interpolator>(interpolator: &I, metric: M, bound: f64) -> Result<Self> {
+    pub fn resample<I: Interpolator>(
+        interpolator: &I,
+        metric: &dyn Metric,
+        bound: f64,
+    ) -> Result<Self> {
         let knots = interpolator.knots();
         if knots.len() < 2 {
             return Err(Error::InterpolationKnotCount {
@@ -186,11 +185,8 @@ impl<M: Metric> Trajectory<M> {
         for (row, sample) in samples.iter().enumerate() {
             points.index_axis_mut(Axis(0), row).assign(sample);
         }
-        let bound = max_consecutive_distance(points.view(), &metric);
         Ok(Self {
             points,
-            metric,
-            bound,
             original_indices,
         })
     }
@@ -203,19 +199,6 @@ impl<M: Metric> Trajectory<M> {
     #[must_use]
     pub fn points(&self) -> ArrayView2<'_, f64> {
         self.points.view()
-    }
-
-    /// The metric this trajectory was built under.
-    #[must_use]
-    pub fn metric(&self) -> &M {
-        &self.metric
-    }
-
-    /// The maximum metric distance between any pair of consecutive points: the
-    /// achieved upper bound on consecutive-distance for this trajectory.
-    #[must_use]
-    pub fn bound(&self) -> f64 {
-        self.bound
     }
 
     /// The number of dense rows in [`points`](Self::points).
@@ -261,19 +244,17 @@ impl<M: Metric> Trajectory<M> {
 
     /// A stable 64-bit fingerprint of this trajectory's content.
     ///
-    /// Derived from the metric name, the points, the recorded bound, and the
-    /// original-index map. Two trajectories with the same content fingerprint
-    /// identically; changing any of those inputs changes the fingerprint.
+    /// Derived from the points and the sample-to-point index map. Two
+    /// trajectories with the same content fingerprint identically; changing
+    /// either input changes the fingerprint.
     #[must_use]
     pub fn fingerprint(&self) -> u64 {
         let mut hasher = Fingerprint::new();
-        hasher.write(self.metric.name().as_bytes());
         hasher.write(&(self.points.nrows() as u64).to_le_bytes());
         hasher.write(&(self.points.ncols() as u64).to_le_bytes());
         for &value in &self.points {
             hasher.write(&value.to_le_bytes());
         }
-        hasher.write(&self.bound.to_bits().to_le_bytes());
         hasher.write(&(self.original_indices.len() as u64).to_le_bytes());
         for &index in &self.original_indices {
             hasher.write(&(index as u64).to_le_bytes());
@@ -329,7 +310,7 @@ impl Interval {
 }
 
 #[allow(clippy::needless_pass_by_value)]
-fn max_consecutive_distance<M: Metric>(points: ArrayView2<'_, f64>, metric: &M) -> f64 {
+pub(crate) fn max_consecutive_distance(points: ArrayView2<'_, f64>, metric: &dyn Metric) -> f64 {
     let mut max = 0.0_f64;
     for point_index in 0..points.nrows().saturating_sub(1) {
         let distance = metric.distance(points.row(point_index), points.row(point_index + 1));
@@ -353,7 +334,7 @@ fn assert_finite_sample(sample: &ndarray::Array1<f64>, row: usize) -> Result<()>
 mod tests {
     use ndarray::{Array1, Array2, array};
 
-    use super::Trajectory;
+    use super::{Trajectory, max_consecutive_distance};
     use crate::{
         error::Error,
         interpolation::{CubicSpline, Interpolator},
@@ -361,14 +342,10 @@ mod tests {
     };
 
     #[test]
-    fn new_records_max_consecutive_distance() {
-        // Three rows: distance from row 0 to row 1 is 3 under Euclidean
-        // (sqrt(3^2 + 0) = 3); distance from row 1 to row 2 is 5
-        // (sqrt(3^2 + 4^2) = 5). Max = 5.
+    fn new_records_points_and_index_map() {
         let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
 
-        assert!((trajectory.bound() - 5.0).abs() < 1e-12);
         assert_eq!(trajectory.len(), 3);
         assert_eq!(trajectory.dimension(), 2);
         assert_eq!(trajectory.original_indices(), &[0, 1, 2]);
@@ -376,18 +353,9 @@ mod tests {
     }
 
     #[test]
-    fn new_single_point_bound_zero() {
-        let points = array![[1.0, 2.0, 3.0]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-
-        assert!(trajectory.bound() < f64::EPSILON);
-        assert_eq!(trajectory.len(), 1);
-    }
-
-    #[test]
     fn new_returns_err_on_empty() {
         let points = Array2::<f64>::zeros((0, 3));
-        let outcome = Trajectory::new(points.view(), Euclidean);
+        let outcome = Trajectory::new(points.view());
 
         assert!(matches!(outcome.unwrap_err(), Error::TrajectoryEmpty));
     }
@@ -395,7 +363,7 @@ mod tests {
     #[test]
     fn new_returns_err_on_non_finite() {
         let points = array![[0.0, 0.0], [1.0, f64::NAN]];
-        let outcome = Trajectory::new(points.view(), Euclidean);
+        let outcome = Trajectory::new(points.view());
 
         assert!(matches!(
             outcome.unwrap_err(),
@@ -410,9 +378,9 @@ mod tests {
         let spline = CubicSpline::new(knots, values.view()).unwrap();
         let bound = 0.5;
 
-        let trajectory = Trajectory::resample(&spline, Euclidean, bound).unwrap();
+        let trajectory = Trajectory::resample(&spline, &Euclidean, bound).unwrap();
 
-        assert!(trajectory.bound() <= bound);
+        assert!(max_consecutive_distance(trajectory.points(), &Euclidean) <= bound);
         for point_index in 0..trajectory.len() - 1 {
             let distance = Euclidean.distance(
                 trajectory.points().row(point_index),
@@ -439,7 +407,7 @@ mod tests {
         let values = array![[0.0, 0.0], [1.0, 1.0], [3.0, 2.0]];
         let spline = CubicSpline::new(knots.clone(), values.view()).unwrap();
 
-        let trajectory = Trajectory::resample(&spline, Euclidean, 0.1).unwrap();
+        let trajectory = Trajectory::resample(&spline, &Euclidean, 0.1).unwrap();
 
         let last = trajectory.points().row(trajectory.len() - 1).to_owned();
         let knot_last = spline.sample(knots[knots.len() - 1]);
@@ -466,7 +434,7 @@ mod tests {
             }
         }
 
-        let outcome = Trajectory::resample(&SingleKnotInterpolator, Euclidean, 0.1);
+        let outcome = Trajectory::resample(&SingleKnotInterpolator, &Euclidean, 0.1);
 
         assert!(matches!(
             outcome.unwrap_err(),
@@ -502,7 +470,7 @@ mod tests {
             }
         }
 
-        let outcome = Trajectory::resample(&PathologicalInterpolator, Euclidean, 0.1);
+        let outcome = Trajectory::resample(&PathologicalInterpolator, &Euclidean, 0.1);
 
         assert!(matches!(
             outcome.unwrap_err(),

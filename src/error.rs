@@ -154,17 +154,17 @@ pub enum Error {
         trajectory_length: usize,
     },
 
-    /// A cycle-detection threshold below the trajectory's recorded
-    /// consecutive-distance bound: cycles below this resolution are not
-    /// meaningfully detectable.
+    /// A cycle-detection threshold below the embedded trajectory's
+    /// consecutive-distance bound under its metric: cycles below this
+    /// resolution are not meaningfully detectable.
     #[error(
-        "adjacency threshold {given} is below the trajectory's consecutive-distance bound \
-         {trajectory_bound}"
+        "adjacency threshold {given} is below the consecutive-distance bound {trajectory_bound}"
     )]
     ThresholdBelowTrajectoryBound {
         /// The threshold the caller supplied.
         given: f64,
-        /// The trajectory's recorded consecutive-distance bound.
+        /// The embedded trajectory's consecutive-distance bound under its
+        /// metric.
         trajectory_bound: f64,
     },
 
@@ -201,18 +201,6 @@ pub enum Error {
         expected: u32,
         /// The version found in the file.
         found: u32,
-    },
-
-    /// A loaded cycle storage's recorded fingerprint does not match the
-    /// embedded trajectory it was loaded against.
-    #[error(
-        "stored fingerprint {found} does not match the embedded trajectory fingerprint {expected}"
-    )]
-    FingerprintMismatch {
-        /// The embedded trajectory's fingerprint.
-        expected: u64,
-        /// The fingerprint recorded in the loaded storage.
-        found: u64,
     },
 
     /// Serialization, deserialization, or input/output failure in the storage

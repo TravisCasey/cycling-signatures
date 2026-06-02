@@ -4,8 +4,6 @@
 //! Embedded trajectory: a `Trajectory` paired with a `CubicalCover` and the
 //! mapping from trajectory point to cube index.
 
-#[cfg(feature = "serde")]
-use std::path::Path;
 use std::{
     cmp::Ordering,
     ops::{Range, RangeBounds},
@@ -13,11 +11,7 @@ use std::{
 
 use chomp3rs::{Cube, ExecutionBackend, Orthant};
 use ndarray::{Array2, ArrayView2};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-#[cfg(feature = "serde")]
-use crate::persistence::{load_from_path, save_to_path};
 use crate::{
     F2Vector,
     cover::CubicalCover,
@@ -25,29 +19,36 @@ use crate::{
     error::{Error, Result},
     metric::Metric,
     signature::{CycleComponent, CyclingSignature},
-    trajectory::Trajectory,
+    trajectory::{Trajectory, max_consecutive_distance},
     util::{fingerprint::Fingerprint, range::normalize_segment},
 };
 
-/// Pairs a [`Trajectory<M>`](Trajectory) with a [`CubicalCover`] and the
-/// per-point cube-index map.
+/// Pairs a [`Trajectory`] with a [`CubicalCover`], the metric used for queries,
+/// and the per-point cube-index map.
 #[derive(Debug)]
-pub struct EmbeddedTrajectory<M: Metric> {
-    trajectory: Trajectory<M>,
+pub struct EmbeddedTrajectory {
+    trajectory: Trajectory,
     cover: CubicalCover,
+    metric: Box<dyn Metric>,
     point_to_cube: Vec<usize>,
+    bound: f64,
 }
 
-impl<M: Metric> EmbeddedTrajectory<M> {
+impl EmbeddedTrajectory {
     /// Pairs `trajectory` with a cover of exactly the integer cubes it visits,
-    /// and records each point's cube index in `trajectory.points()` order.
+    /// records each point's cube index in `trajectory.points()` order, and
+    /// caches the consecutive-distance bound under `metric`.
     ///
     /// # Errors
     ///
     /// - [`Error::ConsecutiveCubesNonAdjacent`] if consecutive trajectory
     ///   points land in cubes differing by more than 1 in some axis.
     /// - Any error from [`CubicalCover::from_cubes`].
-    pub fn new(trajectory: Trajectory<M>, backend: &ExecutionBackend) -> Result<Self> {
+    pub fn new(
+        trajectory: Trajectory,
+        metric: Box<dyn Metric>,
+        backend: &ExecutionBackend,
+    ) -> Result<Self> {
         let points = trajectory.points();
         for point_index in 0..(points.nrows().saturating_sub(1)) {
             for axis in 0..points.ncols() {
@@ -66,17 +67,45 @@ impl<M: Metric> EmbeddedTrajectory<M> {
 
         let (canonical_cubes, point_to_cube) = walk_and_canonicalize(&trajectory);
         let cover = CubicalCover::from_cubes(canonical_cubes.view(), backend)?;
+        let bound = max_consecutive_distance(trajectory.points(), &*metric);
         Ok(Self {
             trajectory,
             cover,
+            metric,
             point_to_cube,
+            bound,
         })
     }
 
     /// The wrapped trajectory.
     #[must_use]
-    pub fn trajectory(&self) -> &Trajectory<M> {
+    pub fn trajectory(&self) -> &Trajectory {
         &self.trajectory
+    }
+
+    /// The metric used to compute distances over this trajectory.
+    #[must_use]
+    pub fn metric(&self) -> &dyn Metric {
+        &*self.metric
+    }
+
+    /// The maximum metric distance between any pair of consecutive points: the
+    /// achieved resolution of the trajectory under the embedded metric.
+    #[must_use]
+    pub fn bound(&self) -> f64 {
+        self.bound
+    }
+
+    /// Returns an error if `threshold` is below the embedded trajectory's
+    /// consecutive-distance bound under its metric.
+    pub(crate) fn check_threshold(&self, threshold: f64) -> Result<()> {
+        if threshold < self.bound {
+            return Err(Error::ThresholdBelowTrajectoryBound {
+                given: threshold,
+                trajectory_bound: self.bound,
+            });
+        }
+        Ok(())
     }
 
     /// The wrapped cover.
@@ -114,7 +143,11 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     /// - [`Error::EmbeddedDimensionMismatch`] if dimensions disagree.
     /// - [`Error::EmbeddedCubeNotInCover`] if any point maps to a cube absent
     ///   from the cover.
-    pub fn from_parts(trajectory: Trajectory<M>, cover: CubicalCover) -> Result<Self> {
+    pub fn from_parts(
+        trajectory: Trajectory,
+        cover: CubicalCover,
+        metric: Box<dyn Metric>,
+    ) -> Result<Self> {
         if trajectory.dimension() != cover.dimension() {
             return Err(Error::EmbeddedDimensionMismatch {
                 trajectory: trajectory.dimension(),
@@ -140,10 +173,13 @@ impl<M: Metric> EmbeddedTrajectory<M> {
             }
         }
 
+        let bound = max_consecutive_distance(trajectory.points(), &*metric);
         Ok(Self {
             trajectory,
             cover,
+            metric,
             point_to_cube,
+            bound,
         })
     }
 
@@ -227,7 +263,8 @@ impl<M: Metric> EmbeddedTrajectory<M> {
         Ok(self.cover.chain_class(edges.iter()))
     }
 
-    /// A stable 64-bit fingerprint combining the trajectory and cover.
+    /// A stable 64-bit fingerprint combining the trajectory, the cover, and the
+    /// metric identity.
     ///
     /// The per-point cube map is not hashed: it is fully determined by the
     /// trajectory points and the cover cubes, both already covered.
@@ -236,37 +273,8 @@ impl<M: Metric> EmbeddedTrajectory<M> {
         let mut hasher = Fingerprint::new();
         hasher.write(&self.trajectory.fingerprint().to_le_bytes());
         hasher.write(&self.cover.fingerprint().to_le_bytes());
+        hasher.write(self.metric.name().as_bytes());
         hasher.finish()
-    }
-
-    /// Writes this embedded trajectory to `path` in the crate's binary format.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Storage`] on serialization or input/output failure.
-    #[cfg(feature = "serde")]
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()>
-    where
-        M: Serialize,
-    {
-        save_to_path(path, self)
-    }
-
-    /// Reads an embedded trajectory written by [`save`](Self::save).
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::FormatVersionMismatch`] if the file's format version differs.
-    /// - [`Error::Storage`] on deserialization or input/output failure, or when
-    ///   the file's trajectory and cover are inconsistent (for example,
-    ///   mismatched dimensions, or a trajectory point whose cube is absent from
-    ///   the cover).
-    #[cfg(feature = "serde")]
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self>
-    where
-        M: DeserializeOwned,
-    {
-        load_from_path(path)
     }
 
     /// The cycling signature of the trajectory over the given segment.
@@ -287,7 +295,7 @@ impl<M: Metric> EmbeddedTrajectory<M> {
     /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
     ///   valid sub-range of the trajectory.
     /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
-    ///   self.trajectory().bound()`.
+    ///   self.bound()`.
     /// - [`Error::ConsecutiveCubesNonAdjacent`] when a detected cycle contains
     ///   consecutive points in non-adjacent cubes. This is only possible when
     ///   using [`from_parts`](Self::from_parts)-constructed trajectories that
@@ -300,8 +308,10 @@ impl<M: Metric> EmbeddedTrajectory<M> {
         segment: impl RangeBounds<usize>,
         threshold: f64,
     ) -> Result<CyclingSignature> {
+        self.check_threshold(threshold)?;
         let components = detect_components(
             &self.trajectory,
+            &*self.metric,
             segment,
             threshold,
             self.trajectory.original_count(),
@@ -338,13 +348,12 @@ impl<M: Metric> EmbeddedTrajectory<M> {
 ///
 /// Each step validates that the cube delta is in `{-1, 0, 1}` per axis,
 /// returning `ConsecutiveCubesNonAdjacent` on violation.
-fn for_each_cycle_edge<M, F>(
-    embedded: &EmbeddedTrajectory<M>,
+fn for_each_cycle_edge<F>(
+    embedded: &EmbeddedTrajectory,
     segment: Range<usize>,
     mut visit: F,
 ) -> Result<()>
 where
-    M: Metric,
     F: FnMut(&Cube),
 {
     let cubes = embedded.cover().cubes();
@@ -449,7 +458,7 @@ where
 /// the canonical (sorted, deduplicated) cube array paired with a per-row
 /// cube-index vector. The per-row indices reference the returned canonical
 /// array.
-fn walk_and_canonicalize<M: Metric>(trajectory: &Trajectory<M>) -> (Array2<i64>, Vec<usize>) {
+fn walk_and_canonicalize(trajectory: &Trajectory) -> (Array2<i64>, Vec<usize>) {
     let points = trajectory.points();
     let dimension = points.ncols();
     let num_rows = points.nrows();
@@ -513,58 +522,12 @@ fn binary_search_cube(cubes: ArrayView2<'_, i64>, target: &[i64]) -> Option<usiz
     None
 }
 
-#[cfg(feature = "serde")]
-#[derive(Serialize)]
-struct EmbeddedRef<'a, M: Metric> {
-    trajectory: &'a Trajectory<M>,
-    cover: &'a CubicalCover,
-}
-
-#[cfg(feature = "serde")]
-#[derive(Deserialize)]
-#[serde(bound = "M: Metric + DeserializeOwned")]
-struct EmbeddedData<M: Metric> {
-    trajectory: Trajectory<M>,
-    cover: CubicalCover,
-}
-
-#[cfg(feature = "serde")]
-impl<M: Metric + Serialize> Serialize for EmbeddedTrajectory<M> {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        EmbeddedRef {
-            trajectory: &self.trajectory,
-            cover: &self.cover,
-        }
-        .serialize(serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de, M: Metric + DeserializeOwned> Deserialize<'de> for EmbeddedTrajectory<M> {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let data = EmbeddedData::<M>::deserialize(deserializer)?;
-        EmbeddedTrajectory::from_parts(data.trajectory, data.cover)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use chomp3rs::ExecutionBackend;
     use ndarray::array;
 
     use super::EmbeddedTrajectory;
-    #[cfg(feature = "serde")]
-    use crate::{
-        Result,
-        persistence::{Versioned, load_from_reader, save_to_writer},
-    };
     use crate::{
         cover::CubicalCover, error::Error, interpolation::CubicSpline, metric::Euclidean,
         trajectory::Trajectory,
@@ -573,12 +536,17 @@ mod tests {
     #[test]
     fn fingerprint_is_stable_golden_value() {
         // Locks the whole fingerprint stack (trajectory feed, cubes-only cover
-        // feed, and their composition) to a pinned value.
+        // feed, metric identity, and their composition) to a pinned value.
         let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap();
 
-        assert_eq!(embedded.fingerprint(), 0xe156_dbcc_88c8_c664);
+        assert_eq!(embedded.fingerprint(), 0x62e0_5eb4_f9f0_4052);
     }
 
     #[test]
@@ -588,8 +556,13 @@ mod tests {
         // Forward edges: 3 edges. Closing edge: 1 edge from (0,1)->(0,0)
         // is a unit step in axis 1 (negative direction).
         let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap();
 
         let edges = embedded.walk_cycle(0..4).unwrap();
         // 3 forward edges + 1 closing edge = 4 edges total.
@@ -615,8 +588,13 @@ mod tests {
             [0.5, 2.5],
             [0.5, 1.5],
         ];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap();
 
         let class = embedded.cycle_class(0..8).unwrap();
         assert!(
@@ -633,8 +611,13 @@ mod tests {
         // in axis 0. The forward path is fine (each consecutive pair
         // differs by 1); the closing step fails.
         let points = array![[0.5, 0.5], [1.5, 0.5], [2.5, 0.5], [3.5, 0.5]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap();
 
         let err = embedded.walk_cycle(0..4).unwrap_err();
         assert!(matches!(
@@ -656,10 +639,11 @@ mod tests {
         // this eagerly; we use `from_parts` to bypass that check and confirm the
         // walker surfaces the forward-step failure lazily.
         let points = array![[0.5, 0.5], [4.5, 0.5], [0.5, 0.5]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
         let cubes = ndarray::array![[0_i64, 0], [4, 0]];
         let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
-        let embedded = EmbeddedTrajectory::from_parts(trajectory, cover).unwrap();
+        let embedded =
+            EmbeddedTrajectory::from_parts(trajectory, cover, Box::new(Euclidean)).unwrap();
 
         let err = embedded.walk_cycle(0..3).unwrap_err();
         assert!(matches!(
@@ -681,8 +665,13 @@ mod tests {
         // (1.5, 0.5)             -> cube (1, 0)
         // (2.5, 0.5)             -> cube (2, 0)
         let points = array![[0.1, 0.1], [0.9, 0.9], [1.5, 0.5], [2.5, 0.5]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap();
 
         let expected_cubes = array![[0_i64, 0], [1, 0], [2, 0]];
         assert_eq!(embedded.cover().cubes(), expected_cubes.view());
@@ -697,16 +686,20 @@ mod tests {
         // Build a trajectory, run new(), then re-pair via from_parts and
         // assert the same point_to_cube mapping.
         let points = array![[0.3, 0.7], [1.4, 0.2], [2.9, 0.5]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded_via_new =
-            EmbeddedTrajectory::new(trajectory.clone(), &ExecutionBackend::default()).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded_via_new = EmbeddedTrajectory::new(
+            trajectory.clone(),
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap();
 
         // Rebuild the cover from the same cube set, pair via from_parts.
         let cover_cubes = embedded_via_new.cover().cubes().to_owned();
         let fresh_cover =
             CubicalCover::from_cubes(cover_cubes.view(), &ExecutionBackend::default()).unwrap();
         let embedded_via_from_parts =
-            EmbeddedTrajectory::from_parts(trajectory, fresh_cover).unwrap();
+            EmbeddedTrajectory::from_parts(trajectory, fresh_cover, Box::new(Euclidean)).unwrap();
 
         for point_index in 0..points.nrows() {
             assert_eq!(
@@ -722,12 +715,12 @@ mod tests {
         // a cover containing only (0,0) and (1,0). from_parts must fail
         // at point_index 2 with EmbeddedCubeNotInCover.
         let points = array![[0.5, 0.5], [1.5, 0.5], [2.5, 0.5]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
         let cover_cubes = array![[0_i64, 0], [1, 0]];
         let cover =
             CubicalCover::from_cubes(cover_cubes.view(), &ExecutionBackend::default()).unwrap();
 
-        let outcome = EmbeddedTrajectory::from_parts(trajectory, cover);
+        let outcome = EmbeddedTrajectory::from_parts(trajectory, cover, Box::new(Euclidean));
 
         assert!(matches!(
             outcome.unwrap_err(),
@@ -738,12 +731,12 @@ mod tests {
     #[test]
     fn from_parts_rejects_dimension_mismatch() {
         let points = array![[0.5, 0.5, 0.0], [1.5, 0.5, 0.0]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
         let cover_cubes = array![[0_i64, 0], [1, 0]];
         let cover =
             CubicalCover::from_cubes(cover_cubes.view(), &ExecutionBackend::default()).unwrap();
 
-        let outcome = EmbeddedTrajectory::from_parts(trajectory, cover);
+        let outcome = EmbeddedTrajectory::from_parts(trajectory, cover, Box::new(Euclidean));
 
         assert!(matches!(
             outcome.unwrap_err(),
@@ -758,8 +751,13 @@ mod tests {
     fn new_rejects_consecutive_cubes_non_adjacent() {
         // Two consecutive points whose floor cubes differ by 3 in axis 0.
         let points = array![[0.5, 0.5], [3.5, 0.5]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let err = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap_err();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let err = EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap_err();
         assert!(matches!(
             err,
             Error::ConsecutiveCubesNonAdjacent {
@@ -775,8 +773,13 @@ mod tests {
         // Four collinear points spaced 0.5 apart. Threshold 0.6 admits the
         // consecutive pairs (distance 0.5) but no genuine recurrence exists.
         let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap();
 
         let signature = embedded.signature(.., 0.6).unwrap();
         assert_eq!(signature.rank(), 0);
@@ -791,14 +794,19 @@ mod tests {
         let knots = array![0.0, 1.0];
         let values = array![[0.5, 0.5], [1.5, 0.5]];
         let spline = CubicSpline::new(knots, values.view()).unwrap();
-        let trajectory = Trajectory::resample(&spline, Euclidean, 0.2).unwrap();
+        let trajectory = Trajectory::resample(&spline, &Euclidean, 0.2).unwrap();
         assert!(
             trajectory.len() > trajectory.original_count(),
             "fixture must have resampled fill points",
         );
         assert_eq!(trajectory.original_count(), 2);
 
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+        let embedded = EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap();
         let edges = embedded.walk_cycle(0..2).unwrap();
         assert!(
             !edges.is_empty(),
@@ -821,77 +829,16 @@ mod tests {
             [0.5, 1.5],
             [0.5, 0.5],
         ];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap();
 
         let signature = embedded.signature(.., 1.5).unwrap();
         assert_eq!(signature.rank(), 1);
         assert!(!signature.components().is_empty());
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn save_load_round_trip_preserves_content() {
-        let points = array![
-            [0.5, 0.5],
-            [1.5, 0.5],
-            [2.5, 0.5],
-            [2.5, 1.5],
-            [2.5, 2.5],
-            [1.5, 2.5],
-            [0.5, 2.5],
-            [0.5, 1.5],
-        ];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
-
-        let mut buffer: Vec<u8> = Vec::new();
-        save_to_writer(&mut buffer, &embedded).unwrap();
-        let loaded: EmbeddedTrajectory<Euclidean> = load_from_reader(&buffer[..]).unwrap();
-
-        assert_eq!(loaded.trajectory().points(), embedded.trajectory().points());
-        assert_eq!(loaded.cover().cubes(), embedded.cover().cubes());
-        assert_eq!(
-            loaded.cover().num_generators(),
-            embedded.cover().num_generators()
-        );
-        for point_index in 0..embedded.trajectory().len() {
-            assert_eq!(
-                loaded.point_to_cube(point_index),
-                embedded.point_to_cube(point_index),
-            );
-        }
-        // The reloaded cover carries the same basis, so a known cycle's class is
-        // unchanged.
-        assert_eq!(
-            loaded.cycle_class(0..8).unwrap(),
-            embedded.cycle_class(0..8).unwrap(),
-        );
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn load_rejects_mismatched_format_version() {
-        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
-        let trajectory = Trajectory::new(points.view(), Euclidean).unwrap();
-        let embedded = EmbeddedTrajectory::new(trajectory, &ExecutionBackend::default()).unwrap();
-
-        // Handwrite an envelope carrying an unsupported version, into a buffer.
-        let envelope = Versioned {
-            format_version: 999,
-            payload: &embedded,
-        };
-        let mut buffer: Vec<u8> = Vec::new();
-        rmp_serde::encode::write_named(&mut buffer, &envelope).unwrap();
-
-        let outcome: Result<EmbeddedTrajectory<Euclidean>> = load_from_reader(&buffer[..]);
-
-        assert!(matches!(
-            outcome,
-            Err(Error::FormatVersionMismatch {
-                expected: 1,
-                found: 999,
-            })
-        ));
     }
 }
