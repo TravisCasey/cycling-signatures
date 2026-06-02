@@ -4,6 +4,7 @@
 //! Python bindings for the cycling-signatures core pipeline.
 
 mod errors;
+mod metric;
 
 use pyo3::prelude::*;
 
@@ -12,5 +13,6 @@ use pyo3::prelude::*;
 #[pymodule]
 fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     errors::register(module)?;
+    metric::register(module)?;
     Ok(())
 }
