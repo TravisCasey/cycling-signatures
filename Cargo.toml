@@ -13,7 +13,7 @@ resolver = "3"
 
 [dependencies]
 chomp3rs = { git = "https://github.com/TravisCasey/CHomP3-rs.git", rev = "455eb70", version = "0.3.12", default-features = false }
-ndarray = "0.17.2"
+ndarray = { workspace = true }
 ndarray-npy = { version = "0.10.0", optional = true, default-features = false }
 rmp-serde = { version = "1", optional = true }
 rustc-hash = "2.1.2"
@@ -39,3 +39,9 @@ mpi = ["chomp3rs/mpi", "serde"]
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[workspace]
+members = ["python"]
+
+[workspace.dependencies]
+ndarray = "0.17.2"

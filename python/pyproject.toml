@@ -1,0 +1,38 @@
+[build-system]
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "cycling-signatures"
+description = "Algebraic topological descriptions of recurrent motions in dynamical systems"
+requires-python = ">=3.11"
+license = "GPL-3.0-or-later"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+]
+dependencies = ["numpy>=1.23"]
+dynamic = ["version"]
+
+[dependency-groups]
+dev = ["maturin>=1.9,<2.0", "pytest>=8", "ruff>=0.14", "ty", "codespell>=2.3"]
+
+[tool.maturin]
+module-name = "cycling_signatures._core"
+python-source = "."
+features = ["pyo3/extension-module"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "W505"]
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 80
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ty.src]
+root = "."

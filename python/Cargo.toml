@@ -1,0 +1,28 @@
+[package]
+name = "cycling-signatures-py"
+version = "0.1.0"
+authors = ["Travis Casey"]
+edition = "2024"
+description = "Python bindings for cycling-signatures"
+license = "GPL-3.0-or-later"
+publish = false
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+cycling_signatures = { path = "..", features = ["serde", "rayon"] }
+pyo3 = { version = "0.28", features = ["abi3-py311", "extension-module"] }
+numpy = "0.28"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+len_without_is_empty = "allow"
+unreadable_literal = "allow"
