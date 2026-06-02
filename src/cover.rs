@@ -4,6 +4,7 @@
 //! Cubical cover: integer cubes with chomp3rs-computed cohomology generators
 //! and an edge-to-class lookup table.
 
+use std::cmp::Ordering;
 #[cfg(feature = "serde")]
 use std::path::Path;
 
@@ -11,7 +12,7 @@ use chomp3rs::{
     Chain, Complex, CoreductionMatching, Cube, CubicalComplex, ExecutionBackend, F2, MorseMatching,
     Orthant, OrthantTrie, Ring, TopCubeGrader, TopCubicalMatching,
 };
-use ndarray::{Array2, ArrayView2};
+use ndarray::{Array2, ArrayView1, ArrayView2};
 use rustc_hash::FxHashMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize, de::Error as DeserializeError};
@@ -144,6 +145,18 @@ impl CubicalCover {
         hasher.finish()
     }
 
+    /// The row index in [`cubes`](Self::cubes) of the cube containing `point`,
+    /// or `None` if that cube is not in the cover. `point` is floored
+    /// component-wise to its integer cube, then located in the canonical
+    /// (sorted) cube list.
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub(crate) fn cube_index(&self, point: ArrayView1<'_, f64>) -> Option<usize> {
+        let mut buffer: Vec<i64> = Vec::with_capacity(self.cubes.ncols());
+        floor_to_cube(point, &mut buffer);
+        find_cube(self.cubes.view(), &buffer)
+    }
+
     /// Writes this cover to `path` in the crate's binary format.
     ///
     /// # Errors
@@ -165,6 +178,35 @@ impl CubicalCover {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         crate::persistence::load_from_path(path)
     }
+}
+
+/// Floors each coordinate of `point` to its integer cube index, writing the
+/// result into `out` (cleared first). A point's cube is the component-wise
+/// floor of its coordinates.
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn floor_to_cube(point: ArrayView1<'_, f64>, out: &mut Vec<i64>) {
+    out.clear();
+    out.extend(point.iter().map(|&value| value.floor() as i64));
+}
+
+/// Returns the row index of the cube equal to `target`, or `None` if no cube
+/// matches. `cubes` must be lexicographically sorted (the canonical order
+/// [`CubicalCover`] enforces); the lookup is a binary search over that order.
+#[allow(clippy::needless_pass_by_value)]
+fn find_cube(cubes: ArrayView2<'_, i64>, target: &[i64]) -> Option<usize> {
+    let mut low = 0_usize;
+    let mut high = cubes.nrows();
+    while low < high {
+        let mid = low + (high - low) / 2;
+        let row = cubes.row(mid);
+
+        match row.iter().copied().cmp(target.iter().copied()) {
+            Ordering::Less => low = mid + 1,
+            Ordering::Greater => high = mid,
+            Ordering::Equal => return Some(mid),
+        }
+    }
+    None
 }
 
 /// Lexicographically sorts and deduplicates `cubes`, returning a new owned
