@@ -3,26 +3,15 @@
 
 //! Ergonomic re-exports for common types and traits.
 //!
-//! Glob-import for the core types needed in a typical workflow. Mirrors the
-//! crate root re-exports. Specialized internals are not included.
+//! Glob-import for the core types needed in a typical workflow.
 //!
 //! ```
 //! use cycling_signatures::prelude::*;
 //! ```
 
-pub use chomp3rs::{Chain, Cube, Cyclic, ExecutionBackend, F2};
-
 pub use crate::{
-    cover::CubicalCover,
-    embedded::EmbeddedTrajectory,
-    error::{Error, Result},
-    f2_subspace::F2Subspace,
-    f2_vector::F2Vector,
-    interpolation::{
-        ChebyshevSphereBundleInterpolator, CubicSpline, DerivativeInterpolator, Interpolator,
-    },
-    metric::{Chebyshev, Euclidean, Metric, SphereBundleMetric},
-    signature::{CycleComponent, CyclingSignature},
-    storage::cycle_storage::{Component, Cycle, CycleStorage},
-    trajectory::Trajectory,
+    Chebyshev, ChebyshevSphereBundleInterpolator, Component, Cube, CubicSpline, CubicalCover,
+    Cycle, CycleComponent, CycleStorage, CyclingSignature, EmbeddedTrajectory, Error, Euclidean,
+    ExecutionBackend, F2Subspace, F2Vector, Interpolator, Metric, Result, SphereBundleMetric,
+    Trajectory,
 };

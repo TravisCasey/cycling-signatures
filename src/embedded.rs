@@ -90,7 +90,7 @@ impl EmbeddedTrajectory {
     /// The metric used to compute distances over this trajectory.
     #[must_use]
     pub fn metric(&self) -> &dyn Metric {
-        &*self.metric
+        self.metric.as_ref()
     }
 
     /// The maximum metric distance between any pair of consecutive points: the
@@ -376,7 +376,7 @@ impl EmbeddedTrajectory {
                 .expect("connected components are nonempty by construction");
             let class = self.cycle_class(representative.clone())?;
             if !class.is_zero() {
-                survivors.push(CycleComponent { cycles, class });
+                survivors.push(CycleComponent::new(cycles, class));
             }
         }
 

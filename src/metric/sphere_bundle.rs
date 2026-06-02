@@ -143,29 +143,42 @@ impl Metric for SphereBundleMetric {
 
     /// # Panics
     ///
-    /// Panics if `p1`, `p2`, and `p3` do not all have the same length, if that
-    /// length is not even, or if any direction half has zero L2 norm.
+    /// Panics if `first`, `second`, and `third` do not all have the same
+    /// length, if that length is not even, or if any direction half has zero
+    /// L2 norm.
     fn covers_triple(
         &self,
-        p1: ArrayView1<'_, f64>,
-        p2: ArrayView1<'_, f64>,
-        p3: ArrayView1<'_, f64>,
+        first: ArrayView1<'_, f64>,
+        second: ArrayView1<'_, f64>,
+        third: ArrayView1<'_, f64>,
         radius: f64,
     ) -> bool {
-        assert_eq!(p1.len(), p2.len(), "dimension mismatch between p1 and p2");
-        assert_eq!(p1.len(), p3.len(), "dimension mismatch between p1 and p3");
+        assert_eq!(
+            first.len(),
+            second.len(),
+            "dimension mismatch between first and second"
+        );
+        assert_eq!(
+            first.len(),
+            third.len(),
+            "dimension mismatch between first and third"
+        );
 
-        let (position1, direction1) = split_and_normalize(p1);
-        let (position2, direction2) = split_and_normalize(p2);
-        let (position3, direction3) = split_and_normalize(p3);
+        let (position_first, direction_first) = split_and_normalize(first);
+        let (position_second, direction_second) = split_and_normalize(second);
+        let (position_third, direction_third) = split_and_normalize(third);
 
-        euclidean_covers_triple(position1.view(), position2.view(), position3.view(), radius)
-            && euclidean_covers_triple(
-                direction1.view(),
-                direction2.view(),
-                direction3.view(),
-                radius / self.direction_weight,
-            )
+        euclidean_covers_triple(
+            position_first.view(),
+            position_second.view(),
+            position_third.view(),
+            radius,
+        ) && euclidean_covers_triple(
+            direction_first.view(),
+            direction_second.view(),
+            direction_third.view(),
+            radius / self.direction_weight,
+        )
     }
 }
 

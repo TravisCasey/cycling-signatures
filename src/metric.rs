@@ -5,7 +5,7 @@
 //!
 //! A metric is a distance function over rows of an `ndarray::Array2<f64>`.
 
-use std::{cmp::Ordering, fmt::Debug};
+use std::fmt::Debug;
 
 use ndarray::{ArrayView1, ArrayView2};
 
@@ -45,8 +45,8 @@ pub trait Metric: Send + Sync + Debug + 'static {
         }
     }
 
-    /// Returns `true` if balls with `radius` around `p1`, `p2`, and `p3` share
-    /// a common point.
+    /// Returns `true` if balls with `radius` around `first`, `second`, and
+    /// `third` share a common point.
     ///
     /// The default body returns `true` if and only if all three pairwise
     /// distances are at most `2 * radius` (the necessary condition that
@@ -59,15 +59,15 @@ pub trait Metric: Send + Sync + Debug + 'static {
     #[must_use]
     fn covers_triple(
         &self,
-        p1: ArrayView1<'_, f64>,
-        p2: ArrayView1<'_, f64>,
-        p3: ArrayView1<'_, f64>,
+        first: ArrayView1<'_, f64>,
+        second: ArrayView1<'_, f64>,
+        third: ArrayView1<'_, f64>,
         radius: f64,
     ) -> bool {
         let diameter = 2.0 * radius;
-        self.distance(p1, p2) <= diameter
-            && self.distance(p1, p3) <= diameter
-            && self.distance(p2, p3) <= diameter
+        self.distance(first, second) <= diameter
+            && self.distance(first, third) <= diameter
+            && self.distance(second, third) <= diameter
     }
 }
 
@@ -108,12 +108,12 @@ impl Metric for Euclidean {
 
     fn covers_triple(
         &self,
-        p1: ArrayView1<'_, f64>,
-        p2: ArrayView1<'_, f64>,
-        p3: ArrayView1<'_, f64>,
+        first: ArrayView1<'_, f64>,
+        second: ArrayView1<'_, f64>,
+        third: ArrayView1<'_, f64>,
         radius: f64,
     ) -> bool {
-        euclidean_covers_triple(p1, p2, p3, radius)
+        euclidean_covers_triple(first, second, third, radius)
     }
 }
 
@@ -154,19 +154,20 @@ impl Metric for Chebyshev {
 
     /// # Panics
     ///
-    /// Panics if `p1`, `p2`, and `p3` do not all have the same length.
+    /// Panics if `first`, `second`, and `third` do not all have the same
+    /// length.
     fn covers_triple(
         &self,
-        p1: ArrayView1<'_, f64>,
-        p2: ArrayView1<'_, f64>,
-        p3: ArrayView1<'_, f64>,
+        first: ArrayView1<'_, f64>,
+        second: ArrayView1<'_, f64>,
+        third: ArrayView1<'_, f64>,
         radius: f64,
     ) -> bool {
-        assert_eq!(p1.len(), p2.len(), "dimension mismatch");
-        assert_eq!(p1.len(), p3.len(), "dimension mismatch");
-        for axis in 0..p1.len() {
-            let max_coord = p1[axis].max(p2[axis]).max(p3[axis]);
-            let min_coord = p1[axis].min(p2[axis]).min(p3[axis]);
+        assert_eq!(first.len(), second.len(), "dimension mismatch");
+        assert_eq!(first.len(), third.len(), "dimension mismatch");
+        for axis in 0..first.len() {
+            let max_coord = first[axis].max(second[axis]).max(third[axis]);
+            let min_coord = first[axis].min(second[axis]).min(third[axis]);
             let half_extent = (max_coord - min_coord) / 2.0;
             if half_extent > radius {
                 return false;
@@ -207,8 +208,9 @@ pub(crate) fn euclidean_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'
         .sqrt()
 }
 
-/// Returns `true` if the smallest enclosing `l_2` ball of `p1`, `p2`, `p3` has
-/// radius at most `radius`. Closed form in terms of pairwise distances:
+/// Returns `true` if the smallest enclosing `l_2` ball of `first`, `second`,
+/// `third` has radius at most `radius`. Closed form in terms of pairwise
+/// distances:
 ///
 /// - If the longest pairwise distance `c` satisfies `c^2 >= a^2 + b^2` (obtuse
 ///   or right triangle at the vertex opposite `c`, or collinear), the smallest
@@ -217,17 +219,17 @@ pub(crate) fn euclidean_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'
 ///   radius `(a * b * c) / (4 * area)` and `area` from Heron's formula.
 #[allow(clippy::needless_pass_by_value)]
 pub(crate) fn euclidean_covers_triple(
-    p1: ArrayView1<'_, f64>,
-    p2: ArrayView1<'_, f64>,
-    p3: ArrayView1<'_, f64>,
+    first: ArrayView1<'_, f64>,
+    second: ArrayView1<'_, f64>,
+    third: ArrayView1<'_, f64>,
     radius: f64,
 ) -> bool {
-    let d12 = euclidean_distance(p1, p2);
-    let d13 = euclidean_distance(p1, p3);
-    let d23 = euclidean_distance(p2, p3);
+    let first_second = euclidean_distance(first, second);
+    let first_third = euclidean_distance(first, third);
+    let second_third = euclidean_distance(second, third);
 
-    let mut sides = [d12, d13, d23];
-    sides.sort_by(|left, right| left.partial_cmp(right).unwrap_or(Ordering::Equal));
+    let mut sides = [first_second, first_third, second_third];
+    sides.sort_by(f64::total_cmp);
     let [shorter, mid, longest] = sides;
 
     if longest > 2.0 * radius {
@@ -241,9 +243,9 @@ pub(crate) fn euclidean_covers_triple(
     }
 
     // Acute triangle: circumscribed circle. Heron's formula for area.
-    let semi = (d12 + d13 + d23) / 2.0;
-    let area = (semi * (semi - d12) * (semi - d13) * (semi - d23)).sqrt();
-    let circumradius = (d12 * d13 * d23) / (4.0 * area);
+    let semi = (first_second + first_third + second_third) / 2.0;
+    let area = (semi * (semi - first_second) * (semi - first_third) * (semi - second_third)).sqrt();
+    let circumradius = (first_second * first_third * second_third) / (4.0 * area);
     circumradius <= radius
 }
 

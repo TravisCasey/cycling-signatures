@@ -52,26 +52,26 @@ impl DisjointSet {
         cursor
     }
 
-    /// Unions the components containing `a` and `b`.
+    /// Unions the components containing `left` and `right`.
     ///
     /// # Panics
     ///
-    /// Panics if either `a` or `b` was not returned by a prior call to
+    /// Panics if either `left` or `right` was not returned by a prior call to
     /// [`insert`](Self::insert).
-    pub fn union(&mut self, a: usize, b: usize) {
-        let root_a = self.find(a);
-        let root_b = self.find(b);
-        if root_a == root_b {
+    pub fn union(&mut self, left: usize, right: usize) {
+        let root_left = self.find(left);
+        let root_right = self.find(right);
+        if root_left == root_right {
             return;
         }
-        let rank_a = self.rank[root_a];
-        let rank_b = self.rank[root_b];
-        match rank_a.cmp(&rank_b) {
-            Ordering::Less => self.parent[root_a] = root_b,
-            Ordering::Greater => self.parent[root_b] = root_a,
+        let rank_left = self.rank[root_left];
+        let rank_right = self.rank[root_right];
+        match rank_left.cmp(&rank_right) {
+            Ordering::Less => self.parent[root_left] = root_right,
+            Ordering::Greater => self.parent[root_right] = root_left,
             Ordering::Equal => {
-                self.parent[root_b] = root_a;
-                self.rank[root_a] += 1;
+                self.parent[root_right] = root_left;
+                self.rank[root_left] += 1;
             },
         }
     }

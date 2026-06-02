@@ -46,6 +46,8 @@ where
 
     let dimension = cubes.ncols();
     let start_cube = point_to_cube_coords(segment.start);
+    // Cube coordinates fit in i32: CubicalCover::from_cubes enforces the
+    // [i32::MIN, i32::MAX - 1] range for all coordinates.
     let mut base: Orthant = start_cube.iter().map(|&value| value as i32).collect();
     let mut dual: Orthant = start_cube.iter().map(|&value| value as i32 - 1).collect();
 

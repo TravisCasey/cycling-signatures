@@ -31,20 +31,38 @@ pub struct CyclingSignature {
 /// One connected component of below-threshold recurrent segments, together with
 /// the homology class shared by every cycle in the component.
 ///
-/// When constructed through [`CyclingSignature::components`], the `cycles`
-/// field is non-empty: every component carries at least one detected cycle.
+/// Every component carries at least one detected cycle, so `cycles()` is never
+/// empty.
 #[derive(Debug, Clone)]
 pub struct CycleComponent {
+    cycles: Vec<Range<usize>>,
+    class: F2Vector,
+}
+
+impl CycleComponent {
+    /// Builds a component from its cycle segments and shared homology class.
+    #[must_use]
+    pub(crate) fn new(cycles: Vec<Range<usize>>, class: F2Vector) -> Self {
+        Self { cycles, class }
+    }
+
     /// The cycle segments grouped into this component, each a half-open range
     /// `start..end` in sample-index space (`0..trajectory.original_count()`).
     /// Each range is ready to pass directly to
     /// [`EmbeddedTrajectory::walk_cycle`](crate::EmbeddedTrajectory::walk_cycle)
     /// or
     /// [`EmbeddedTrajectory::cycle_class`](crate::EmbeddedTrajectory::cycle_class).
-    pub cycles: Vec<Range<usize>>,
-    /// The homology class in the cover's generator basis for every segment in
-    /// this component.
-    pub class: F2Vector,
+    #[must_use]
+    pub fn cycles(&self) -> &[Range<usize>] {
+        &self.cycles
+    }
+
+    /// The homology class in the cover's generator basis shared by every
+    /// segment in this component.
+    #[must_use]
+    pub fn class(&self) -> &F2Vector {
+        &self.class
+    }
 }
 
 impl CyclingSignature {
@@ -56,7 +74,7 @@ impl CyclingSignature {
     pub(crate) fn from_components(components: Vec<CycleComponent>, num_generators: usize) -> Self {
         let classes: Vec<F2Vector> = components
             .iter()
-            .map(|component| component.class.clone())
+            .map(|component| component.class().clone())
             .collect();
         let span = F2Subspace::new(&classes, num_generators)
             .expect("class vectors have the expected length by construction");

@@ -119,6 +119,10 @@ impl Component {
     }
 }
 
+/// Default tile width for the streaming cycle-detection pass in
+/// [`CycleStorage::build`].
+const DEFAULT_TILE_WIDTH: usize = 1024;
+
 /// Component-first cache of near-recurrent cycles over a trajectory extent.
 #[derive(Clone, Debug)]
 pub struct CycleStorage {
@@ -169,7 +173,10 @@ impl CycleStorage {
             return Err(Error::InvalidMaxLength { value: max_length });
         }
 
-        let tile_width = max_length.max(1024).min(range.len()).max(max_length);
+        // Tile the segment in blocks of a default width, never wider than the
+        // segment and never narrower than `max_length` (so the streaming
+        // requirement `max_length <= tile_width` holds).
+        let tile_width = DEFAULT_TILE_WIDTH.min(range.len()).max(max_length);
         let raw_components = detect_components_streaming(
             trajectory,
             metric,
