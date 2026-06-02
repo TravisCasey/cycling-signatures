@@ -3,6 +3,9 @@
 
 //! A trajectory of points in a metric space.
 
+#[cfg(feature = "serde")]
+use std::path::Path;
+
 use ndarray::{Array2, ArrayView2, Axis};
 
 use crate::{
@@ -260,6 +263,30 @@ impl Trajectory {
             hasher.write(&(index as u64).to_le_bytes());
         }
         hasher.finish()
+    }
+
+    /// Writes this trajectory to `path` in the crate's binary format.
+    ///
+    /// # Errors
+    ///
+    /// - [`crate::error::Error::FormatVersionMismatch`] if the file's format
+    ///   version differs when loading a previously saved file.
+    /// - [`crate::error::Error::Storage`] on file or serialization failure.
+    #[cfg(feature = "serde")]
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        crate::persistence::save_to_path(path, self)
+    }
+
+    /// Reads a trajectory written by [`save`](Self::save).
+    ///
+    /// # Errors
+    ///
+    /// - [`crate::error::Error::FormatVersionMismatch`] if the file's format
+    ///   version differs.
+    /// - [`crate::error::Error::Storage`] on file or deserialization failure.
+    #[cfg(feature = "serde")]
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        crate::persistence::load_from_path(path)
     }
 }
 

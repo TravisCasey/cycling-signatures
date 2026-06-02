@@ -4,6 +4,8 @@
 //! Embedded trajectory: a `Trajectory` paired with a `CubicalCover` and the
 //! mapping from trajectory point to cube index.
 
+#[cfg(feature = "serde")]
+use std::path::Path;
 use std::{
     cmp::Ordering,
     ops::{Range, RangeBounds},
@@ -277,6 +279,54 @@ impl EmbeddedTrajectory {
         hasher.finish()
     }
 
+    /// Writes the trajectory and cover to separate paths in the crate's binary
+    /// format.
+    ///
+    /// The metric itself is not saved; supply it again when calling
+    /// [`load`](Self::load).
+    ///
+    /// This is a convenience method, paired with [`load`](Self::load) which
+    /// bundles the save methods on [`Trajectory`] and [`CubicalCover`].
+    ///
+    /// # Errors
+    ///
+    /// - [`crate::error::Error::Storage`] on file or serialization failure.
+    #[cfg(feature = "serde")]
+    pub fn save<P: AsRef<Path>, Q: AsRef<Path>>(
+        &self,
+        trajectory_path: P,
+        cover_path: Q,
+    ) -> Result<()> {
+        self.trajectory.save(trajectory_path)?;
+        self.cover.save(cover_path)
+    }
+
+    /// Reads a trajectory and cover and reassembles an [`EmbeddedTrajectory`]
+    /// using the supplied `metric`.
+    ///
+    /// This is a convenience method, paired with [`save`](Self::save) which
+    /// bundles the load methods on [`Trajectory`] and [`CubicalCover`].
+    ///
+    /// # Errors
+    ///
+    /// - [`crate::error::Error::EmbeddedDimensionMismatch`] if the loaded
+    ///   trajectory and cover disagree on spatial dimension.
+    /// - [`crate::error::Error::EmbeddedCubeNotInCover`] if a trajectory point
+    ///   maps to a cube absent from the loaded cover.
+    /// - [`crate::error::Error::FormatVersionMismatch`] if either file's format
+    ///   version differs.
+    /// - [`crate::error::Error::Storage`] on file or deserialization failure.
+    #[cfg(feature = "serde")]
+    pub fn load<P: AsRef<Path>, Q: AsRef<Path>>(
+        trajectory_path: P,
+        cover_path: Q,
+        metric: Box<dyn Metric>,
+    ) -> Result<Self> {
+        let trajectory = Trajectory::load(trajectory_path)?;
+        let cover = CubicalCover::load(cover_path)?;
+        Self::from_parts(trajectory, cover, metric)
+    }
+
     /// The cycling signature of the trajectory over the given segment.
     ///
     /// Returns the `F_2` subspace spanned by the non-trivial homology
@@ -531,6 +581,12 @@ mod tests {
     use crate::{
         cover::CubicalCover, error::Error, interpolation::CubicSpline, metric::Euclidean,
         trajectory::Trajectory,
+    };
+    #[cfg(feature = "serde")]
+    use crate::{
+        metric::Chebyshev,
+        persistence::{load_from_reader, save_to_writer},
+        storage::cycle_storage::CycleStorage,
     };
 
     #[test]
@@ -840,5 +896,75 @@ mod tests {
         let signature = embedded.signature(.., 1.5).unwrap();
         assert_eq!(signature.rank(), 1);
         assert!(!signature.components().is_empty());
+    }
+
+    /// Builds the small 4-point Euclidean square loop used in round-trip tests.
+    #[cfg(feature = "serde")]
+    fn euclidean_square_loop() -> EmbeddedTrajectory {
+        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        EmbeddedTrajectory::new(
+            trajectory,
+            Box::new(Euclidean),
+            &ExecutionBackend::default(),
+        )
+        .unwrap()
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn save_then_load_round_trips() {
+        let embedded = euclidean_square_loop();
+        let mut trajectory_buffer = Vec::new();
+        let mut cover_buffer = Vec::new();
+        save_to_writer(&mut trajectory_buffer, embedded.trajectory()).unwrap();
+        save_to_writer(&mut cover_buffer, embedded.cover()).unwrap();
+
+        let trajectory: Trajectory = load_from_reader(&trajectory_buffer[..]).unwrap();
+        let cover: CubicalCover = load_from_reader(&cover_buffer[..]).unwrap();
+        let reloaded =
+            EmbeddedTrajectory::from_parts(trajectory, cover, Box::new(Euclidean)).unwrap();
+
+        assert_eq!(reloaded.fingerprint(), embedded.fingerprint());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn reload_with_different_metric_differs() {
+        let embedded = euclidean_square_loop();
+        let mut trajectory_buffer = Vec::new();
+        let mut cover_buffer = Vec::new();
+        save_to_writer(&mut trajectory_buffer, embedded.trajectory()).unwrap();
+        save_to_writer(&mut cover_buffer, embedded.cover()).unwrap();
+
+        let trajectory: Trajectory = load_from_reader(&trajectory_buffer[..]).unwrap();
+        let cover: CubicalCover = load_from_reader(&cover_buffer[..]).unwrap();
+        let reloaded =
+            EmbeddedTrajectory::from_parts(trajectory, cover, Box::new(Chebyshev)).unwrap();
+
+        assert_ne!(reloaded.fingerprint(), embedded.fingerprint());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn storage_provenance_matches_reassembled_embedded() {
+        let embedded = euclidean_square_loop();
+        let storage =
+            CycleStorage::build(&embedded, .., 1.5, 4, &ExecutionBackend::Sequential).unwrap();
+
+        let mut storage_buffer = Vec::new();
+        save_to_writer(&mut storage_buffer, &storage).unwrap();
+        let loaded_storage = load_from_reader::<CycleStorage, _>(&storage_buffer[..]).unwrap();
+
+        let mut trajectory_buffer = Vec::new();
+        let mut cover_buffer = Vec::new();
+        save_to_writer(&mut trajectory_buffer, embedded.trajectory()).unwrap();
+        save_to_writer(&mut cover_buffer, embedded.cover()).unwrap();
+        let trajectory: Trajectory = load_from_reader(&trajectory_buffer[..]).unwrap();
+        let cover: CubicalCover = load_from_reader(&cover_buffer[..]).unwrap();
+        let reassembled =
+            EmbeddedTrajectory::from_parts(trajectory, cover, Box::new(Euclidean)).unwrap();
+
+        assert_eq!(loaded_storage.fingerprint(), reassembled.fingerprint());
     }
 }

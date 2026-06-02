@@ -4,6 +4,9 @@
 //! Cubical cover: integer cubes with chomp3rs-computed cohomology generators
 //! and an edge-to-class lookup table.
 
+#[cfg(feature = "serde")]
+use std::path::Path;
+
 use chomp3rs::{
     Chain, Complex, CoreductionMatching, Cube, CubicalComplex, ExecutionBackend, F2, MorseMatching,
     Orthant, OrthantTrie, Ring, TopCubeGrader, TopCubicalMatching,
@@ -139,6 +142,28 @@ impl CubicalCover {
             hasher.write(&value.to_le_bytes());
         }
         hasher.finish()
+    }
+
+    /// Writes this cover to `path` in the crate's binary format.
+    ///
+    /// # Errors
+    ///
+    /// - [`crate::error::Error::Storage`] on file or serialization failure.
+    #[cfg(feature = "serde")]
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        crate::persistence::save_to_path(path, self)
+    }
+
+    /// Reads a cover written by [`save`](Self::save).
+    ///
+    /// # Errors
+    ///
+    /// - [`crate::error::Error::FormatVersionMismatch`] if the file's format
+    ///   version differs.
+    /// - [`crate::error::Error::Storage`] on file or deserialization failure.
+    #[cfg(feature = "serde")]
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        crate::persistence::load_from_path(path)
     }
 }
 

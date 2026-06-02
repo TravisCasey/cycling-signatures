@@ -11,7 +11,7 @@
 
 use std::{
     fs::File,
-    io::{BufWriter, Read, Write},
+    io::{BufReader, BufWriter, Read, Write},
     path::Path,
 };
 
@@ -85,4 +85,19 @@ where
 {
     let file = File::create(path)?;
     save_to_writer(BufWriter::new(file), payload)
+}
+
+/// Reads a payload written by [`save_to_path`], verifying the format version.
+///
+/// # Errors
+///
+/// - [`Error::FormatVersionMismatch`] if the payload's version differs.
+/// - [`Error::Storage`] on file or deserialization failure.
+pub(crate) fn load_from_path<T, P>(path: P) -> Result<T>
+where
+    T: DeserializeOwned,
+    P: AsRef<Path>,
+{
+    let file = File::open(path)?;
+    load_from_reader(BufReader::new(file))
 }

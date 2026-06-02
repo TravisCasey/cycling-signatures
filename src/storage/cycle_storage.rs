@@ -3,15 +3,11 @@
 
 //! Component-first cache of all near-recurrent cycles over a trajectory extent.
 
+#[cfg(feature = "serde")]
+use std::path::Path;
 use std::{
     cmp::Reverse,
     ops::{Range, RangeBounds},
-};
-#[cfg(feature = "serde")]
-use std::{
-    fs::File,
-    io::{BufReader, Read},
-    path::Path,
 };
 
 use chomp3rs::ExecutionBackend;
@@ -20,7 +16,7 @@ use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "serde")]
-use crate::persistence::save_to_path;
+use crate::persistence::{load_from_path, save_to_path};
 use crate::{
     EmbeddedTrajectory, F2Subspace, F2Vector,
     distance::detect_components_streaming,
@@ -441,21 +437,10 @@ impl CycleStorage {
     /// # Errors
     ///
     /// - [`Error::FormatVersionMismatch`] if the file's format version differs.
-    /// - [`Error::Storage`] on deserialization or input/output failure.
+    /// - [`Error::Storage`] on file or deserialization failure.
     #[cfg(feature = "serde")]
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(path)?;
-        Self::load_from_reader(BufReader::new(file))
-    }
-
-    /// Reads a storage from `reader`.
-    ///
-    /// # Errors
-    ///
-    /// Same as [`load`](Self::load), minus the file-open failure.
-    #[cfg(feature = "serde")]
-    pub(crate) fn load_from_reader<R: Read>(reader: R) -> Result<Self> {
-        crate::persistence::load_from_reader(reader)
+        load_from_path(path)
     }
 }
 
@@ -773,7 +758,8 @@ mod tests {
 
         let mut storage_buffer: Vec<u8> = Vec::new();
         save_to_writer(&mut storage_buffer, &storage).unwrap();
-        let loaded_storage = CycleStorage::load_from_reader(&storage_buffer[..]).unwrap();
+        let loaded_storage =
+            crate::persistence::load_from_reader::<CycleStorage, _>(&storage_buffer[..]).unwrap();
 
         // The reloaded storage carries the same provenance fingerprint, so a
         // caller can confirm it against the embedded trajectory.
@@ -806,7 +792,7 @@ mod tests {
         let mut buffer: Vec<u8> = Vec::new();
         save_to_writer(&mut buffer, &storage).unwrap();
 
-        let loaded = CycleStorage::load_from_reader(&buffer[..]).unwrap();
+        let loaded = crate::persistence::load_from_reader::<CycleStorage, _>(&buffer[..]).unwrap();
 
         // The matching embedded shares the loaded fingerprint.
         assert_eq!(loaded.fingerprint(), embedded.fingerprint());
