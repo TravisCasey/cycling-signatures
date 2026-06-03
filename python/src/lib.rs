@@ -3,10 +3,12 @@
 
 //! Python bindings for the cycling-signatures core pipeline.
 
+mod embedded;
 mod errors;
 mod homology;
 mod interpolation;
 mod metric;
+mod segment;
 mod trajectory;
 
 use pyo3::prelude::*;
@@ -20,5 +22,6 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     interpolation::register(module)?;
     trajectory::register(module)?;
     homology::register(module)?;
+    embedded::register(module)?;
     Ok(())
 }
