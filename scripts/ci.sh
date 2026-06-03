@@ -22,7 +22,7 @@ run_step() {
 }
 
 run_step "Format check" \
-    cargo +nightly fmt --check
+    cargo +nightly fmt --all --check
 
 run_step "Build (no features)" \
     cargo build --no-default-features
@@ -42,8 +42,8 @@ run_step "Tests (no features)" \
 run_step "Tests (serde)" \
     cargo test --features serde
 
-run_step "Clippy (serde)" \
-    cargo clippy --all-targets --features serde -- -D warnings
+run_step "Clippy (workspace)" \
+    cargo clippy --workspace --all-targets -- -D warnings
 
 RUSTDOCFLAGS="-Dwarnings" run_step "Documentation" \
     cargo doc --no-deps --document-private-items --features serde
@@ -56,5 +56,26 @@ run_step "Unused dependencies" \
 
 run_step "Spellcheck" \
     cargo spellcheck check -m 1
+
+# Python binding checks, run from the python crate.
+cd python
+
+run_step "Python build" \
+    uv run maturin develop
+
+run_step "Python format check" \
+    uv run ruff format --check
+
+run_step "Python lint" \
+    uv run ruff check
+
+run_step "Python type check" \
+    uv run ty check
+
+run_step "Python spellcheck" \
+    uv run codespell cycling_signatures tests
+
+run_step "Python tests" \
+    uv run pytest
 
 echo -e "\n${GREEN}${BOLD}All checks passed.${RESET}"
