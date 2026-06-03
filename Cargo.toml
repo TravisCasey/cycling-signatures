@@ -36,6 +36,10 @@ serde = ["dep:serde", "chomp3rs/serde", "dep:rmp-serde", "dep:ndarray-npy"]
 rayon = ["chomp3rs/rayon"]
 mpi = ["chomp3rs/mpi", "serde"]
 
+[[example]]
+name = "generate_python_fixture"
+required-features = ["serde"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
