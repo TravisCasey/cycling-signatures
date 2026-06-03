@@ -107,14 +107,15 @@ impl PyHomologyClass {
 
 #[pymethods]
 impl PySubspace {
-    /// The dimension of this subspace.
-    #[getter]
+    /// Returns the dimension of this subspace.
+    #[must_use]
     fn rank(&self) -> usize {
         self.inner.rank()
     }
 
-    /// The number of cover generators (the ambient dimension).
-    #[getter]
+    /// Returns the number of cover generators, the dimension of the ambient
+    /// space the subspace lies in.
+    #[must_use]
     fn num_generators(&self) -> usize {
         self.inner.num_generators()
     }

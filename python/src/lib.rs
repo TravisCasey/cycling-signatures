@@ -9,6 +9,7 @@ mod homology;
 mod interpolation;
 mod metric;
 mod segment;
+mod storage;
 mod trajectory;
 
 use pyo3::prelude::*;
@@ -23,5 +24,6 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     trajectory::register(module)?;
     homology::register(module)?;
     embedded::register(module)?;
+    storage::register(module)?;
     Ok(())
 }
