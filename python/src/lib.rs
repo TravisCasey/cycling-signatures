@@ -4,6 +4,7 @@
 //! Python bindings for the cycling-signatures core pipeline.
 
 mod errors;
+mod homology;
 mod interpolation;
 mod metric;
 mod trajectory;
@@ -18,5 +19,6 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     metric::register(module)?;
     interpolation::register(module)?;
     trajectory::register(module)?;
+    homology::register(module)?;
     Ok(())
 }
