@@ -97,8 +97,9 @@ impl PyChebyshevSphereBundleInterpolator {
         Self { inner: bundle }
     }
 
-    /// The normalization radius (`cube_halfspan + 0.5` from construction).
-    #[getter]
+    /// Returns the normalization radius, `cube_halfspan + 0.5` from
+    /// construction.
+    #[must_use]
     fn radius(&self) -> f64 {
         self.inner.radius()
     }

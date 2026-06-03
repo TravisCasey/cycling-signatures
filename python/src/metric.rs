@@ -71,8 +71,8 @@ impl PySphereBundle {
         Ok(Self { metric })
     }
 
-    /// The configured direction weight.
-    #[getter]
+    /// Returns the configured direction weight.
+    #[must_use]
     fn direction_weight(&self) -> f64 {
         self.metric.direction_weight()
     }

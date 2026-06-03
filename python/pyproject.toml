@@ -34,5 +34,5 @@ max-doc-length = 80
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[tool.ty.src]
-root = "."
+[tool.ty.environment]
+root = ["."]
