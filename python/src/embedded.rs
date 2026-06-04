@@ -4,7 +4,7 @@
 //! Python wrapper for the `EmbeddedTrajectory` type.
 
 use cycling_signatures::{EmbeddedTrajectory, ExecutionBackend};
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
     errors::to_pyerr,
@@ -41,10 +41,10 @@ impl PyEmbeddedTrajectory {
     ///
     /// # Errors
     ///
-    /// Raises `ValueError` if the trajectory has non-adjacent consecutive
-    /// points under the metric, or if the metric is structurally incompatible
-    /// with the trajectory's ambient dimension. Raises `TypeError` if `metric`
-    /// is not a recognized metric type.
+    /// Raises `ValueError` if consecutive trajectory points fall in
+    /// non-adjacent cubes, or if a coordinate lies outside the supported
+    /// integer range. Raises `TypeError` if `metric` is not a recognized
+    /// metric type.
     #[new]
     fn new(
         py: Python<'_>,
@@ -71,8 +71,9 @@ impl PyEmbeddedTrajectory {
     /// # Errors
     ///
     /// Raises `ValueError` if `segment` is not a valid range, if `threshold`
-    /// is below the trajectory's `bound`, or if the segment indices are out of
-    /// range.
+    /// is below the trajectory's `bound`, if the segment indices are out of
+    /// range, or if a detected cycle's consecutive or endpoint points fall in
+    /// non-adjacent cubes.
     fn signature(
         &self,
         py: Python<'_>,
@@ -100,11 +101,17 @@ impl PyEmbeddedTrajectory {
     ///
     /// # Errors
     ///
-    /// Raises `ValueError` if `segment` is not a valid range, if the segment
-    /// indices are out of bounds, or if consecutive trajectory points within
-    /// the segment do not land in adjacent cubes.
+    /// Raises `ValueError` if `segment` is not a valid range, if it contains
+    /// fewer than two points, if the segment indices are out of bounds, or if
+    /// the segment's consecutive or endpoint points fall in non-adjacent
+    /// cubes.
     fn cycle_class(&self, segment: &Bound<'_, PyAny>) -> PyResult<PyHomologyClass> {
         let range = segment_from_py(segment)?;
+        if range.end < range.start + 2 {
+            return Err(PyValueError::new_err(
+                "cycle segment must contain at least two points",
+            ));
+        }
         let homology_class = self.inner.cycle_class(range).map_err(to_pyerr)?;
         Ok(PyHomologyClass {
             inner: homology_class,
@@ -123,9 +130,9 @@ impl PyEmbeddedTrajectory {
 
     /// A content fingerprint of the embedded trajectory.
     ///
-    /// Two embedded trajectories with identical trajectory data and cover
-    /// structure have the same fingerprint. Typically used to verify correct
-    /// serialization and deserialization.
+    /// Two embedded trajectories built from identical trajectory data, cover
+    /// structure, and metric have the same fingerprint. Typically used to
+    /// verify correct serialization and deserialization.
     #[must_use]
     fn fingerprint(&self) -> u64 {
         self.inner.fingerprint()

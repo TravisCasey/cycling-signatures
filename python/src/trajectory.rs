@@ -55,9 +55,10 @@ impl PyTrajectory {
     ///
     /// # Errors
     ///
-    /// Raises `ValueError` if the interpolator is degenerate or if bisection
-    /// cannot reach `bound`. Raises `TypeError` if `interpolator` or `metric`
-    /// is not a recognized type.
+    /// Raises `ValueError` if the interpolator has fewer than two knots, if a
+    /// sampled value is not finite, or if bisection cannot reach `bound`.
+    /// Raises `TypeError` if `interpolator` or `metric` is not a recognized
+    /// type.
     #[staticmethod]
     fn resample(
         interpolator: &Bound<'_, PyAny>,

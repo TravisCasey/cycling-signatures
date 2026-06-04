@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import pytest
 
 import cycling_signatures as cs
@@ -24,3 +26,17 @@ def test_save_load_roundtrip(tmp_path, square_loop_points):
     embedded.save(trajectory_path, cover_path)
     reloaded = cs.EmbeddedTrajectory.load(trajectory_path, cover_path, cs.Euclidean())
     assert reloaded.fingerprint() == embedded.fingerprint()
+
+
+def test_signature_rejects_invalid_segment(square_loop_points):
+    embedded = cs.EmbeddedTrajectory(cs.Trajectory(square_loop_points), cs.Euclidean())
+    with pytest.raises(ValueError):
+        embedded.signature(cast(Any, "not a segment"), 1.0)
+    with pytest.raises(ValueError):
+        embedded.signature((5, 2), 1.0)
+
+
+def test_cycle_class_rejects_short_segment(square_loop_points):
+    embedded = cs.EmbeddedTrajectory(cs.Trajectory(square_loop_points), cs.Euclidean())
+    with pytest.raises(ValueError):
+        embedded.cycle_class((0, 1))

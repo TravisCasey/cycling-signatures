@@ -5,7 +5,11 @@
 
 use std::ops::Range;
 
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyRange};
+use pyo3::{
+    exceptions::PyValueError,
+    prelude::*,
+    types::{PyRange, PyRangeMethods},
+};
 
 /// Converts a Python segment argument to a half-open `Range<usize>`.
 ///
@@ -26,9 +30,9 @@ use pyo3::{exceptions::PyValueError, prelude::*, types::PyRange};
 /// - `start > stop`.
 pub(crate) fn segment_from_py(object: &Bound<'_, PyAny>) -> PyResult<Range<usize>> {
     if let Ok(python_range) = object.cast::<PyRange>() {
-        let start: isize = python_range.getattr("start")?.extract()?;
-        let stop: isize = python_range.getattr("stop")?.extract()?;
-        let increment: isize = python_range.getattr("step")?.extract()?;
+        let start = python_range.start()?;
+        let stop = python_range.stop()?;
+        let increment = python_range.step()?;
         if increment != 1 {
             return Err(PyValueError::new_err("segment range must have step 1"));
         }

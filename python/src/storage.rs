@@ -141,9 +141,9 @@ impl PyCycleStorage {
     ///
     /// Raises `ValueError` if `segment` is not a valid range, if the segment
     /// indices are out of bounds, if `max_length` is less than 2, if
-    /// `threshold` is below the embedded trajectory's `bound`, or if
-    /// consecutive trajectory points within the segment do not land in
-    /// adjacent cubes.
+    /// `threshold` is below the embedded trajectory's `bound`, or if a
+    /// detected cycle's consecutive or endpoint points fall in non-adjacent
+    /// cubes.
     #[staticmethod]
     fn build(
         py: Python<'_>,
@@ -236,9 +236,6 @@ impl PyCycleStorage {
     }
 
     /// Returns the homology class of the component at `component_id`.
-    ///
-    /// This method is named `homology_class` rather than `class` because
-    /// `class` is a reserved keyword in Python.
     ///
     /// # Errors
     ///

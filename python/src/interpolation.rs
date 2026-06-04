@@ -78,7 +78,7 @@ impl PyCubicSpline {
 ///     np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]]),
 /// )
 /// bundle = cs.ChebyshevSphereBundleInterpolator(spline, 1)
-/// assert bundle.radius == 1.5
+/// assert bundle.radius() == 1.5
 /// ```
 #[pyclass(name = "ChebyshevSphereBundleInterpolator")]
 pub(crate) struct PyChebyshevSphereBundleInterpolator {

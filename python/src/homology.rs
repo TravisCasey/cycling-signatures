@@ -202,6 +202,14 @@ impl PyCyclingSignature {
             .map(component_to_py)
             .collect()
     }
+
+    /// Returns whether this signature equals `other` by span comparison.
+    ///
+    /// Two signatures are equal when they span the same subspace, regardless
+    /// of how many components contributed to each.
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
 }
 
 fn component_to_py(component: &CycleComponent) -> PyCycleComponent {

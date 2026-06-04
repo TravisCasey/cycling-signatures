@@ -20,4 +20,3 @@ def test_provenance_fingerprint_comparison():
     storage = cs.CycleStorage.build(euclidean, range(0, 201), 1.0, 201)
     assert storage.fingerprint() == euclidean.fingerprint()
     assert storage.fingerprint() != _load(cs.Chebyshev()).fingerprint()
-
