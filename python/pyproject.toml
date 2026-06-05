@@ -16,6 +16,16 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = ["maturin>=1.9,<2.0", "pytest>=8", "ruff>=0.14", "ty", "codespell>=2.3"]
+examples = [
+    "matplotlib>=3.10.9",
+    "scipy>=1.17.1",
+]
+docs = [
+    "matplotlib>=3.10.9",
+    "scipy>=1.17.1",
+    "sphinx>=9.0.4",
+    "sphinx-gallery>=0.21.0",
+]
 
 [tool.maturin]
 module-name = "cycling_signatures._core"
@@ -35,4 +45,4 @@ max-doc-length = 80
 testpaths = ["tests"]
 
 [tool.ty.environment]
-root = ["."]
+root = [".", "examples", "tests"]
