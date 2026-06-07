@@ -52,6 +52,51 @@ fn split_and_normalize(point: ArrayView1<'_, f64>) -> (Array1<f64>, Array1<f64>)
 ///     direction_weight * euclidean(direction_left_unit, direction_right_unit),
 /// )
 /// ```
+///
+/// # Calibration with the cubical cover
+///
+/// When a trajectory is embedded for cubical homology through
+/// [`ChebyshevSphereBundleInterpolator`](crate::interpolation::ChebyshevSphereBundleInterpolator),
+/// its direction half is normalized by the Chebyshev (L-infinity) norm to the
+/// cover's radius, so each direction coordinate ranges over roughly `[-radius,
+/// radius]`. This metric instead renormalizes the direction half to an L2 unit
+/// vector, so the radius cancels from the metric's value. The radius does not
+/// cancel from the relationship between a recurrence threshold and cube
+/// adjacency: cycle detection treats two points as recurrent when their
+/// distance is at or below a threshold, and we require a cycle's endpoints to
+/// land in adjacent cubes.
+///
+/// Typically, `direction_weight` is set equal to the cover's radius so the
+/// direction term is measured on the same scale as the radius-scaled direction
+/// cubes. With that calibration, for a position dimension `d`:
+///
+/// - Position endpoints stay cube-adjacent for thresholds below `1`.
+/// - Direction endpoints stay cube-adjacent for thresholds below `1 / sqrt(d)`.
+///   The `sqrt(d)` factor is the worst-case discrepancy between the cover's
+///   L-infinity direction normalization and this metric's L2 one.
+///
+/// The tighter direction bound governs, so a threshold below `1 / sqrt(d)`
+/// keeps every recurrence endpoint adjacent. A weight below the radius scales
+/// that safe threshold down by the same ratio, forcing stricter recurrence
+/// detection.
+///
+/// ```
+/// use cycling_signatures::{
+///     interpolation::{ChebyshevSphereBundleInterpolator, CubicSpline},
+///     metric::SphereBundleMetric,
+/// };
+/// use ndarray::array;
+///
+/// let spline = CubicSpline::new(
+///     array![0.0, 1.0, 2.0],
+///     array![[0.0, 0.0], [1.0, 0.0], [2.0, 1.0]].view(),
+/// )
+/// .unwrap();
+/// let interpolator = ChebyshevSphereBundleInterpolator::new(spline, 3);
+/// // Calibrate the weight to the interpolator's radius (cube_halfspan + 0.5).
+/// let metric = SphereBundleMetric::new(interpolator.radius()).unwrap();
+/// assert_eq!(metric.direction_weight(), interpolator.radius());
+/// ```
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct SphereBundleMetric {

@@ -3,6 +3,8 @@
 
 //! Python wrappers for the `CycleStorage` type and its query results.
 
+use std::path::PathBuf;
+
 use cycling_signatures::{Component, Cycle, CycleStorage, ExecutionBackend};
 use pyo3::{exceptions::PyIndexError, prelude::*};
 
@@ -197,6 +199,13 @@ impl PyCycleStorage {
         self.inner.max_length()
     }
 
+    /// Returns the number of cover generators, the ambient dimension shared by
+    /// every homology class in this storage.
+    #[must_use]
+    fn num_generators(&self) -> usize {
+        self.inner.num_generators()
+    }
+
     /// Returns all homology classes stored, one per detected component.
     #[must_use]
     fn classes(&self) -> Vec<PyHomologyClass> {
@@ -279,7 +288,7 @@ impl PyCycleStorage {
     /// # Errors
     ///
     /// Raises `OSError` if the file cannot be written.
-    fn save(&self, path: &str) -> PyResult<()> {
+    fn save(&self, path: PathBuf) -> PyResult<()> {
         self.inner.save(path).map_err(to_pyerr)
     }
 
@@ -291,7 +300,7 @@ impl PyCycleStorage {
     /// `FormatVersionMismatchError` if the file was written by an incompatible
     /// version of the library.
     #[staticmethod]
-    fn load(path: &str) -> PyResult<Self> {
+    fn load(path: PathBuf) -> PyResult<Self> {
         let inner = CycleStorage::load(path).map_err(to_pyerr)?;
         Ok(Self { inner })
     }

@@ -3,6 +3,8 @@
 
 //! Python wrapper for the `EmbeddedTrajectory` type.
 
+use std::path::PathBuf;
+
 use cycling_signatures::{EmbeddedTrajectory, ExecutionBackend};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -147,7 +149,7 @@ impl PyEmbeddedTrajectory {
     /// # Errors
     ///
     /// Raises `OSError` if either file cannot be written.
-    fn save(&self, trajectory_path: &str, cover_path: &str) -> PyResult<()> {
+    fn save(&self, trajectory_path: PathBuf, cover_path: PathBuf) -> PyResult<()> {
         self.inner
             .save(trajectory_path, cover_path)
             .map_err(to_pyerr)
@@ -169,7 +171,11 @@ impl PyEmbeddedTrajectory {
     /// inconsistent. Raises `TypeError` if `metric` is not a recognized metric
     /// type.
     #[staticmethod]
-    fn load(trajectory_path: &str, cover_path: &str, metric: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn load(
+        trajectory_path: PathBuf,
+        cover_path: PathBuf,
+        metric: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
         let metric = metric_from_py(metric)?;
         let inner =
             EmbeddedTrajectory::load(trajectory_path, cover_path, metric).map_err(to_pyerr)?;

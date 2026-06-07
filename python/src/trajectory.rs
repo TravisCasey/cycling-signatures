@@ -3,6 +3,8 @@
 
 //! Python wrapper for the core `Trajectory` type.
 
+use std::path::PathBuf;
+
 use cycling_signatures::Trajectory;
 use numpy::{PyArray2, PyReadonlyArray2, ToPyArray};
 use pyo3::{exceptions::PyTypeError, prelude::*};
@@ -114,7 +116,7 @@ impl PyTrajectory {
     /// # Errors
     ///
     /// Raises `OSError` if the file cannot be written.
-    fn save(&self, path: &str) -> PyResult<()> {
+    fn save(&self, path: PathBuf) -> PyResult<()> {
         self.inner.save(path).map_err(to_pyerr)
     }
 
@@ -126,7 +128,7 @@ impl PyTrajectory {
     /// `FormatVersionMismatchError` if the file was written by an incompatible
     /// version of the library.
     #[staticmethod]
-    fn load(path: &str) -> PyResult<Self> {
+    fn load(path: PathBuf) -> PyResult<Self> {
         let inner = Trajectory::load(path).map_err(to_pyerr)?;
         Ok(Self { inner })
     }
