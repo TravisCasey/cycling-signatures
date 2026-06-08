@@ -54,6 +54,25 @@ def signature_colors() -> list[tuple[float, float, float]]:
     return [_normalized(*rgb) for rgb in _SIGNATURE_PALETTE]
 
 
+def class_color_map(
+    class_keys: list[tuple[int, ...]],
+) -> dict[tuple[int, ...], tuple[float, float, float]]:
+    """Map homology-class vectors to stable colors, shared across plots.
+
+    Each key is a class as a tuple of ints (its ``to_array`` vector). The zero
+    (trivial) class maps to white; the distinct nonzero classes take palette
+    colors in ascending key order, so the same class gets the same color in
+    every plot built from one storage.
+    """
+    palette = signature_colors()
+    nonzero = sorted(key for key in set(class_keys) if any(key))
+    mapping = {key: palette[index] for index, key in enumerate(nonzero)}
+    for key in class_keys:
+        if not any(key):
+            mapping[key] = (1.0, 1.0, 1.0)
+    return mapping
+
+
 def purity_colormap() -> LinearSegmentedColormap:
     """Return a gray-to-dark-red colormap for purity values."""
     stops = [(position, _normalized(*rgb)) for position, rgb in _PURITY_STOPS]
