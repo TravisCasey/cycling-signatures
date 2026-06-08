@@ -1,3 +1,6 @@
 __pycache__/
 .pytest_cache/
 *.so
+docs/_build/
+docs/auto_examples/
+docs/sg_execution_times.rst

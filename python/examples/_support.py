@@ -1,13 +1,22 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Shared color constants for the gallery examples.
+"""Shared helpers for the gallery examples: fixture paths and color constants.
 
 Raw color values are written as RGB triples in the 0-255 range and normalized
 to the [0, 1] floats matplotlib expects through ``_normalized``.
 """
 
+from pathlib import Path
+
 from matplotlib.colors import LinearSegmentedColormap
+
+_LORENZ_DATA = Path(__file__).resolve().parent / "data" / "lorenz"
+
+
+def lorenz_path(name: str) -> Path:
+    """Return the path to a committed Lorenz fixture file."""
+    return _LORENZ_DATA / name
 
 
 def _normalized(red: int, green: int, blue: int) -> tuple[float, float, float]:

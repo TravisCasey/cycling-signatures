@@ -25,6 +25,7 @@ docs = [
     "scipy>=1.17.1",
     "sphinx>=9.0.4",
     "sphinx-gallery>=0.21.0",
+    "furo>=2025.12.19",
 ]
 
 [tool.maturin]
@@ -40,6 +41,9 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "W505"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 80
+
+[tool.ruff.lint.isort]
+known-first-party = ["_support"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -16,14 +16,13 @@ that transition visible.
 # information.
 
 from collections import Counter
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 
+import _support
 import cycling_signatures as cs
 
-DATA = Path(__file__).parent / "data" / "lorenz"
-STORAGE = cs.CycleStorage.load(DATA / "storage.cyc")
+STORAGE = cs.CycleStorage.load(_support.lorenz_path("storage.cyc"))
 
 # %%
 # Sweep over window lengths and tally rank occurrences. For each length the
@@ -31,8 +30,8 @@ STORAGE = cs.CycleStorage.load(DATA / "storage.cyc")
 # ``signature(...).rank()`` call queries the number of independent cycles this
 # window contains.
 
-LENGTH_STEP = 25
-SCAN_STEP = 250
+LENGTH_STEP = 5
+SCAN_STEP = 25
 
 extent_start, extent_stop = STORAGE.extent()
 extent_length = extent_stop - extent_start
