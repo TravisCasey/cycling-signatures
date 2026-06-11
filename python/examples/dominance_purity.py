@@ -1,0 +1,284 @@
+# This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
+# See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
+
+"""Neighborhood dominance and purity of local recurrence signatures
+====================================================================
+
+At each trajectory sample, the local recurrence signature over a fixed window
+names the homological content of nearby returns: which independent cycles are
+present. This example assigns every query point on the Lorenz attractor a
+*dominant* signature -- the library signature most common among the point's
+spatial neighbors -- and measures *purity*: the fraction of neighbors that
+share that signature.
+
+The first figure colors the attractor by dominant signature. The two wings of
+the Lorenz butterfly are each dominated by a single-wing rank-1 signature (the
+same colors as the coverage barcode and signature-indicator examples), while
+the transition region near the cross-wing bridge shows mixed or rank-2
+dominance. The second figure breaks the same query points into one purity map
+per signature: each shades the attractor by that signature's local share, dark
+red where nearly all neighbors carry it and gray where few do. Reading the
+purity maps together shows how the signatures partition the attractor and where
+they overlap.
+"""
+
+# %%
+# Load the raw trajectory and the prebuilt ``CycleStorage``. The raw file has
+# 100000 samples in native Lorenz coordinates; the storage covers the same
+# extent. ``extent()`` returns the half-open sample range ``(0, 100000)``.
+
+import math
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.spatial import KDTree
+
+import _support
+import cycling_signatures as cs
+
+RAW = np.loadtxt(_support.lorenz_path("raw.csv"), delimiter=",")
+STORAGE = cs.CycleStorage.load(_support.lorenz_path("storage.cyc"))
+
+# %%
+# Constants that control the analysis. ``WINDOW_LENGTH`` is the number of
+# trajectory samples in each signature query. ``EPSILON`` is the neighborhood
+# radius in native Lorenz coordinates. ``MIN_NEIGHBORS`` is the minimum
+# neighborhood size to trust a dominance reading; points with fewer neighbors
+# are skipped. ``QUERY_STEP`` and ``BACKGROUND_STEP`` downsample the scatter
+# for a legible figure. ``LIBRARY_SIZE`` caps the distinct signatures shown.
+
+WINDOW_LENGTH = 230
+EPSILON = 3.0
+MIN_NEIGHBORS = 20
+QUERY_STEP = 1
+BACKGROUND_STEP = 40
+LIBRARY_SIZE = 4
+LIBRARY_SCAN_STEP = 25
+
+# %%
+# **Canonical class colors.** Rank-1 signatures each span a single homology
+# class and take that class's color, shared with the coverage-barcode and
+# signature-indicator examples. Higher-rank signatures take distinct palette
+# colors beyond the class colors.
+
+class_objects = STORAGE.classes()
+class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in class_objects]
+CLASS_COLORS = _support.class_color_map(class_keys)
+nonzero_classes = [
+    (key, hclass) for key, hclass in zip(class_keys, class_objects, strict=True) if any(key)
+]
+
+
+def signature_color_and_label(
+    subspace: cs.Subspace,
+    higher_rank_colors: list[tuple[float, float, float]],
+) -> tuple[tuple[float, float, float], str]:
+    """Return the color and legend label for one non-trivial signature."""
+    if subspace.rank() == 1:
+        key = next(key for key, hclass in nonzero_classes if subspace.contains(hclass))
+        return CLASS_COLORS[key], f"[{' '.join(map(str, key))}] (rank 1)"
+    return higher_rank_colors.pop(0), f"rank {subspace.rank()}"
+
+
+# %%
+# **Build a signature library.** Slide a window across the storage extent in
+# coarse steps, collect distinct non-trivial signatures by span equality
+# (``Subspace.__eq__`` tests span equality, so a list with ``==`` is used
+# rather than a set), tally frequency, and keep the top ``LIBRARY_SIZE`` most
+# common. The library is ordered by descending frequency so the legend lists
+# the most informative signatures first.
+
+extent_start, extent_stop = STORAGE.extent()
+
+found: list[cs.Subspace] = []
+frequency: list[int] = []
+
+for window_start in range(extent_start, extent_stop - WINDOW_LENGTH, LIBRARY_SCAN_STEP):
+    subspace = STORAGE.signature(range(window_start, window_start + WINDOW_LENGTH))
+    if subspace.rank() == 0:
+        continue
+    for library_index, known in enumerate(found):
+        if known == subspace:  # span equality
+            frequency[library_index] += 1
+            break
+    else:
+        found.append(subspace)
+        frequency.append(1)
+
+order = sorted(range(len(found)), key=lambda library_index: -frequency[library_index])
+library = [found[library_index] for library_index in order[:LIBRARY_SIZE]]
+
+# %%
+# **Label every sample.** For each sample in the labeled prefix (the range
+# where a full window fits), query ``STORAGE.signature()`` and match it against
+# the library with ``==``. Samples whose signature is trivial or not in the
+# library get label -1.
+
+labeled_stop = extent_stop - WINDOW_LENGTH
+labels = np.full(extent_stop, -1, dtype=np.int32)
+
+for sample in range(extent_start, labeled_stop):
+    subspace = STORAGE.signature(range(sample, sample + WINDOW_LENGTH))
+    if subspace.rank() == 0:
+        continue
+    for library_index, known in enumerate(library):
+        if known == subspace:
+            labels[sample] = library_index
+            break
+
+# %%
+# **Compute neighborhood dominance and purity.** Build a KD-tree over the full
+# raw trajectory. For each query sample (stepped by ``QUERY_STEP`` over the
+# labeled prefix), find all neighbors within ``EPSILON``, restrict to
+# labeled neighbors, and tally their library indices. The dominant signature is
+# the most common; purity is the per-signature fraction of labeled neighbors.
+# Points with fewer than ``MIN_NEIGHBORS`` labeled neighbors are skipped.
+
+tree = KDTree(RAW)
+
+query_positions: list[np.ndarray] = []
+dominant_indices: list[int] = []
+purity_vectors: list[np.ndarray] = []
+
+for sample in range(extent_start, labeled_stop, QUERY_STEP):
+    neighbor_indices = tree.query_ball_point(RAW[sample], EPSILON)
+    neighbor_labels = labels[neighbor_indices]
+    neighbor_labels = neighbor_labels[neighbor_labels >= 0]
+    if len(neighbor_labels) < MIN_NEIGHBORS:
+        continue
+    tally = np.bincount(neighbor_labels, minlength=len(library))
+    dominant = int(np.argmax(tally))
+    purity_vector = tally / len(neighbor_labels)
+    query_positions.append(RAW[sample])
+    dominant_indices.append(dominant)
+    purity_vectors.append(purity_vector)
+
+positions_array = np.array(query_positions)
+dominant_array = np.array(dominant_indices, dtype=np.int32)
+purity_array = np.array(purity_vectors)
+
+# %%
+# **Assign colors and labels to the library.** Each library signature gets its
+# color and label via the same scheme as ``signature_indicator.py``.
+
+higher_rank_colors = _support.signature_colors()[len(nonzero_classes) :]
+library_colors: list[tuple[float, float, float]] = []
+library_labels: list[str] = []
+for subspace in library:
+    color, label = signature_color_and_label(subspace, higher_rank_colors)
+    library_colors.append(color)
+    library_labels.append(label)
+
+purity_cmap = _support.purity_colormap()
+
+
+# %%
+# **Dominant-signature map.** A 3-D scatter of the attractor, each query point
+# colored by its dominant signature over a faint gray backdrop for spatial
+# context. The legend annotates each signature's rank.
+
+
+def build_dominant_figure() -> plt.Figure:
+    """Return the dominant-signature scatter."""
+    figure = plt.figure(figsize=(14, 11))
+    axes = figure.add_subplot(projection="3d")
+    background = RAW[::BACKGROUND_STEP]
+    axes.scatter(
+        background[:, 0],
+        background[:, 1],
+        background[:, 2],
+        color=(0.82, 0.82, 0.82),
+        s=1,
+        alpha=0.2,
+        linewidths=0,
+        rasterized=True,
+    )
+    for library_index in range(len(library)):
+        mask = dominant_array == library_index
+        if not np.any(mask):
+            continue
+        axes.scatter(
+            positions_array[mask, 0],
+            positions_array[mask, 1],
+            positions_array[mask, 2],
+            color=library_colors[library_index],
+            s=2,
+            alpha=0.6,
+            linewidths=0,
+            label=library_labels[library_index],
+            rasterized=True,
+        )
+    axes.set_xlabel("x")
+    axes.set_ylabel("y")
+    axes.set_zlabel("z")
+    axes.set_title("Dominant signature: Lorenz attractor")
+    axes.view_init(elev=25, azim=-75)
+    axes.legend(
+        title="Dominant signature",
+        loc="upper left",
+        fontsize=9,
+        title_fontsize=9,
+        markerscale=3,
+    )
+    return figure
+
+
+dominant_figure = build_dominant_figure()
+
+# %%
+# **Per-signature purity.** One x-z map per library signature, arranged in a
+# grid. Every query point is shaded by that signature's local share via the
+# gray-to-dark-red colormap, drawn in ascending purity order so the prevalent
+# regions sit on top. A shared colorbar spans the grid.
+
+
+def build_purity_figure() -> plt.Figure:
+    """Return the per-signature purity maps."""
+    num_library = len(library)
+    purity_columns = 2
+    purity_rows = math.ceil(num_library / purity_columns)
+
+    figure, panel_grid = plt.subplots(
+        purity_rows,
+        purity_columns,
+        figsize=(11, 9),
+        squeeze=False,
+    )
+    panels = panel_grid.ravel()
+    purity_scatter = None
+    for library_index in range(num_library):
+        panel = panels[library_index]
+        signature_purity = purity_array[:, library_index]
+        draw_order = np.argsort(signature_purity)
+        purity_scatter = panel.scatter(
+            positions_array[draw_order, 0],
+            positions_array[draw_order, 2],
+            c=signature_purity[draw_order],
+            cmap=purity_cmap,
+            vmin=0.0,
+            vmax=1.0,
+            s=4,
+            alpha=0.8,
+            linewidths=0,
+            rasterized=True,
+        )
+        panel.set_xlabel("x")
+        panel.set_ylabel("z")
+        panel.set_title(library_labels[library_index], fontsize=10)
+    for extra_index in range(num_library, len(panels)):
+        panels[extra_index].set_axis_off()
+
+    if purity_scatter is not None:
+        colorbar = figure.colorbar(
+            purity_scatter,
+            ax=panels.tolist(),
+            fraction=0.046,
+            pad=0.04,
+        )
+        colorbar.set_label("Purity (fraction of neighbors)")
+        colorbar.set_ticks([0.0, 0.25, 0.5, 0.75, 1.0])
+    figure.suptitle("Neighborhood purity per signature: Lorenz attractor")
+    return figure
+
+
+purity_figure = build_purity_figure()
