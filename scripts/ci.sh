@@ -78,4 +78,7 @@ run_step "Python spellcheck" \
 run_step "Python tests" \
     uv run pytest
 
+run_step "Gallery build" \
+    uv run --group docs --group examples sphinx-build -E -W -b html docs docs/_build/html
+
 echo -e "\n${GREEN}${BOLD}All checks passed.${RESET}"

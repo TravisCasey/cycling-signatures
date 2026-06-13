@@ -137,6 +137,7 @@ jobs:
       - run: uv run ty check
       - run: uv run codespell cycling_signatures tests
       - run: uv run pytest
+      - run: uv run --group docs --group examples sphinx-build -E -W -b html docs docs/_build/html
 
   success:
     name: Success
