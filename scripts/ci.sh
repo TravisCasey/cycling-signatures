@@ -70,7 +70,7 @@ run_step "Python lint" \
     uv run ruff check
 
 run_step "Python type check" \
-    uv run ty check
+    uv run --group examples ty check
 
 run_step "Python spellcheck" \
     uv run codespell cycling_signatures tests
