@@ -66,6 +66,8 @@ for component in COMPONENTS:
         length = cycle_stop - cycle_start
         if shortest is None or length < shortest[0]:
             shortest = (length, cycle_start, cycle_stop)
+    if shortest is None:
+        continue
     representative_class.append(class_key)
     representative_start.append(shortest[1])
     representative_stop.append(shortest[2])
