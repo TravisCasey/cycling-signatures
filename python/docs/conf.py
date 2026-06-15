@@ -1,7 +1,11 @@
 """Sphinx configuration for the cycling-signatures example gallery."""
 
 project = "cycling-signatures"
-extensions = ["sphinx_gallery.gen_gallery"]
+extensions = [
+    "sphinx.ext.autodoc",
+    "numpydoc",
+    "sphinx_gallery.gen_gallery",
+]
 
 sphinx_gallery_conf = {
     "examples_dirs": "../examples",
@@ -12,5 +16,10 @@ sphinx_gallery_conf = {
     "remove_config_comments": True,
 }
 
+autodoc_typehints = "none"
+autodoc_member_order = "bysource"
+add_module_names = False
+numpydoc_show_class_members = False
+default_role = "literal"
 html_theme = "furo"
 exclude_patterns = ["_build"]

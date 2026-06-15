@@ -1,0 +1,66 @@
+API reference
+=============
+
+The compiled bindings exposed by the ``cycling_signatures`` package.
+
+Metrics
+-------
+
+.. autoclass:: cycling_signatures.Euclidean
+   :members:
+
+.. autoclass:: cycling_signatures.Chebyshev
+   :members:
+
+.. autoclass:: cycling_signatures.SphereBundle
+   :members:
+
+Interpolation
+-------------
+
+.. autoclass:: cycling_signatures.CubicSpline
+   :members:
+
+.. autoclass:: cycling_signatures.ChebyshevSphereBundleInterpolator
+   :members:
+
+Trajectories
+------------
+
+.. autoclass:: cycling_signatures.Trajectory
+   :members:
+
+.. autoclass:: cycling_signatures.EmbeddedTrajectory
+   :members:
+
+Homology values
+---------------
+
+.. autoclass:: cycling_signatures.HomologyClass
+   :members:
+
+.. autoclass:: cycling_signatures.Subspace
+   :members:
+
+.. autoclass:: cycling_signatures.CyclingSignature
+   :members:
+
+.. autoclass:: cycling_signatures.CycleComponent
+   :members:
+
+Cycle storage
+-------------
+
+.. autoclass:: cycling_signatures.CycleStorage
+   :members:
+
+.. autoclass:: cycling_signatures.Component
+   :members:
+
+.. autoclass:: cycling_signatures.Cycle
+   :members:
+
+Errors
+------
+
+.. autoexception:: cycling_signatures.FormatVersionMismatchError

@@ -1,7 +1,7 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Shared helper for converting Python segment arguments to `Range<usize>`.
+//! Shared helpers for converting Python index and segment arguments.
 
 use std::ops::Range;
 
@@ -10,6 +10,22 @@ use pyo3::{
     prelude::*,
     types::{PyRange, PyRangeMethods},
 };
+
+/// Resolves a Python sequence index against a container length.
+///
+/// Negative indices count from the end, as Python sequences do. Returns `None`
+/// when the index is out of range.
+pub(crate) fn resolve_index(index: isize, length: usize) -> Option<usize> {
+    let resolved = if index < 0 {
+        index.checked_add(length as isize)?
+    } else {
+        index
+    };
+    if resolved < 0 || resolved as usize >= length {
+        return None;
+    }
+    Some(resolved as usize)
+}
 
 /// Converts a Python segment argument to a half-open `Range<usize>`.
 ///

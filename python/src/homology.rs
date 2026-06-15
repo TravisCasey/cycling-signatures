@@ -3,16 +3,21 @@
 
 //! Python wrappers for the homology value types returned by signature queries.
 
-use cycling_signatures::{CycleComponent, CyclingSignature, F2Subspace, F2Vector};
+use cycling_signatures::{CycleComponent, CyclingSignature, F2, F2Subspace, F2Vector};
 use numpy::PyArray1;
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::{
+    exceptions::{PyIndexError, PyValueError},
+    prelude::*,
+};
 
-/// The homology class of a recurrent cycle, as a vector over `F_2`.
+use crate::segment::resolve_index;
+
+/// The homology class of a recurrent cycle, as a vector over ``F_2``.
 ///
 /// The cubical cover of a trajectory contains a detected set of independent
 /// loops (its first rank homology generators); a cycle's homology class records
 /// which of them a near-recurrent trajectory cycle wraps. Because the
-/// coefficients live in the two-element field `F_2` (the integers modulo 2),
+/// coefficients live in the two-element field ``F_2`` (the integers modulo 2),
 /// every entry is either zero or one: the class is a zero/one vector with one
 /// entry per homology generator of the cover.
 ///
@@ -22,14 +27,19 @@ use pyo3::{exceptions::PyValueError, prelude::*};
 /// different coordinates. Comparing two classes entry by entry is therefore
 /// only meaningful when both use the same basis, and is rarely the operation
 /// you want. To compare a span of cycling results in the same basis, use
-/// `Subspace`. Classes from different covers or bases are not currently
+/// ``Subspace``. Classes from different covers or bases are not currently
 /// comparable.
+///
+/// ``len`` gives the number of generators, and indexing returns the zero or one
+/// entry at a generator (negative indices count from the end). Equality
+/// compares entry by entry.
 #[pyclass(name = "HomologyClass")]
 pub(crate) struct PyHomologyClass {
     pub(crate) inner: F2Vector,
 }
 
-/// A cycle space: the `F_2` subspace of cover homology spanned by some classes.
+/// A cycle space: the ``F_2`` subspace of cover homology spanned by some
+/// classes.
 ///
 /// Equality and membership depend only on the space a subspace spans, not on
 /// the particular set of classes used to form it: two subspaces formed from
@@ -61,9 +71,9 @@ pub(crate) struct PyCycleComponent {
 
 /// The cycling signature of a trajectory segment.
 ///
-/// The signature is the cycle space (a `Subspace`) spanned by the homology
-/// classes of the detected recurrence components. Its `rank` is the number of
-/// independent cycling classes it carries, and `components` exposes the
+/// The signature is the cycle space (a ``Subspace``) spanned by the homology
+/// classes of the detected recurrence components. Its ``rank`` is the number of
+/// independent cycling classes it carries, and ``components`` exposes the
 /// per-component breakdown.
 #[pyclass(name = "CyclingSignature")]
 pub(crate) struct PyCyclingSignature {
@@ -72,29 +82,50 @@ pub(crate) struct PyCyclingSignature {
 
 #[pymethods]
 impl PyHomologyClass {
-    /// Returns the number of generators in the cover that produced this class.
+    /// Returns the number of cover generators, the length of the class vector.
     fn __len__(&self) -> usize {
         self.inner.len()
     }
 
-    /// Returns whether this class equals `other` entry by entry.
-    ///
-    /// Two classes are equal when they have the same zero/one entry at every
-    /// position. Because the generator basis is not canonical, this is only
-    /// meaningful when both classes use the same basis, and is rarely the
-    /// comparison you want. To compare the spaces that classes span (in a fixed
-    /// basis), use a `Subspace`.
+    /// Returns the zero or one entry at generator ``index``.
+    fn __getitem__(&self, index: isize) -> PyResult<u8> {
+        let index = resolve_index(index, self.inner.len())
+            .ok_or_else(|| PyIndexError::new_err("generator index out of bounds"))?;
+        Ok(u8::from(self.inner.get(index) == F2::from(1u64)))
+    }
+
+    /// Returns whether this class equals ``other`` entry by entry.
     fn __eq__(&self, other: &Self) -> bool {
         self.inner == other.inner
     }
 
-    /// Returns the class as a dense zero/one `NumPy` array over the cover's
+    /// Returns a string representation of the class.
+    fn __repr__(&self) -> String {
+        let set: Vec<String> = self
+            .inner
+            .nonzero_indices()
+            .map(|index| index.to_string())
+            .collect();
+        format!(
+            "HomologyClass(generators={}, set={{{}}})",
+            self.inner.len(),
+            set.join(", ")
+        )
+    }
+
+    /// Returns the class as a dense zero or one array over the cover's
     /// generators.
     ///
-    /// The array has one entry per generator, with `1` at each generator the
-    /// class includes and `0` elsewhere. The layout depends on the cover's
+    /// The array has one entry per generator, with ``1`` at each generator the
+    /// class includes and ``0`` elsewhere. The layout depends on the cover's
     /// non-canonical choice of generator basis, so it is meaningful only
     /// relative to the basis that produced this class.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray
+    ///     A one-dimensional array of ``uint8`` zeros and ones, one per
+    ///     generator.
     #[must_use]
     fn to_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u8>> {
         let mut values = vec![0_u8; self.inner.len()];
@@ -108,6 +139,11 @@ impl PyHomologyClass {
 #[pymethods]
 impl PySubspace {
     /// Returns the dimension of this subspace.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The number of independent classes the subspace spans.
     #[must_use]
     fn rank(&self) -> usize {
         self.inner.rank()
@@ -115,31 +151,51 @@ impl PySubspace {
 
     /// Returns the number of cover generators, the dimension of the ambient
     /// space the subspace lies in.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The ambient dimension, equal to the length of each class vector.
     #[must_use]
     fn num_generators(&self) -> usize {
         self.inner.num_generators()
     }
 
-    /// Returns whether this subspace equals `other` by span comparison.
-    ///
-    /// Two subspaces are equal if and only if they span the same set of
-    /// vectors, independent of the spanning classes used to form each. The
-    /// comparison is taken in the cover's generator basis and requires both
-    /// subspaces to use the same basis.
+    /// Returns whether this subspace equals ``other`` by span comparison.
     fn __eq__(&self, other: &Self) -> bool {
         self.inner == other.inner
     }
 
-    /// Returns whether `homology_class` lies in this subspace.
+    /// Returns a string representation of the subspace.
+    fn __repr__(&self) -> String {
+        format!(
+            "Subspace(rank={}, generators={})",
+            self.inner.rank(),
+            self.inner.num_generators()
+        )
+    }
+
+    /// Returns whether ``homology_class`` lies in this subspace.
     ///
     /// The class and the subspace must be expressed in the same cover's
     /// generator basis; the result is not meaningful across covers or across
     /// differing generator bases.
     ///
-    /// # Errors
+    /// Parameters
+    /// ----------
+    /// homology_class : ``HomologyClass``
+    ///     A class whose length matches the generator count of this subspace.
     ///
-    /// Raises `ValueError` if the length of `homology_class` does not match
-    /// the number of generators of this subspace.
+    /// Returns
+    /// -------
+    /// bool
+    ///     ``True`` if ``homology_class`` is a member of the subspace.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If the length of ``homology_class`` does not match the number of
+    ///     generators of this subspace.
     fn contains(&self, homology_class: &PyHomologyClass) -> PyResult<bool> {
         if homology_class.inner.len() != self.inner.num_generators() {
             return Err(PyValueError::new_err(
@@ -152,22 +208,37 @@ impl PySubspace {
 
 #[pymethods]
 impl PyCycleComponent {
-    /// Returns the cycle segments in this component as `(start, stop)` pairs.
+    /// Returns the cycle segments in this component as ``(start, stop)`` pairs.
     ///
     /// Each pair is a half-open range of sample indices covering the cycle
-    /// `start..stop`. Sample indices index into the original input data
-    /// (`0..trajectory.original_count()`).
+    /// ``start..stop``. Sample indices index into the original input data,
+    /// the range ``0`` up to ``trajectory.original_count()``.
+    ///
+    /// Returns
+    /// -------
+    /// list of tuple of int
+    ///     One ``(start, stop)`` pair per cycle in the component.
     #[must_use]
     fn cycles(&self) -> Vec<(usize, usize)> {
         self.cycles.clone()
     }
 
     /// Returns the homology class shared by every cycle in this component.
+    ///
+    /// Returns
+    /// -------
+    /// ``HomologyClass``
+    ///     The class carried by all cycles in the component.
     #[must_use]
     fn homology_class(&self) -> PyHomologyClass {
         PyHomologyClass {
             inner: self.homology_class.clone(),
         }
+    }
+
+    /// Returns a string representation of the component.
+    fn __repr__(&self) -> String {
+        format!("CycleComponent(cycles={})", self.cycles.len())
     }
 }
 
@@ -177,6 +248,11 @@ impl PyCyclingSignature {
     ///
     /// This is the signature's value identity: two signatures with the same
     /// span compare equal regardless of how many components contributed.
+    ///
+    /// Returns
+    /// -------
+    /// ``Subspace``
+    ///     The cycle space spanned by the component classes.
     #[must_use]
     fn span(&self) -> PySubspace {
         PySubspace {
@@ -185,6 +261,11 @@ impl PyCyclingSignature {
     }
 
     /// Returns the number of independent cycling classes in the signature.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The rank of the spanned cycle space.
     #[must_use]
     fn rank(&self) -> usize {
         self.inner.rank()
@@ -194,6 +275,11 @@ impl PyCyclingSignature {
     ///
     /// Each entry pairs the cycle segments of one connected recurrence
     /// component with the homology class those cycles share.
+    ///
+    /// Returns
+    /// -------
+    /// list of ``CycleComponent``
+    ///     One entry per connected recurrence component.
     #[must_use]
     fn components(&self) -> Vec<PyCycleComponent> {
         self.inner
@@ -203,12 +289,18 @@ impl PyCyclingSignature {
             .collect()
     }
 
-    /// Returns whether this signature equals `other` by span comparison.
-    ///
-    /// Two signatures are equal when they span the same subspace, regardless
-    /// of how many components contributed to each.
+    /// Returns whether this signature equals ``other`` by span comparison.
     fn __eq__(&self, other: &Self) -> bool {
         self.inner == other.inner
+    }
+
+    /// Returns a string representation of the signature.
+    fn __repr__(&self) -> String {
+        format!(
+            "CyclingSignature(rank={}, components={})",
+            self.inner.rank(),
+            self.inner.components().len()
+        )
     }
 }
 

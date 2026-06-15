@@ -30,7 +30,7 @@ fn scalar_distance(
 }
 
 /// Computes an N x N symmetric matrix of pairwise distances among the rows of
-/// `points`.
+/// ``points``.
 fn pairwise_matrix<'py>(
     metric: &dyn Metric,
     points: &PyReadonlyArray2<'_, f64>,
@@ -68,9 +68,22 @@ impl PyEuclidean {
 
     /// Returns the distance between two coordinate vectors.
     ///
-    /// # Errors
+    /// Parameters
+    /// ----------
+    /// point : ndarray
+    ///     A one-dimensional coordinate vector.
+    /// other : ndarray
+    ///     A one-dimensional coordinate vector of the same length as ``point``.
     ///
-    /// Raises `ValueError` if the two vectors differ in length.
+    /// Returns
+    /// -------
+    /// float
+    ///     The Euclidean distance between the two vectors.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If the two vectors differ in length.
     #[allow(clippy::needless_pass_by_value)]
     #[allow(clippy::unused_self)]
     fn distance(
@@ -81,8 +94,18 @@ impl PyEuclidean {
         scalar_distance(&Euclidean, &point, &other)
     }
 
-    /// Returns the symmetric matrix of pairwise distances among the rows of
-    /// `points`.
+    /// Returns the matrix of pairwise distances among the rows of ``points``.
+    ///
+    /// Parameters
+    /// ----------
+    /// points : ndarray
+    ///     A two-dimensional array whose rows are coordinate vectors.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray
+    ///     A square symmetric matrix whose entry ``(i, j)`` is the distance
+    ///     between row ``i`` and row ``j``. The diagonal is zero.
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
     #[allow(clippy::unused_self)]
@@ -92,6 +115,12 @@ impl PyEuclidean {
         points: PyReadonlyArray2<'_, f64>,
     ) -> Bound<'py, PyArray2<f64>> {
         pairwise_matrix(&Euclidean, &points, py)
+    }
+
+    /// Returns a string representation of the metric.
+    #[allow(clippy::unused_self)]
+    fn __repr__(&self) -> String {
+        "Euclidean()".to_string()
     }
 }
 
@@ -111,9 +140,22 @@ impl PyChebyshev {
 
     /// Returns the distance between two coordinate vectors.
     ///
-    /// # Errors
+    /// Parameters
+    /// ----------
+    /// point : ndarray
+    ///     A one-dimensional coordinate vector.
+    /// other : ndarray
+    ///     A one-dimensional coordinate vector of the same length as ``point``.
     ///
-    /// Raises `ValueError` if the two vectors differ in length.
+    /// Returns
+    /// -------
+    /// float
+    ///     The largest absolute coordinate difference between the two vectors.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If the two vectors differ in length.
     #[allow(clippy::needless_pass_by_value)]
     #[allow(clippy::unused_self)]
     fn distance(
@@ -124,8 +166,18 @@ impl PyChebyshev {
         scalar_distance(&Chebyshev, &point, &other)
     }
 
-    /// Returns the symmetric matrix of pairwise distances among the rows of
-    /// `points`.
+    /// Returns the matrix of pairwise distances among the rows of ``points``.
+    ///
+    /// Parameters
+    /// ----------
+    /// points : ndarray
+    ///     A two-dimensional array whose rows are coordinate vectors.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray
+    ///     A square symmetric matrix whose entry ``(i, j)`` is the distance
+    ///     between row ``i`` and row ``j``. The diagonal is zero.
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
     #[allow(clippy::unused_self)]
@@ -136,21 +188,32 @@ impl PyChebyshev {
     ) -> Bound<'py, PyArray2<f64>> {
         pairwise_matrix(&Chebyshev, &points, py)
     }
+
+    /// Returns a string representation of the metric.
+    #[allow(clippy::unused_self)]
+    fn __repr__(&self) -> String {
+        "Chebyshev()".to_string()
+    }
 }
 
 /// A distance metric on the L2 sphere bundle.
 ///
 /// Operates on even-length coordinate vectors whose first half is a spatial
 /// position and whose second half is a nonzero direction (velocity) vector.
-/// The direction half is L2-normalized before computing distances. The combined
-/// metric is
+/// The distance is the maximum of two quantities: the Euclidean distance
+/// between the position halves, and ``direction_weight`` times the Euclidean
+/// distance between the L2-normalized direction halves.
 ///
-/// ```text
-/// max(
-///     euclidean(position_left, position_right),
-///     direction_weight * euclidean(direction_left_unit, direction_right_unit),
-/// )
-/// ```
+/// Parameters
+/// ----------
+/// direction_weight : float
+///     A finite, strictly positive weight applied to the direction half of the
+///     distance.
+///
+/// Raises
+/// ------
+/// ``ValueError``
+///     If ``direction_weight`` is not finite or not strictly positive.
 #[pyclass(name = "SphereBundle", frozen)]
 pub(crate) struct PySphereBundle {
     metric: SphereBundleMetric,
@@ -159,11 +222,6 @@ pub(crate) struct PySphereBundle {
 #[pymethods]
 impl PySphereBundle {
     /// Creates a sphere-bundle metric with the given direction weight.
-    ///
-    /// # Errors
-    ///
-    /// Raises `ValueError` if `direction_weight` is not finite or not strictly
-    /// positive.
     #[new]
     fn new(direction_weight: f64) -> PyResult<Self> {
         let metric = SphereBundleMetric::new(direction_weight).map_err(to_pyerr)?;
@@ -171,6 +229,11 @@ impl PySphereBundle {
     }
 
     /// Returns the configured direction weight.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///     The direction weight set at construction.
     #[must_use]
     fn direction_weight(&self) -> f64 {
         self.metric.direction_weight()
@@ -178,9 +241,26 @@ impl PySphereBundle {
 
     /// Returns the distance between two coordinate vectors.
     ///
-    /// # Errors
+    /// The direction half of each vector is L2-normalized before the distance
+    /// is taken, so the result is independent of the direction magnitudes.
     ///
-    /// Raises `ValueError` if the two vectors differ in length.
+    /// Parameters
+    /// ----------
+    /// point : ndarray
+    ///     A one-dimensional, even-length coordinate vector whose first half is
+    ///     a position and whose second half is a nonzero direction.
+    /// other : ndarray
+    ///     A coordinate vector of the same length as ``point``.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///     The sphere-bundle distance between the two vectors.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If the two vectors differ in length.
     #[allow(clippy::needless_pass_by_value)]
     fn distance(
         &self,
@@ -190,8 +270,19 @@ impl PySphereBundle {
         scalar_distance(&self.metric, &point, &other)
     }
 
-    /// Returns the symmetric matrix of pairwise distances among the rows of
-    /// `points`.
+    /// Returns the matrix of pairwise distances among the rows of ``points``.
+    ///
+    /// Parameters
+    /// ----------
+    /// points : ndarray
+    ///     A two-dimensional array whose rows are even-length sphere-bundle
+    ///     coordinate vectors.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray
+    ///     A square symmetric matrix whose entry ``(i, j)`` is the distance
+    ///     between row ``i`` and row ``j``. The diagonal is zero.
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
     fn distance_matrix<'py>(
@@ -201,10 +292,18 @@ impl PySphereBundle {
     ) -> Bound<'py, PyArray2<f64>> {
         pairwise_matrix(&self.metric, &points, py)
     }
+
+    /// Returns a string representation of the metric.
+    fn __repr__(&self) -> String {
+        format!(
+            "SphereBundle(direction_weight={:?})",
+            self.metric.direction_weight()
+        )
+    }
 }
 
 /// Builds a boxed core metric from any built-in Python metric object, or raises
-/// `TypeError` if the object is not a recognized metric.
+/// ``TypeError`` if the object is not a recognized metric.
 pub(crate) fn metric_from_py(object: &Bound<'_, PyAny>) -> PyResult<Box<dyn Metric>> {
     if object.cast::<PyEuclidean>().is_ok() {
         return Ok(Box::new(Euclidean));

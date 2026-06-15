@@ -12,15 +12,15 @@ use crate::{
     embedded::PyEmbeddedTrajectory,
     errors::to_pyerr,
     homology::{PyHomologyClass, PySubspace},
-    segment::segment_from_py,
+    segment::{resolve_index, segment_from_py},
 };
 
 /// A single detected near-recurrent cycle in a trajectory.
 ///
 /// A cycle is a segment of trajectory samples whose first and last points are
-/// within the adjacency threshold of each other. `range` gives the half-open
-/// sample-index span, `birth` gives the distance between the endpoints, and
-/// `length` gives the number of sample points the cycle covers.
+/// within the adjacency threshold of each other. ``range`` gives the half-open
+/// sample-index span, ``birth`` gives the distance between the endpoints, and
+/// ``length`` gives the number of sample points the cycle covers.
 #[pyclass(name = "Cycle")]
 pub(crate) struct PyCycle {
     pub(crate) inner: Cycle,
@@ -29,9 +29,12 @@ pub(crate) struct PyCycle {
 /// A connected group of detected cycles sharing the same homology class.
 ///
 /// The cycles in one component all contribute the same class to cover homology.
-/// `class_id` identifies which homology class that is within the parent
-/// `CycleStorage`, and `coverage` gives the overall sample-index span that the
-/// component's cycles collectively cover.
+/// ``class_id`` identifies which homology class that is within the parent
+/// ``CycleStorage``, and ``coverage`` gives the overall sample-index span that
+/// the component's cycles collectively cover.
+///
+/// ``len`` gives the number of cycles, and indexing returns the ``Cycle`` at a
+/// position (negative indices count from the end).
 #[pyclass(name = "Component")]
 pub(crate) struct PyComponent {
     pub(crate) inner: Component,
@@ -41,12 +44,15 @@ pub(crate) struct PyComponent {
 /// trajectory segment.
 ///
 /// Holds every near-recurrent cycle detected within a segment of an
-/// `EmbeddedTrajectory`, grouped into components that each carry a homology
-/// class. The contents can be queried with `signature`, `component`, and
-/// `homology_class`, and can be saved and reloaded.
+/// ``EmbeddedTrajectory``, grouped into components that each carry a homology
+/// class. The contents can be queried with ``signature``, ``component``, and
+/// ``homology_class``, and can be saved and reloaded.
 ///
-/// The `fingerprint` matches the fingerprint of the `EmbeddedTrajectory` it was
-/// built from; save and load preserve this identity.
+/// The ``fingerprint`` matches the fingerprint of the ``EmbeddedTrajectory`` it
+/// was built from; save and load preserve this identity.
+///
+/// ``len`` gives the number of components, and indexing returns the
+/// ``Component`` with that component id (negative indices count from the end).
 #[pyclass(name = "CycleStorage")]
 pub(crate) struct PyCycleStorage {
     pub(crate) inner: CycleStorage,
@@ -54,8 +60,13 @@ pub(crate) struct PyCycleStorage {
 
 #[pymethods]
 impl PyCycle {
-    /// Returns the half-open sample-index range `(start, stop)` covered by
+    /// Returns the half-open sample-index range ``(start, stop)`` covered by
     /// this cycle.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of int
+    ///     The ``(start, stop)`` sample indices of the cycle.
     #[must_use]
     fn range(&self) -> (u32, u32) {
         let range = self.inner.range();
@@ -63,29 +74,65 @@ impl PyCycle {
     }
 
     /// Returns the metric distance between the cycle's first and last points.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///     The endpoint distance at which the cycle closes.
     #[must_use]
     fn birth(&self) -> f64 {
         self.inner.birth()
     }
 
     /// Returns the number of sample points covered by this cycle.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The point count of the cycle.
     #[must_use]
     fn length(&self) -> u32 {
         self.inner.length()
+    }
+
+    /// Returns a string representation of the cycle.
+    fn __repr__(&self) -> String {
+        let range = self.inner.range();
+        format!(
+            "Cycle(start={}, stop={}, birth={:?}, length={})",
+            range.start,
+            range.end,
+            self.inner.birth(),
+            self.inner.length()
+        )
     }
 }
 
 #[pymethods]
 impl PyComponent {
-    /// Returns the index of the homology class assigned to this component
-    /// within its parent `CycleStorage`.
+    /// Returns the index into the storage's deduplicated classes that gives
+    /// this component's homology class.
+    ///
+    /// Several components may share one class, so distinct components can
+    /// return the same ``class_id``. The id indexes
+    /// ``CycleStorage.classes()``.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The class index within the parent storage.
     #[must_use]
     fn class_id(&self) -> u32 {
         self.inner.class_id()
     }
 
-    /// Returns the half-open sample-index range `(start, stop)` collectively
+    /// Returns the half-open sample-index range ``(start, stop)`` collectively
     /// covered by all cycles in this component.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of int
+    ///     The combined ``(start, stop)`` coverage of the component's cycles.
     #[must_use]
     fn coverage(&self) -> (u32, u32) {
         let range = self.inner.coverage();
@@ -93,6 +140,11 @@ impl PyComponent {
     }
 
     /// Returns all cycles belonging to this component.
+    ///
+    /// Returns
+    /// -------
+    /// list of ``Cycle``
+    ///     Every cycle grouped into the component.
     #[must_use]
     fn cycles(&self) -> Vec<PyCycle> {
         self.inner
@@ -105,12 +157,22 @@ impl PyComponent {
     }
 
     /// Returns the number of cycles in this component.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The cycle count, also available as ``len(component)``.
     #[must_use]
     fn cycle_count(&self) -> usize {
         self.inner.cycle_count()
     }
 
     /// Returns the cycle in this component with the greatest point count.
+    ///
+    /// Returns
+    /// -------
+    /// ``Cycle``
+    ///     The longest cycle in the component.
     #[must_use]
     fn longest_cycle(&self) -> PyCycle {
         PyCycle {
@@ -119,33 +181,80 @@ impl PyComponent {
     }
 
     /// Returns the cycle in this component with the smallest point count.
+    ///
+    /// Returns
+    /// -------
+    /// ``Cycle``
+    ///     The shortest cycle in the component.
     #[must_use]
     fn shortest_cycle(&self) -> PyCycle {
         PyCycle {
             inner: self.inner.shortest_cycle().clone(),
         }
     }
+
+    /// Returns the number of cycles in this component.
+    fn __len__(&self) -> usize {
+        self.inner.cycle_count()
+    }
+
+    /// Returns the cycle at ``index`` in this component.
+    fn __getitem__(&self, index: isize) -> PyResult<PyCycle> {
+        let cycles = self.inner.cycles();
+        let index = resolve_index(index, cycles.len())
+            .ok_or_else(|| PyIndexError::new_err("cycle index out of bounds"))?;
+        Ok(PyCycle {
+            inner: cycles[index].clone(),
+        })
+    }
+
+    /// Returns a string representation of the component.
+    fn __repr__(&self) -> String {
+        let coverage = self.inner.coverage();
+        format!(
+            "Component(class_id={}, coverage=({}, {}), cycles={})",
+            self.inner.class_id(),
+            coverage.start,
+            coverage.end,
+            self.inner.cycle_count()
+        )
+    }
 }
 
 #[pymethods]
 impl PyCycleStorage {
-    /// Builds a `CycleStorage` from an embedded trajectory.
+    /// Builds a ``CycleStorage`` from an embedded trajectory.
     ///
-    /// Detects all near-recurrent cycles within `segment` of `embedded` whose
-    /// endpoint metric distance is at most `threshold` and whose point count
-    /// does not exceed `max_length`, and computes the homology class each one
-    /// represents.
+    /// Detects all near-recurrent cycles within ``segment`` of ``embedded``
+    /// whose endpoint metric distance is at most ``threshold`` and whose point
+    /// count does not exceed ``max_length``, and computes the homology class
+    /// each one represents.
     ///
-    /// `segment` is a half-open range of sample indices and may be a Python
-    /// `range` or a `(start, stop)` integer tuple.
+    /// Parameters
+    /// ----------
+    /// embedded : ``EmbeddedTrajectory``
+    ///     The embedded trajectory to detect cycles in.
+    /// segment : range or tuple of int
+    ///     A half-open range of sample indices, given as a Python ``range`` or
+    ///     a ``(start, stop)`` integer tuple.
+    /// threshold : float
+    ///     The largest endpoint distance admitted as a cycle. Must be at least
+    ///     the embedded trajectory's ``bound``.
+    /// max_length : int
+    ///     The largest cycle point count to detect. Must be at least ``2``.
     ///
-    /// # Errors
+    /// Returns
+    /// -------
+    /// ``CycleStorage``
+    ///     The detected cycles and their homology classes.
     ///
-    /// Raises `ValueError` if `segment` is not a valid range, if the segment
-    /// indices are out of bounds, if `max_length` is less than 2, if
-    /// `threshold` is below the embedded trajectory's `bound`, or if a
-    /// detected cycle's consecutive or endpoint points fall in non-adjacent
-    /// cubes.
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If ``segment`` is not a valid range, if the segment indices are out
+    ///     of bounds, if ``max_length`` is less than ``2``, if ``threshold`` is
+    ///     below the embedded trajectory's ``bound``, or if a detected cycle's
+    ///     consecutive or endpoint points fall in non-adjacent cubes.
     #[staticmethod]
     fn build(
         py: Python<'_>,
@@ -170,8 +279,13 @@ impl PyCycleStorage {
         Ok(Self { inner })
     }
 
-    /// Returns the half-open sample-index range `(start, stop)` covered by
+    /// Returns the half-open sample-index range ``(start, stop)`` covered by
     /// this storage.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of int
+    ///     The ``(start, stop)`` sample indices of the analyzed extent.
     #[must_use]
     fn extent(&self) -> (u32, u32) {
         let range = self.inner.extent();
@@ -180,20 +294,35 @@ impl PyCycleStorage {
 
     /// Returns a content fingerprint of this storage.
     ///
-    /// The fingerprint matches the `fingerprint` of the `EmbeddedTrajectory`
+    /// The fingerprint matches the fingerprint of the ``EmbeddedTrajectory``
     /// used to build it. Save and load preserve this value.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     A fingerprint identifying the storage contents.
     #[must_use]
     fn fingerprint(&self) -> u64 {
         self.inner.fingerprint()
     }
 
     /// Returns the adjacency threshold used when building this storage.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///     The endpoint-distance threshold passed to ``build``.
     #[must_use]
     fn threshold(&self) -> f64 {
         self.inner.threshold()
     }
 
     /// Returns the maximum cycle point count used when building this storage.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The cycle-length cap passed to ``build``.
     #[must_use]
     fn max_length(&self) -> u32 {
         self.inner.max_length()
@@ -201,12 +330,26 @@ impl PyCycleStorage {
 
     /// Returns the number of cover generators, the ambient dimension shared by
     /// every homology class in this storage.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The number of homology generators in the cover.
     #[must_use]
     fn num_generators(&self) -> usize {
         self.inner.num_generators()
     }
 
-    /// Returns all homology classes stored, one per detected component.
+    /// Returns the deduplicated homology classes in this storage.
+    ///
+    /// Each distinct class appears once. A component's ``class_id`` indexes
+    /// into this list, so several components may reference the same entry. The
+    /// length is the number of distinct classes, not the number of components.
+    ///
+    /// Returns
+    /// -------
+    /// list of ``HomologyClass``
+    ///     The distinct homology classes, indexed by ``Component.class_id``.
     #[must_use]
     fn classes(&self) -> Vec<PyHomologyClass> {
         self.inner
@@ -219,6 +362,16 @@ impl PyCycleStorage {
     }
 
     /// Returns all detected components.
+    ///
+    /// A component's position in this list is its component id: the value that
+    /// ``components_covering`` returns and that ``component`` and indexing
+    /// accept. The order in which components are assigned ids is not otherwise
+    /// specified, but it is fixed for a given storage.
+    ///
+    /// Returns
+    /// -------
+    /// list of ``Component``
+    ///     Every detected component.
     #[must_use]
     fn components(&self) -> Vec<PyComponent> {
         self.inner
@@ -230,11 +383,22 @@ impl PyCycleStorage {
             .collect()
     }
 
-    /// Returns the component at `component_id`.
+    /// Returns the component at ``component_id``.
     ///
-    /// # Errors
+    /// Parameters
+    /// ----------
+    /// component_id : int
+    ///     A component index in ``range(len(storage))``.
     ///
-    /// Raises `IndexError` if `component_id` is out of bounds.
+    /// Returns
+    /// -------
+    /// ``Component``
+    ///     The component at ``component_id``.
+    ///
+    /// Raises
+    /// ------
+    /// ``IndexError``
+    ///     If ``component_id`` is out of bounds.
     fn component(&self, component_id: usize) -> PyResult<PyComponent> {
         if component_id >= self.inner.components().len() {
             return Err(PyIndexError::new_err("component index out of bounds"));
@@ -244,11 +408,22 @@ impl PyCycleStorage {
         })
     }
 
-    /// Returns the homology class of the component at `component_id`.
+    /// Returns the homology class of the component at ``component_id``.
     ///
-    /// # Errors
+    /// Parameters
+    /// ----------
+    /// component_id : int
+    ///     A component index in ``range(len(storage))``.
     ///
-    /// Raises `IndexError` if `component_id` is out of bounds.
+    /// Returns
+    /// -------
+    /// ``HomologyClass``
+    ///     The class of the component at ``component_id``.
+    ///
+    /// Raises
+    /// ------
+    /// ``IndexError``
+    ///     If ``component_id`` is out of bounds.
     fn homology_class(&self, component_id: usize) -> PyResult<PyHomologyClass> {
         if component_id >= self.inner.components().len() {
             return Err(PyIndexError::new_err("component index out of bounds"));
@@ -258,47 +433,114 @@ impl PyCycleStorage {
         })
     }
 
-    /// Returns the subspace spanned by the homology classes of all cycles
-    /// within `segment`.
+    /// Returns the subspace spanned by the classes of all components with a
+    /// stored cycle fully contained in ``segment``.
     ///
-    /// `segment` is a half-open range of sample indices and may be a Python
-    /// `range` or a `(start, stop)` integer tuple.
+    /// Each contributing component adds its class once, so a component with
+    /// several contained cycles is not counted more than once.
     ///
-    /// # Errors
+    /// Parameters
+    /// ----------
+    /// segment : range or tuple of int
+    ///     A half-open range of sample indices, given as a Python ``range`` or
+    ///     a ``(start, stop)`` integer tuple. Must fit inside the extent.
     ///
-    /// Raises `ValueError` if `segment` is not a valid range or if it falls
-    /// outside the stored extent.
+    /// Returns
+    /// -------
+    /// ``Subspace``
+    ///     The cycle space spanned over the segment.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If ``segment`` is not a valid range or if it falls outside the
+    ///     stored extent.
     fn signature(&self, segment: &Bound<'_, PyAny>) -> PyResult<PySubspace> {
         let range = segment_from_py(segment)?;
         let subspace = self.inner.signature(range).map_err(to_pyerr)?;
         Ok(PySubspace { inner: subspace })
     }
 
-    /// Returns the indices of all components that have a stored cycle covering
-    /// the sample index `point`, in ascending order.
+    /// Returns the ids of all components with a stored cycle covering the
+    /// sample index ``point``, in ascending order.
     ///
-    /// The result is empty when `point` lies outside the stored extent.
+    /// Parameters
+    /// ----------
+    /// point : int
+    ///     A sample index to test for coverage.
+    ///
+    /// Returns
+    /// -------
+    /// list of int
+    ///     The covering component ids, ascending. Empty when ``point`` lies
+    ///     outside the stored extent.
     #[must_use]
     fn components_covering(&self, point: usize) -> Vec<u32> {
         self.inner.components_covering(point)
     }
 
-    /// Saves this `CycleStorage` to a file at `path`.
+    /// Returns the number of detected components.
+    fn __len__(&self) -> usize {
+        self.inner.components().len()
+    }
+
+    /// Returns the component at ``index``.
+    fn __getitem__(&self, index: isize) -> PyResult<PyComponent> {
+        let index = resolve_index(index, self.inner.components().len())
+            .ok_or_else(|| PyIndexError::new_err("component index out of bounds"))?;
+        Ok(PyComponent {
+            inner: self.inner.component(index).clone(),
+        })
+    }
+
+    /// Returns a string representation of the storage.
+    fn __repr__(&self) -> String {
+        let extent = self.inner.extent();
+        format!(
+            "CycleStorage(extent=({}, {}), components={}, classes={}, threshold={:?}, \
+             max_length={})",
+            extent.start,
+            extent.end,
+            self.inner.components().len(),
+            self.inner.classes().len(),
+            self.inner.threshold(),
+            self.inner.max_length()
+        )
+    }
+
+    /// Saves this ``CycleStorage`` to a file at ``path``.
     ///
-    /// # Errors
+    /// Parameters
+    /// ----------
+    /// path : str or ``os.PathLike``
+    ///     The destination file path.
     ///
-    /// Raises `OSError` if the file cannot be written.
+    /// Raises
+    /// ------
+    /// ``OSError``
+    ///     If the file cannot be written.
     fn save(&self, path: PathBuf) -> PyResult<()> {
         self.inner.save(path).map_err(to_pyerr)
     }
 
-    /// Loads a `CycleStorage` from a previously saved file at `path`.
+    /// Loads a ``CycleStorage`` from a previously saved file at ``path``.
     ///
-    /// # Errors
+    /// Parameters
+    /// ----------
+    /// path : str or ``os.PathLike``
+    ///     The source file path.
     ///
-    /// Raises `OSError` if the file cannot be read. Raises
-    /// `FormatVersionMismatchError` if the file was written by an incompatible
-    /// version of the library.
+    /// Returns
+    /// -------
+    /// ``CycleStorage``
+    ///     The reloaded storage.
+    ///
+    /// Raises
+    /// ------
+    /// ``OSError``
+    ///     If the file cannot be read.
+    /// ``FormatVersionMismatchError``
+    ///     If the file was written by an incompatible version of the library.
     #[staticmethod]
     fn load(path: PathBuf) -> PyResult<Self> {
         let inner = CycleStorage::load(path).map_err(to_pyerr)?;
@@ -306,7 +548,7 @@ impl PyCycleStorage {
     }
 }
 
-/// Registers the `Cycle`, `Component`, and `CycleStorage` classes on the
+/// Registers the ``Cycle``, ``Component``, and ``CycleStorage`` classes on the
 /// module.
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyCycle>()?;

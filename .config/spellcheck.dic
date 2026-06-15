@@ -1,4 +1,4 @@
-57
+68
 2D
 2Z
 Chebyshev
@@ -56,3 +56,14 @@ persistable
 tuple
 metric's
 renormalizes
+ndarray
+bool
+str
+subspace
+component_id
+cover_path
+cube_halfspan
+direction_weight
+homology_class
+max_length
+trajectory_path
