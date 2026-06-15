@@ -80,3 +80,24 @@ def test_value_type_reprs(square_loop_points):
         repr(signature.components()[0])
         == f"CycleComponent(cycles={len(signature.components()[0].cycles())})"
     )
+
+
+def test_equatable_types_hash_consistently_with_equality(square_loop_points):
+    storage = _square_loop_storage(square_loop_points)
+    count = square_loop_points.shape[0]
+
+    def fresh_signature():
+        embedded = cs.EmbeddedTrajectory(cs.Trajectory(square_loop_points), cs.Euclidean())
+        return embedded.signature(range(count), 1.0)
+
+    # Distinct instances that compare equal must hash equal and deduplicate in a
+    # set. A signature hashes by its spanned subspace, matching its equality.
+    pairs = [
+        (storage.classes()[0], storage.homology_class(0)),
+        (storage.signature((0, count)), storage.signature((0, count))),
+        (fresh_signature(), fresh_signature()),
+    ]
+    for left, right in pairs:
+        assert left == right
+        assert hash(left) == hash(right)
+        assert len({left, right}) == 1

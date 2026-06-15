@@ -3,6 +3,11 @@
 
 //! Python wrappers for the homology value types returned by signature queries.
 
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
+
 use cycling_signatures::{CycleComponent, CyclingSignature, F2, F2Subspace, F2Vector};
 use numpy::PyArray1;
 use pyo3::{
@@ -11,6 +16,14 @@ use pyo3::{
 };
 
 use crate::segment::resolve_index;
+
+/// Computes a hash of a value, used to give the equatable value types a
+/// `__hash__` consistent with their `__eq__`.
+fn hash_of<T: Hash>(value: &T) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
+}
 
 /// The homology class of a recurrent cycle, as a vector over ``F_2``.
 ///
@@ -99,6 +112,11 @@ impl PyHomologyClass {
         self.inner == other.inner
     }
 
+    /// Returns a hash consistent with equality.
+    fn __hash__(&self) -> u64 {
+        hash_of(&self.inner)
+    }
+
     /// Returns a string representation of the class.
     fn __repr__(&self) -> String {
         let set: Vec<String> = self
@@ -164,6 +182,11 @@ impl PySubspace {
     /// Returns whether this subspace equals ``other`` by span comparison.
     fn __eq__(&self, other: &Self) -> bool {
         self.inner == other.inner
+    }
+
+    /// Returns a hash consistent with equality.
+    fn __hash__(&self) -> u64 {
+        hash_of(&self.inner)
     }
 
     /// Returns a string representation of the subspace.
@@ -292,6 +315,12 @@ impl PyCyclingSignature {
     /// Returns whether this signature equals ``other`` by span comparison.
     fn __eq__(&self, other: &Self) -> bool {
         self.inner == other.inner
+    }
+
+    /// Returns a hash consistent with equality, derived from the spanned
+    /// subspace.
+    fn __hash__(&self) -> u64 {
+        hash_of(self.inner.span())
     }
 
     /// Returns a string representation of the signature.
