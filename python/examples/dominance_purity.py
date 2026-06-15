@@ -1,15 +1,15 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Neighborhood dominance and purity of local recurrence signatures
-====================================================================
+"""Dominance and purity maps
+===========================
 
-At each trajectory sample, the local recurrence signature over a fixed window
-names the homological content of nearby returns: which independent cycles are
+At each trajectory sample, the signature over a fixed window names the
+homological content of nearby recurrences: which independent cycling motions are
 present. This example assigns every query point on the Lorenz attractor a
-*dominant* signature -- the library signature most common among the point's
-spatial neighbors -- and measures *purity*: the fraction of neighbors that
-share that signature.
+*dominant* signature: the library signature most common among the point's
+spatial neighbor. It also measures the assigned signature's *purity*: the
+fraction of neighbors that share that signature.
 
 The first figure colors the attractor by dominant signature. The two wings of
 the Lorenz butterfly are each dominated by a single-wing rank-1 signature (the
@@ -23,11 +23,13 @@ they overlap.
 """
 
 # %%
-# Load the raw trajectory and the prebuilt ``CycleStorage``. The raw file has
-# 100000 samples in native Lorenz coordinates; the storage covers the same
-# extent. ``extent()`` returns the half-open sample range ``(0, 100000)``.
+# Load the raw trajectory and the prebuilt ``CycleStorage`` from the bundled
+# example data. The raw file has 100000 samples in native Lorenz coordinates;
+# the storage covers the same extent. ``extent()`` returns the half-open sample
+# range ``(0, 100000)``.
 
 import math
+from collections import Counter
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -82,49 +84,33 @@ def signature_color_and_label(
 
 # %%
 # **Build a signature library.** Slide a window across the storage extent in
-# coarse steps, collect distinct non-trivial signatures by span equality
-# (``Subspace.__eq__`` tests span equality, so a list with ``==`` is used
-# rather than a set), tally frequency, and keep the top ``LIBRARY_SIZE`` most
-# common. The library is ordered by descending frequency so the legend lists
-# the most informative signatures first.
+# coarse steps and tally the distinct non-trivial signatures. Keep the
+# ``LIBRARY_SIZE`` most common, ordered by descending frequency so the legend
+# lists the most common signatures first.
 
 extent_start, extent_stop = STORAGE.extent()
 
-found: list[cs.Subspace] = []
-frequency: list[int] = []
-
-for window_start in range(extent_start, extent_stop - WINDOW_LENGTH, LIBRARY_SCAN_STEP):
+frequency: Counter[cs.Subspace] = Counter()
+for window_start in range(extent_start, extent_stop - WINDOW_LENGTH + 1, LIBRARY_SCAN_STEP):
     subspace = STORAGE.signature(range(window_start, window_start + WINDOW_LENGTH))
-    if subspace.rank() == 0:
-        continue
-    for library_index, known in enumerate(found):
-        if known == subspace:  # span equality
-            frequency[library_index] += 1
-            break
-    else:
-        found.append(subspace)
-        frequency.append(1)
+    if subspace.rank() != 0:
+        frequency[subspace] += 1
 
-order = sorted(range(len(found)), key=lambda library_index: -frequency[library_index])
-library = [found[library_index] for library_index in order[:LIBRARY_SIZE]]
+library = [subspace for subspace, _ in frequency.most_common(LIBRARY_SIZE)]
 
 # %%
 # **Label every sample.** For each sample in the labeled prefix (the range
-# where a full window fits), query ``STORAGE.signature()`` and match it against
-# the library with ``==``. Samples whose signature is trivial or not in the
-# library get label -1.
+# where a full window fits), query ``STORAGE.signature()`` and look it up in the
+# library. Samples whose signature is trivial or absent from the library get
+# label -1.
 
+library_index = {subspace: index for index, subspace in enumerate(library)}
 labeled_stop = extent_stop - WINDOW_LENGTH
 labels = np.full(extent_stop, -1, dtype=np.int32)
 
 for sample in range(extent_start, labeled_stop):
     subspace = STORAGE.signature(range(sample, sample + WINDOW_LENGTH))
-    if subspace.rank() == 0:
-        continue
-    for library_index, known in enumerate(library):
-        if known == subspace:
-            labels[sample] = library_index
-            break
+    labels[sample] = library_index.get(subspace, -1)
 
 # %%
 # **Compute neighborhood dominance and purity.** Build a KD-tree over the full

@@ -6,12 +6,11 @@
 
 Frequency of appearance of each signature rank as a function of window length.
 For the Lorenz attractor, longer windows capture more of the two independent
-cycles, so rank-2 windows become dominant as the length grows. This figure makes
-that transition visible.
+cycles, so rank-2 windows become dominant as the length grows.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the committed fixture. No raw
+# Load the prebuilt ``CycleStorage`` from the bundled example data. No raw
 # trajectory data is needed; the storage already encodes the homological
 # information.
 
@@ -42,7 +41,7 @@ window_lengths: list[int] = list(range(LENGTH_STEP, max_length + 1, LENGTH_STEP)
 rank_counts: list[Counter[int]] = []
 for length in window_lengths:
     counter: Counter[int] = Counter()
-    for window_start in range(extent_start, extent_stop - length, SCAN_STEP):
+    for window_start in range(extent_start, extent_stop - length + 1, SCAN_STEP):
         rank = STORAGE.signature(range(window_start, window_start + length)).rank()
         counter[rank] += 1
     rank_counts.append(counter)

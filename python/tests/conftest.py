@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+import cycling_signatures as cs
+
 
 @pytest.fixture
 def square_loop_points():
@@ -22,3 +24,16 @@ def square_loop_points():
     ]
     loop = np.concatenate(sides, axis=0)
     return np.concatenate([loop, loop[:1]], axis=0)
+
+
+@pytest.fixture
+def square_loop_embedded(square_loop_points):
+    """The square loop embedded under the Euclidean metric."""
+    return cs.EmbeddedTrajectory(cs.Trajectory(square_loop_points), cs.Euclidean())
+
+
+@pytest.fixture
+def square_loop_storage(square_loop_embedded, square_loop_points):
+    """A ``CycleStorage`` built over the whole square loop at threshold 1.0."""
+    count = square_loop_points.shape[0]
+    return cs.CycleStorage.build(square_loop_embedded, range(count), 1.0, count)

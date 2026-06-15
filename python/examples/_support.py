@@ -15,7 +15,7 @@ _LORENZ_DATA = Path(__file__).resolve().parent / "data" / "lorenz"
 
 
 def lorenz_path(name: str) -> Path:
-    """Return the path to a committed Lorenz fixture file."""
+    """Return the path to a bundled Lorenz example data file."""
     return _LORENZ_DATA / name
 
 
@@ -43,10 +43,6 @@ _PURITY_STOPS = [
     (0.75, (253, 141, 60)),
     (1.00, (189, 0, 38)),
 ]
-
-# Neutral gray for trivial cycle classes, and a lighter gray for backgrounds.
-TRIVIAL_GRAY = _normalized(160, 160, 160)
-BACKGROUND_GRAY = _normalized(180, 180, 180)
 
 
 def signature_colors() -> list[tuple[float, float, float]]:

@@ -107,6 +107,17 @@ impl PyHomologyClass {
         Ok(u8::from(self.inner.get(index) == F2::from(1u64)))
     }
 
+    /// Returns whether this is the trivial (all-zero) class.
+    ///
+    /// Returns
+    /// -------
+    /// bool
+    ///     ``True`` if every entry is zero.
+    #[must_use]
+    fn is_zero(&self) -> bool {
+        self.inner.is_zero()
+    }
+
     /// Returns whether this class equals ``other`` entry by entry.
     fn __eq__(&self, other: &Self) -> bool {
         self.inner == other.inner
@@ -177,6 +188,27 @@ impl PySubspace {
     #[must_use]
     fn num_generators(&self) -> usize {
         self.inner.num_generators()
+    }
+
+    /// Returns the basis classes that span this subspace.
+    ///
+    /// The basis is the reduced row echelon form of the spanning classes, in
+    /// the cover's generator coordinates, so a rank-r subspace returns r
+    /// classes and the trivial subspace returns an empty list.
+    ///
+    /// Returns
+    /// -------
+    /// list of ``HomologyClass``
+    ///     The canonical basis of the subspace, one class per dimension.
+    #[must_use]
+    fn basis(&self) -> Vec<PyHomologyClass> {
+        self.inner
+            .basis_vectors()
+            .iter()
+            .map(|vector| PyHomologyClass {
+                inner: vector.clone(),
+            })
+            .collect()
     }
 
     /// Returns whether this subspace equals ``other`` by span comparison.

@@ -12,12 +12,13 @@ barcode uses); the rank-2 signature, spanning both cycles, gets its own color.
 
 The Lorenz attractor has two independent homological cycles, so a window's
 signature is trivial, captures one cycle (rank 1), or captures both (rank 2)
-depending on which part of the trajectory it covers. The heatmap makes those
-transitions visible across time and window length.
+depending on which part of the trajectory it covers.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the committed fixture.
+# Load the prebuilt ``CycleStorage`` from the bundled example data.
+
+from collections import Counter
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,10 +44,7 @@ nonzero_classes = [
 
 # %%
 # **Build a signature library.** Slide a window of a single representative
-# length across the extent and collect the most common distinct non-trivial
-# signatures. ``Subspace.__eq__`` tests span equality (two subspaces
-# spanning the same space compare equal), so accumulation uses a list with
-# ``==`` rather than a set.
+# length across the extent and tally the distinct non-trivial signatures.
 #
 # The library is ordered by rank, then by descending frequency within a rank,
 # so the legend lists the rank-1 signatures first and the rank-2 signature
@@ -58,37 +56,30 @@ LIBRARY_SIZE = 6
 
 extent_start, extent_stop = STORAGE.extent()
 
-found: list[cs.Subspace] = []
-frequency: list[int] = []
-
-for window_start in range(extent_start, extent_stop - LIBRARY_LENGTH, LIBRARY_STEP):
+frequency: Counter[cs.Subspace] = Counter()
+for window_start in range(extent_start, extent_stop - LIBRARY_LENGTH + 1, LIBRARY_STEP):
     subspace = STORAGE.signature(range(window_start, window_start + LIBRARY_LENGTH))
     if subspace.rank() != 0:
-        for index, known in enumerate(found):
-            if known == subspace:  # span equality
-                frequency[index] += 1
-                break
-        else:
-            found.append(subspace)
-            frequency.append(1)
+        frequency[subspace] += 1
 
-# Sort by rank ascending, then by descending frequency within each rank.
-order = sorted(range(len(found)), key=lambda index: (found[index].rank(), -frequency[index]))
-library = [found[index] for index in order[:LIBRARY_SIZE]]
+ordered = sorted(frequency.items(), key=lambda item: (item[0].rank(), -item[1]))
+library = [subspace for subspace, _ in ordered[:LIBRARY_SIZE]]
 
 # %%
-# **Build the label array.** Each cell is an integer label: -1 for the trivial
-# signature and 0..len(library)-1 for library members.
+# **Build the label array.** Each cell is an integer label: -1 for a signature
+# outside the library (trivial or uncommon) and 0..len(library)-1 for library
+# members.
 
 WINDOW_LENGTHS = (160, 230, 300)
 TIME_WINDOW_START = 0
-TIME_WINDOW_STOP = 10000
+TIME_WINDOW_STOP = 6000
 COLUMN_STEP = 5
 
 column_times = list(range(TIME_WINDOW_START, TIME_WINDOW_STOP, COLUMN_STEP))
 num_rows = len(WINDOW_LENGTHS)
 num_cols = len(column_times)
 
+library_index = {subspace: index for index, subspace in enumerate(library)}
 labels = np.full((num_rows, num_cols), -1, dtype=np.int8)
 
 for row_index, length in enumerate(WINDOW_LENGTHS):
@@ -96,13 +87,7 @@ for row_index, length in enumerate(WINDOW_LENGTHS):
         if time + length > extent_stop:
             continue
         subspace = STORAGE.signature(range(time, time + length))
-        if subspace.rank() == 0:
-            labels[row_index, col_index] = -1
-            continue
-        for library_index, known in enumerate(library):
-            if known == subspace:
-                labels[row_index, col_index] = library_index
-                break
+        labels[row_index, col_index] = library_index.get(subspace, -1)
 
 # %%
 # **Render the heatmap.** The colormap puts trivial (white) at index 0 and

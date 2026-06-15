@@ -1,22 +1,21 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Coverage barcode across cycle-length caps
-=============================================
+"""Coverage barcode
+==================
 
 Three barcodes stacked by the longest cycle each panel admits. Every row tracks
 one nonzero homology class over time, colored where some near-recurrent cycle of
-that class, no longer than the panel's length cap, covers the sample, and white
-otherwise. Shorter caps admit only the tightest returns; raising the cap fills
-the rows in: with a long enough cap the recurrent dynamics would cover nearly
-the whole interval in every class.
+that class, no longer than the panel's length cap, has a sample range covering
+the time, and white otherwise. Shorter caps admit only the tightest returns;
+raising the cap fills the rows in.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the committed fixture. ``extent()``
-# gives the half-open sample range covered by all stored components, and
-# ``max_length()`` is the longest cycle the storage was built to detect; the
-# per-panel caps below stay under it.
+# Load the prebuilt ``CycleStorage`` from the bundled example data.
+# ``extent()`` gives the half-open sample range covered by all stored
+# components, and ``max_length()`` is the longest cycle the storage was built to
+# detect; the per-panel caps below stay under it.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,9 +31,7 @@ COMPONENTS = STORAGE.components()
 # %%
 # **Canonical class colors.** Each homology class maps to a stable color via
 # ``class_color_map``, shared with the signature-indicator example so the same
-# class gets the same color in both plots. The trivial (all-zero) class is
-# white and is excluded from the barcode rows: a trivial-class row would
-# render white on white.
+# class gets the same color in both plots.
 
 classes = STORAGE.classes()
 class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in classes]
@@ -60,10 +57,10 @@ row_by_class_id = {class_id: row_index for row_index, class_id in enumerate(orde
 # %%
 # **Collect the cycles in the time window.** Each ``Component`` exposes its
 # cycles through ``cycles()``, and every ``Cycle`` carries its sample
-# ``range()`` and ``length()``. Filtering cycles by length reproduces the cycle
-# set a storage built at a smaller cap would have detected, so the single
-# fixture feeds every panel. The window keeps the figure to a legible slice of
-# the full extent.
+# ``range()`` and ``length()``. Filtering cycles by length approximates the
+# figure a storage built at a smaller cap would produce, so the single fixture
+# feeds every panel. The window keeps the figure to a legible slice of the full
+# extent.
 
 COLUMN_STEP = 5
 TIME_WINDOW_START = EXTENT_START
@@ -101,6 +98,7 @@ def coverage_labels(max_cycle_length: int) -> np.ndarray:
     for row_index, cycle_start, cycle_stop, cycle_length in windowed_cycles:
         if cycle_length > max_cycle_length:
             continue
+        # Columns inside the half-open range [cycle_start, cycle_stop).
         first_column = int(np.searchsorted(column_times, cycle_start))
         last_column = int(np.searchsorted(column_times, cycle_stop))
         labels[row_index, first_column:last_column] = row_index + 1

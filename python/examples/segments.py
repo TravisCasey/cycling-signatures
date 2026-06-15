@@ -19,8 +19,9 @@ representative cycle's sample range shaded, locating the loops in time.
 """
 
 # %%
-# Load the raw trajectory and the prebuilt ``CycleStorage``. The raw positions
-# are sample-indexed, so a cycle's sample range slices them directly.
+# Load the raw trajectory and the prebuilt ``CycleStorage`` from the bundled
+# example data. The raw positions are sample-indexed, so a cycle's sample range
+# slices them directly.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -44,11 +45,10 @@ CLASS_COLORS = _support.class_color_map(class_keys)
 nonzero_keys = sorted(key for key in set(class_keys) if any(key))
 
 # %%
-# **Pick a window with a clear loop of each class.** For each component take its
-# shortest cycle: the shortest cycle of a class is its tightest single loop, the
-# cleanest geometric representative, while longer cycles of the same class
-# wander across both wings before they close. Each ``Cycle`` reports its sample
-# ``range()``, so a representative is just a sample interval.
+# **Pick a window with a clear loop of each class.** Take each component's
+# shortest cycle (its tightest single recurrence), as the cleanest geometric
+# representative. Each ``Cycle`` reports its sample ``range()``, so a
+# representative is just a sample interval.
 
 WINDOW_LENGTH = 440
 WINDOW_SCAN_STEP = 40
@@ -60,17 +60,10 @@ for component in COMPONENTS:
     class_key = class_keys[component.class_id()]
     if not any(class_key):
         continue
-    shortest = None
-    for cycle in component.cycles():
-        cycle_start, cycle_stop = cycle.range()
-        length = cycle_stop - cycle_start
-        if shortest is None or length < shortest[0]:
-            shortest = (length, cycle_start, cycle_stop)
-    if shortest is None:
-        continue
+    cycle_start, cycle_stop = component.shortest_cycle().range()
     representative_class.append(class_key)
-    representative_start.append(shortest[1])
-    representative_stop.append(shortest[2])
+    representative_start.append(cycle_start)
+    representative_stop.append(cycle_stop)
 
 representative_start = np.array(representative_start)
 representative_stop = np.array(representative_stop)
@@ -88,7 +81,7 @@ extent_start, extent_stop = STORAGE.extent()
 
 best_start = extent_start
 best_score = None
-for window_start in range(extent_start, extent_stop - WINDOW_LENGTH, WINDOW_SCAN_STEP):
+for window_start in range(extent_start, extent_stop - WINDOW_LENGTH + 1, WINDOW_SCAN_STEP):
     inside = (representative_start >= window_start) & (
         representative_stop <= window_start + WINDOW_LENGTH
     )
