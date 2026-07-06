@@ -1,22 +1,83 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Shared helpers for the gallery examples: fixture paths and color constants.
+"""Shared helpers for the gallery examples: data fetching and color constants.
 
 Raw color values are written as RGB triples in the 0-255 range and normalized
 to the [0, 1] floats matplotlib expects through ``_normalized``.
 """
 
+import hashlib
+import os
+import tempfile
+import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 from matplotlib.colors import LinearSegmentedColormap
 
-_LORENZ_DATA = Path(__file__).resolve().parent / "data" / "lorenz"
+
+@dataclass(frozen=True)
+class _RemoteFile:
+    """A single downloadable example-data file and its expected digest."""
+
+    url: str
+    sha256: str
+
+
+def _download_verified(remote: _RemoteFile, target: Path) -> None:
+    """Download `remote` to `target`, verifying its SHA-256.
+
+    On success the file appears atomically at `target`. On any failure
+    (including a digest mismatch) `target` is left untouched and no partial
+    file remains.
+
+    # Raises
+
+    ValueError if the downloaded bytes do not match the expected digest.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    handle, temporary = tempfile.mkstemp(dir=target.parent)
+    try:
+        with os.fdopen(handle, "wb") as sink, urllib.request.urlopen(remote.url) as response:
+            while chunk := response.read(1 << 20):
+                sink.write(chunk)
+                digest.update(chunk)
+        if digest.hexdigest() != remote.sha256:
+            raise ValueError(f"downloaded data for {target.name} failed its integrity check")
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+_LORENZ_CACHE = Path(__file__).resolve().parent / "lorenz" / "data"
+
+# Published example data on Zenodo.
+_LORENZ_FILES: dict[str, _RemoteFile] = {
+    "lorenz_storage.cyc": _RemoteFile(
+        url="https://zenodo.org/records/21224906/files/lorenz_storage.cyc?download=1",
+        sha256="862012e78dcc81b7709e4959329736c3748766b5a57cd75c0181dc7c528e9c0a",
+    ),
+    "lorenz_raw.npy": _RemoteFile(
+        url="https://zenodo.org/records/21224906/files/lorenz_raw.npy?download=1",
+        sha256="a928587d5d90575577036c932a3a440abe9e492b47758e9696f92c6b63e2804a",
+    ),
+}
 
 
 def lorenz_path(name: str) -> Path:
-    """Return the path to a bundled Lorenz example data file."""
-    return _LORENZ_DATA / name
+    """Return the local path to a Lorenz data file, fetching it if absent.
+
+    Files are cached under the gallery's `lorenz/data/` directory. A present
+    cache entry is returned without touching the network, so a build is offline
+    after the first fetch or if the file is placed there manually.
+    """
+    target = _LORENZ_CACHE / name
+    if not target.exists():
+        _download_verified(_LORENZ_FILES[name], target)
+    return target
 
 
 def _normalized(red: int, green: int, blue: int) -> tuple[float, float, float]:
