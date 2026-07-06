@@ -16,7 +16,8 @@ depending on which part of the trajectory it covers.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the bundled example data.
+# Load the prebuilt ``CycleStorage`` from the published example data, fetched
+# and cached on first use.
 
 from collections import Counter
 
@@ -27,7 +28,7 @@ from matplotlib.colors import ListedColormap
 import _support
 import cycling_signatures as cs
 
-STORAGE = cs.CycleStorage.load(_support.lorenz_path("storage.cyc"))
+STORAGE = cs.CycleStorage.load(_support.lorenz_path("lorenz_storage.cyc"))
 
 # %%
 # **Canonical class colors.** A rank-1 signature is the span of a single

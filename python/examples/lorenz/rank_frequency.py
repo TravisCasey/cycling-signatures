@@ -10,9 +10,9 @@ cycles, so rank-2 windows become dominant as the length grows.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the bundled example data. No raw
-# trajectory data is needed; the storage already encodes the homological
-# information.
+# Load the prebuilt ``CycleStorage`` from the published example data, fetched
+# and cached on first use. No raw trajectory data is needed; the storage
+# already encodes the homological information.
 
 from collections import Counter
 
@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import _support
 import cycling_signatures as cs
 
-STORAGE = cs.CycleStorage.load(_support.lorenz_path("storage.cyc"))
+STORAGE = cs.CycleStorage.load(_support.lorenz_path("lorenz_storage.cyc"))
 
 # %%
 # Sweep over window lengths and tally rank occurrences. For each length the

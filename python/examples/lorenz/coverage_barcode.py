@@ -12,7 +12,8 @@ raising the cap fills the rows in.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the bundled example data.
+# Load the prebuilt ``CycleStorage`` from the published example data, fetched
+# and cached on first use.
 # ``extent()`` gives the half-open sample range covered by all stored
 # components, and ``max_length()`` is the longest cycle the storage was built to
 # detect; the per-panel caps below stay under it.
@@ -24,7 +25,7 @@ from matplotlib.colors import ListedColormap
 import _support
 import cycling_signatures as cs
 
-STORAGE = cs.CycleStorage.load(_support.lorenz_path("storage.cyc"))
+STORAGE = cs.CycleStorage.load(_support.lorenz_path("lorenz_storage.cyc"))
 EXTENT_START, EXTENT_STOP = STORAGE.extent()
 COMPONENTS = STORAGE.components()
 

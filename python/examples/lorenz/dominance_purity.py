@@ -23,10 +23,12 @@ they overlap.
 """
 
 # %%
-# Load the raw trajectory and the prebuilt ``CycleStorage`` from the bundled
-# example data. The raw file has 100000 samples in native Lorenz coordinates;
-# the storage covers the same extent. ``extent()`` returns the half-open sample
-# range ``(0, 100000)``.
+# Load the raw trajectory and the prebuilt ``CycleStorage`` from the published
+# example data, fetched and cached on first use. The raw positions are in
+# native Lorenz coordinates; the storage indexes samples of a 400000-sample
+# swath that skips a leading off-attractor transient (the swath
+# ``examples/data/generate_lorenz.py`` embeds), so the raw is sliced to that
+# swath and ``extent()`` returns the half-open sample range ``(0, 400000)``.
 
 import math
 from collections import Counter
@@ -38,8 +40,11 @@ from scipy.spatial import KDTree
 import _support
 import cycling_signatures as cs
 
-RAW = np.loadtxt(_support.lorenz_path("raw.csv"), delimiter=",")
-STORAGE = cs.CycleStorage.load(_support.lorenz_path("storage.cyc"))
+TRANSIENT = 10_000
+SWATH = 400_000
+
+RAW = np.load(_support.lorenz_path("lorenz_raw.npy"))[TRANSIENT : TRANSIENT + SWATH]
+STORAGE = cs.CycleStorage.load(_support.lorenz_path("lorenz_storage.cyc"))
 
 # %%
 # Constants that control the analysis. ``WINDOW_LENGTH`` is the number of
