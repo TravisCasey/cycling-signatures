@@ -71,15 +71,17 @@ def build_figure() -> plt.Figure:
             window_lengths,
             heights,
             bottom=bar_bottoms,
-            width=LENGTH_STEP * 0.85,
+            width=LENGTH_STEP,
             color=rank_colors[rank],
             label=f"rank {rank}",
+            linewidth=0,
         )
         bar_bottoms = [bottom + height for bottom, height in zip(bar_bottoms, heights, strict=True)]
 
     axes.set_xlabel("Window length (samples)")
     axes.set_ylabel("Number of windows")
     axes.set_title("Signature rank frequency vs. window length (Lorenz)")
+    axes.set_xlim(window_lengths[0] - LENGTH_STEP / 2, window_lengths[-1] + LENGTH_STEP / 2)
     axes.legend(title="Rank", loc="upper right")
     figure.tight_layout()
     return figure
