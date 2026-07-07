@@ -55,29 +55,41 @@ def _download_verified(remote: _RemoteFile, target: Path) -> None:
 _LORENZ_CACHE = Path(__file__).resolve().parent / "lorenz" / "data"
 
 # Published example data on Zenodo.
-_LORENZ_FILES: dict[str, _RemoteFile] = {
-    "lorenz_storage.cyc": _RemoteFile(
-        url="https://zenodo.org/records/21224906/files/lorenz_storage.cyc?download=1",
-        sha256="862012e78dcc81b7709e4959329736c3748766b5a57cd75c0181dc7c528e9c0a",
-    ),
-    "lorenz_raw.npy": _RemoteFile(
-        url="https://zenodo.org/records/21224906/files/lorenz_raw.npy?download=1",
-        sha256="a928587d5d90575577036c932a3a440abe9e492b47758e9696f92c6b63e2804a",
-    ),
-}
+_LORENZ_STORAGE = _RemoteFile(
+    url="https://zenodo.org/records/21229992/files/lorenz_storage.cyc?download=1",
+    sha256="862012e78dcc81b7709e4959329736c3748766b5a57cd75c0181dc7c528e9c0a",
+)
+_LORENZ_RAW = _RemoteFile(
+    url="https://zenodo.org/records/21229992/files/lorenz_raw.npy?download=1",
+    sha256="06d0a0c2324347d82007fa8a4f9c561a9647fbf1e75943f8fe04262e50a4cd5e",
+)
 
 
-def lorenz_path(name: str) -> Path:
-    """Return the local path to a Lorenz data file, fetching it if absent.
+def _cached(remote: _RemoteFile, target: Path) -> Path:
+    """Return the local path to a data file, downloading it if absent.
 
-    Files are cached under the gallery's `lorenz/data/` directory. A present
-    cache entry is returned without touching the network, so a build is offline
-    after the first fetch or if the file is placed there manually.
+    A present cache entry is returned without touching the network, so a build
+    is offline after the first fetch or if the file is placed there manually.
     """
-    target = _LORENZ_CACHE / name
     if not target.exists():
-        _download_verified(_LORENZ_FILES[name], target)
+        _download_verified(remote, target)
     return target
+
+
+def lorenz_storage() -> Path:
+    """Return the local path to the Lorenz cycle storage, fetching it if absent.
+
+    The storage is cached under the gallery's `lorenz/data/` directory.
+    """
+    return _cached(_LORENZ_STORAGE, _LORENZ_CACHE / "lorenz_storage.cyc")
+
+
+def lorenz_raw() -> Path:
+    """Return the local path to the Lorenz trajectory, fetching it if absent.
+
+    The trajectory is cached under the gallery's `lorenz/data/` directory.
+    """
+    return _cached(_LORENZ_RAW, _LORENZ_CACHE / "lorenz_raw.npy")
 
 
 def _normalized(red: int, green: int, blue: int) -> tuple[float, float, float]:

@@ -25,10 +25,7 @@ they overlap.
 # %%
 # Load the raw trajectory and the prebuilt ``CycleStorage`` from the published
 # example data, fetched and cached on first use. The raw positions are in
-# native Lorenz coordinates; the storage indexes samples of a 400000-sample
-# swath that skips a leading off-attractor transient (the swath
-# ``examples/data/generate_lorenz.py`` embeds), so the raw is sliced to that
-# swath and ``extent()`` returns the half-open sample range ``(0, 400000)``.
+# native Lorenz coordinates.
 
 import math
 from collections import Counter
@@ -40,11 +37,8 @@ from scipy.spatial import KDTree
 import _support
 import cycling_signatures as cs
 
-TRANSIENT = 10_000
-SWATH = 400_000
-
-RAW = np.load(_support.lorenz_path("lorenz_raw.npy"))[TRANSIENT : TRANSIENT + SWATH]
-STORAGE = cs.CycleStorage.load(_support.lorenz_path("lorenz_storage.cyc"))
+RAW = np.load(_support.lorenz_raw())
+STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 
 # %%
 # Constants that control the analysis. ``WINDOW_LENGTH`` is the number of

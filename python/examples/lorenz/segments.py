@@ -20,11 +20,9 @@ representative cycle's sample range shaded, locating the loops in time.
 
 # %%
 # Load the raw trajectory and the prebuilt ``CycleStorage`` from the published
-# example data, fetched and cached on first use. The storage indexes samples of
-# a swath of the raw trajectory that skips a leading off-attractor transient
-# (the swath ``examples/data/generate_lorenz.py`` embeds); slicing the raw to
-# that swath keeps the positions sample-indexed, so a cycle's sample range
-# slices them directly.
+# example data, fetched and cached on first use. The published raw trajectory
+# holds exactly the samples the storage indexes, so the positions are
+# sample-indexed and a cycle's sample range slices them directly.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,11 +30,8 @@ import numpy as np
 import _support
 import cycling_signatures as cs
 
-TRANSIENT = 10_000
-SWATH = 400_000
-
-RAW = np.load(_support.lorenz_path("lorenz_raw.npy"))[TRANSIENT : TRANSIENT + SWATH]
-STORAGE = cs.CycleStorage.load(_support.lorenz_path("lorenz_storage.cyc"))
+RAW = np.load(_support.lorenz_raw())
+STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 COMPONENTS = STORAGE.components()
 
 # %%

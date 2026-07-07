@@ -25,7 +25,7 @@ from matplotlib.colors import ListedColormap
 import _support
 import cycling_signatures as cs
 
-STORAGE = cs.CycleStorage.load(_support.lorenz_path("lorenz_storage.cyc"))
+STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 EXTENT_START, EXTENT_STOP = STORAGE.extent()
 COMPONENTS = STORAGE.components()
 

@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import _support
 import cycling_signatures as cs
 
-STORAGE = cs.CycleStorage.load(_support.lorenz_path("lorenz_storage.cyc"))
+STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 
 # %%
 # Sweep over window lengths and tally rank occurrences. For each length the
