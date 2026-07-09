@@ -56,11 +56,11 @@ _LORENZ_CACHE = Path(__file__).resolve().parent / "lorenz" / "data"
 
 # Published example data on Zenodo.
 _LORENZ_STORAGE = _RemoteFile(
-    url="https://zenodo.org/records/21229992/files/lorenz_storage.cyc?download=1",
+    url="https://zenodo.org/records/21286254/files/lorenz_storage.cyc?download=1",
     sha256="862012e78dcc81b7709e4959329736c3748766b5a57cd75c0181dc7c528e9c0a",
 )
 _LORENZ_RAW = _RemoteFile(
-    url="https://zenodo.org/records/21229992/files/lorenz_raw.npy?download=1",
+    url="https://zenodo.org/records/21286254/files/lorenz_raw.npy?download=1",
     sha256="06d0a0c2324347d82007fa8a4f9c561a9647fbf1e75943f8fe04262e50a4cd5e",
 )
 
@@ -90,6 +90,36 @@ def lorenz_raw() -> Path:
     The trajectory is cached under the gallery's `lorenz/data/` directory.
     """
     return _cached(_LORENZ_RAW, _LORENZ_CACHE / "lorenz_raw.npy")
+
+
+_DADRAS_CACHE = Path(__file__).resolve().parent / "dadras" / "data"
+
+_DADRAS_STORAGE = _RemoteFile(
+    url="https://zenodo.org/records/21286254/files/dadras_storage.cyc?download=1",
+    sha256="582352690b02cae7235dee7f39e0e11ad270518c8e19ef89859b93814492577c",
+)
+_DADRAS_RAW = _RemoteFile(
+    url="https://zenodo.org/records/21286254/files/dadras_raw.npy?download=1",
+    sha256="2b960475373064781c907479984ea3ba95717a994955817db7fd8e05d784c10d",
+)
+
+
+def dadras_storage() -> Path:
+    """Return the local path to the Dadras cycle storage, fetching it if absent.
+
+    The storage is cached under the gallery's `dadras/data/` directory.
+    """
+    return _cached(_DADRAS_STORAGE, _DADRAS_CACHE / "dadras_storage.cyc")
+
+
+def dadras_raw() -> Path:
+    """Return the local path to the Dadras trajectory, fetching it if absent.
+
+    The trajectory is cached under the gallery's `dadras/data/` directory. Its
+    rows are the exact samples the published storage indexes, so row `i` is
+    storage sample `i`.
+    """
+    return _cached(_DADRAS_RAW, _DADRAS_CACHE / "dadras_raw.npy")
 
 
 def _normalized(red: int, green: int, blue: int) -> tuple[float, float, float]:
