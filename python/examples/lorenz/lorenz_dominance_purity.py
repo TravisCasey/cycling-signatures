@@ -4,12 +4,10 @@
 """Dominance and purity maps
 ===========================
 
-At each trajectory sample, the signature over a fixed window names the
-homological content of nearby recurrences: which independent cycling motions are
-present. This example assigns every query point on the Lorenz attractor a
-*dominant* signature: the library signature most common among the point's
-spatial neighbor. It also measures the assigned signature's *purity*: the
-fraction of neighbors that share that signature.
+This example assigns every query point on the Lorenz attractor a *dominant*
+signature: the library signature most common among the point's spatial
+neighbors. It also measures the assigned signature's *purity*: the fraction of
+neighbors that share that signature.
 
 The first figure colors the attractor by dominant signature. The two wings of
 the Lorenz butterfly are each dominated by a single-wing rank-1 signature (the
@@ -43,10 +41,11 @@ STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 # %%
 # Constants that control the analysis. ``WINDOW_LENGTH`` is the number of
 # trajectory samples in each signature query. ``EPSILON`` is the neighborhood
-# radius in native Lorenz coordinates. ``MIN_NEIGHBORS`` is the minimum
-# neighborhood size to trust a dominance reading; points with fewer neighbors
-# are skipped. ``QUERY_STEP`` and ``BACKGROUND_STEP`` downsample the scatter
-# for a legible figure. ``LIBRARY_SIZE`` caps the distinct signatures shown.
+# radius in native Lorenz coordinates. ``MIN_NEIGHBORS`` is the minimum count
+# of labeled neighbors to trust a dominance reading; points with fewer are
+# skipped. ``QUERY_STEP`` and ``BACKGROUND_STEP`` downsample the scatter
+# for a legible figure. ``LIBRARY_SIZE`` caps the number of distinct
+# signatures shown.
 
 WINDOW_LENGTH = 230
 EPSILON = 3.0
@@ -99,52 +98,52 @@ library = [subspace for subspace, _ in frequency.most_common(LIBRARY_SIZE)]
 
 # %%
 # **Label every sample.** For each sample in the labeled prefix (the range
-# where a full window fits), query ``STORAGE.signature()`` and look it up in the
-# library. Samples whose signature is trivial or absent from the library get
-# label -1.
+# where a full window fits), query ``STORAGE.signature()`` and look it up in
+# the library: the value is the library position, or -1 for a signature that
+# is trivial or absent from the library.
 
 library_index = {subspace: index for index, subspace in enumerate(library)}
 labeled_stop = extent_stop - WINDOW_LENGTH
-labels = np.full(extent_stop, -1, dtype=np.int32)
-
-for sample in range(extent_start, labeled_stop):
-    subspace = STORAGE.signature(range(sample, sample + WINDOW_LENGTH))
-    labels[sample] = library_index.get(subspace, -1)
+labeled_samples = np.arange(extent_start, labeled_stop)
+labeled_values = np.array(
+    [
+        library_index.get(STORAGE.signature(range(sample, sample + WINDOW_LENGTH)), -1)
+        for sample in labeled_samples
+    ],
+    dtype=np.int32,
+)
 
 # %%
-# **Compute neighborhood dominance and purity.** Build a KD-tree over the full
-# raw trajectory. For each query sample (stepped by ``QUERY_STEP`` over the
-# labeled prefix), find all neighbors within ``EPSILON``, restrict to
-# labeled neighbors, and tally their library indices. The dominant signature is
-# the most common; purity is the per-signature fraction of labeled neighbors.
-# Points with fewer than ``MIN_NEIGHBORS`` labeled neighbors are skipped.
+# **Compute neighborhood dominance and purity.** Build one KD-tree per library
+# signature, holding the labeled samples that carry it. For each query sample
+# (stepped by ``QUERY_STEP`` over the labeled prefix), count each signature's
+# labeled samples within ``EPSILON``. The dominant signature is the most
+# common, and purity is the per-signature fraction of the labeled neighbors.
+# Query points with fewer than ``MIN_NEIGHBORS`` labeled neighbors are
+# dropped.
 
-tree = KDTree(RAW)
+member_trees = [
+    KDTree(RAW[labeled_samples[labeled_values == position]]) for position in range(len(library))
+]
 
-query_positions: list[np.ndarray] = []
-dominant_indices: list[int] = []
-purity_vectors: list[np.ndarray] = []
+query_points = RAW[np.arange(extent_start, labeled_stop, QUERY_STEP)]
+label_counts = np.stack(
+    [
+        member_tree.query_ball_point(query_points, EPSILON, return_length=True, workers=-1)
+        for member_tree in member_trees
+    ],
+    axis=1,
+)
+labeled_neighbor_totals = label_counts.sum(axis=1)
 
-for sample in range(extent_start, labeled_stop, QUERY_STEP):
-    neighbor_indices = tree.query_ball_point(RAW[sample], EPSILON)
-    neighbor_labels = labels[neighbor_indices]
-    neighbor_labels = neighbor_labels[neighbor_labels >= 0]
-    if len(neighbor_labels) < MIN_NEIGHBORS:
-        continue
-    tally = np.bincount(neighbor_labels, minlength=len(library))
-    dominant = int(np.argmax(tally))
-    purity_vector = tally / len(neighbor_labels)
-    query_positions.append(RAW[sample])
-    dominant_indices.append(dominant)
-    purity_vectors.append(purity_vector)
-
-positions_array = np.array(query_positions)
-dominant_array = np.array(dominant_indices, dtype=np.int32)
-purity_array = np.array(purity_vectors)
+kept = labeled_neighbor_totals >= MIN_NEIGHBORS
+positions_array = query_points[kept]
+dominant_array = label_counts[kept].argmax(axis=1)
+purity_array = label_counts[kept] / labeled_neighbor_totals[kept, np.newaxis]
 
 # %%
 # **Assign colors and labels to the library.** Each library signature gets its
-# color and label via the same scheme as ``signature_indicator.py``.
+# color and label via the same scheme as ``lorenz_signature_indicator.py``.
 
 higher_rank_colors = _support.signature_colors()[len(nonzero_classes) :]
 library_colors: list[tuple[float, float, float]] = []

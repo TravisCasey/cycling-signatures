@@ -5,10 +5,10 @@
 ==================
 
 Three barcodes stacked by the longest cycle each panel admits. Every row tracks
-one nonzero homology class over time, colored where some near-recurrent cycle of
-that class, no longer than the panel's length cap, has a sample range covering
-the time, and white otherwise. Shorter caps admit only the tightest returns;
-raising the cap fills the rows in.
+one frequent homology class of the Dadras attractor over time, colored where
+some near-recurrent cycle of that class, no longer than the panel's length cap,
+has a sample range covering the time. Shorter caps admit only the tightest
+returns; raising the cap fills the rows in.
 """
 
 # %%
@@ -18,6 +18,8 @@ raising the cap fills the rows in.
 # components, and ``max_length()`` is the longest cycle the storage was built to
 # detect; the per-panel caps below stay under it.
 
+from collections import Counter
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import ListedColormap
@@ -25,47 +27,51 @@ from matplotlib.colors import ListedColormap
 import _support
 import cycling_signatures as cs
 
-STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
+STORAGE = cs.CycleStorage.load(_support.dadras_storage())
 EXTENT_START, EXTENT_STOP = STORAGE.extent()
 COMPONENTS = STORAGE.components()
 
 # %%
-# **Canonical class colors.** Each homology class maps to a stable color via
-# ``class_color_map``, shared with the signature-indicator example so the same
-# class gets the same color in both plots.
-
-classes = STORAGE.classes()
-class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in classes]
-CLASS_COLORS = _support.class_color_map(class_keys)
-
-# %%
-# **Order the rows by homology class.** Nonzero classes are listed in ascending
-# key order, the same order ``class_color_map`` uses to assign palette colors,
-# so every class-ordered plot in the gallery lists classes the same way. The
-# trivial (all-zero) class is excluded: a trivial-class row would render white
-# on white.
+# **Rank the classes by frequency.** The Dadras storage keeps many rare,
+# swath-dependent homology classes alongside a frequent few that carry the
+# attractor's structure. Classes are ranked by how often they recur (their
+# total cycle count across components) and only the most frequent are shown;
+# the trivial (all-zero) class is excluded. Every class-ranked plot in the
+# gallery uses this ordering, so "class 1" names the same class throughout.
 
 TOP_CLASSES = 5
 
-ordered_class_ids = sorted(
-    (class_id for class_id, key in enumerate(class_keys) if any(key)),
-    key=lambda class_id: class_keys[class_id],
-)[:TOP_CLASSES]
+classes = STORAGE.classes()
+class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in classes]
+
+class_cycle_counts: Counter[int] = Counter()
+for component in COMPONENTS:
+    if any(class_keys[component.class_id()]):
+        class_cycle_counts[component.class_id()] += component.cycle_count()
+
+ordered_class_ids = [class_id for class_id, _ in class_cycle_counts.most_common(TOP_CLASSES)]
 
 num_rows = len(ordered_class_ids)
 row_by_class_id = {class_id: row_index for row_index, class_id in enumerate(ordered_class_ids)}
 
 # %%
+# **Canonical class colors.** Each frequent class maps to a stable color via
+# the shared ``class_color_map``. Rows are labeled by frequency position; the
+# class vectors themselves are typically wide for this system and are not
+# printed.
+
+CLASS_COLORS = _support.class_color_map([class_keys[class_id] for class_id in ordered_class_ids])
+
+# %%
 # **Collect the cycles in the time window.** Each ``Component`` exposes its
 # cycles through ``cycles()``, and every ``Cycle`` carries its sample
-# ``range()`` and ``length()``. Filtering cycles by length approximates the
-# figure a storage built at a smaller cap would produce, so the single fixture
-# feeds every panel. The window keeps the figure to a legible slice of the full
-# extent.
+# ``range()`` and ``length()``. Filtering cycles by length closely approximates
+# the figure a storage built at a smaller cap would produce. The window
+# restricts the figure to a legible slice of the full extent.
 
-COLUMN_STEP = 5
+COLUMN_STEP = 25
 TIME_WINDOW_START = EXTENT_START
-TIME_WINDOW_STOP = min(EXTENT_START + 10000, EXTENT_STOP)
+TIME_WINDOW_STOP = min(EXTENT_START + 30000, EXTENT_STOP)
 
 column_times = np.arange(TIME_WINDOW_START, TIME_WINDOW_STOP, COLUMN_STEP)
 num_cols = len(column_times)
@@ -90,7 +96,7 @@ for component in COMPONENTS:
 # where any cycle no longer than the cap covers it, and zero (white) otherwise.
 # The columns a cycle covers are the sample times that fall inside its range.
 
-LENGTHS = (160, 230, 300)
+LENGTHS = (220, 320, 450)
 
 
 def coverage_labels(max_cycle_length: int) -> np.ndarray:
@@ -108,9 +114,9 @@ def coverage_labels(max_cycle_length: int) -> np.ndarray:
 
 # %%
 # **Render the stacked barcodes.** The colormap starts with white (uncovered)
-# and assigns each ranked class its canonical color. The y-axis tick labels show
-# the class vector so the reader can relate rows to homology classes, and each
-# panel is labeled with its cycle-length cap.
+# and assigns each ranked class its canonical color. The y-axis tick labels
+# name classes by frequency position, and each panel is labeled with its
+# cycle-length cap.
 
 row_colors = [CLASS_COLORS[class_keys[class_id]] for class_id in ordered_class_ids]
 
@@ -131,14 +137,12 @@ def build_figure() -> plt.Figure:
             extent=(TIME_WINDOW_START, TIME_WINDOW_STOP, num_rows - 0.5, -0.5),
         )
         panel.set_yticks(range(num_rows))
-        panel.set_yticklabels(
-            [f"[{' '.join(map(str, class_keys[class_id]))}]" for class_id in ordered_class_ids]
-        )
+        panel.set_yticklabels([f"class {row_index + 1}" for row_index in range(num_rows)])
         panel.set_title(f"cycles up to length {length}", loc="left")
 
     panels[-1].set_xlabel("Time (sample index)")
-    figure.supylabel("Homology class")
-    figure.suptitle("Coverage barcode: Lorenz attractor")
+    figure.supylabel("Homology class (by frequency)")
+    figure.suptitle("Coverage barcode: Dadras attractor")
     figure.tight_layout()
     return figure
 

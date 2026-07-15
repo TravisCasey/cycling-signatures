@@ -5,9 +5,7 @@
 =============================================
 
 A detected cycle is a contiguous run of trajectory samples that nearly returns
-to its start. Because the storage indexes cycles by sample range, and the raw
-trajectory is sample-indexed too, a cycle's range slices the raw positions
-directly: ``RAW[cycle_start:cycle_stop]`` is the loop it traces through space.
+to its start.
 
 This example picks a window of the Lorenz trajectory that shows a clear
 representative of each cycle class, then overlays those loops, in their class
