@@ -16,7 +16,7 @@ use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "serde")]
-use crate::persistence::{load_from_path, save_to_path};
+use crate::serialization::{load_from_path, save_to_path};
 use crate::{
     EmbeddedTrajectory, F2Subspace, F2Vector,
     distance::detect_components_streaming,
@@ -515,7 +515,7 @@ mod tests {
 
     use super::{Component, Cycle, CycleStorage};
     #[cfg(feature = "serde")]
-    use crate::persistence::save_to_writer;
+    use crate::serialization::save_to_writer;
     use crate::{EmbeddedTrajectory, F2Vector, Trajectory, error::Error, metric::Euclidean};
 
     /// Builds an embedded 2D trajectory that traces a recurrent loop around a
@@ -777,7 +777,7 @@ mod tests {
         let mut storage_buffer: Vec<u8> = Vec::new();
         save_to_writer(&mut storage_buffer, &storage).unwrap();
         let loaded_storage =
-            crate::persistence::load_from_reader::<CycleStorage, _>(&storage_buffer[..]).unwrap();
+            crate::serialization::load_from_reader::<CycleStorage, _>(&storage_buffer[..]).unwrap();
 
         // The reloaded storage carries the same provenance fingerprint, so a
         // caller can confirm it against the embedded trajectory.
@@ -810,7 +810,8 @@ mod tests {
         let mut buffer: Vec<u8> = Vec::new();
         save_to_writer(&mut buffer, &storage).unwrap();
 
-        let loaded = crate::persistence::load_from_reader::<CycleStorage, _>(&buffer[..]).unwrap();
+        let loaded =
+            crate::serialization::load_from_reader::<CycleStorage, _>(&buffer[..]).unwrap();
 
         // The matching embedded shares the loaded fingerprint.
         assert_eq!(loaded.fingerprint(), embedded.fingerprint());

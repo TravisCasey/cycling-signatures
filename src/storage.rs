@@ -3,7 +3,7 @@
 
 //! Component-first cycle storage.
 //!
-//! Persistent cache for all near-recurrent cycles over a trajectory extent
+//! On-disk cache for all near-recurrent cycles over a trajectory extent
 //! (the range of original indices the storage was built over). Cycles are
 //! grouped by their connected component in the below-threshold distance
 //! graph, paired with the homology class shared across the component.

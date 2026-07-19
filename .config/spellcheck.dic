@@ -51,7 +51,6 @@ structs
 deserializes
 serializer's
 deserializer's
-persistable
 tuple
 metric's
 renormalizes
@@ -62,3 +61,4 @@ subspace
 Bulirsch
 canonicalized
 Stoer
+serializable

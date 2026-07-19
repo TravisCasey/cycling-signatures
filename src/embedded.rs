@@ -404,7 +404,7 @@ mod tests {
     #[cfg(feature = "serde")]
     use crate::{
         metric::Chebyshev,
-        persistence::{load_from_reader, save_to_writer},
+        serialization::{load_from_reader, save_to_writer},
         storage::cycle_storage::CycleStorage,
     };
 

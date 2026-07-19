@@ -12,9 +12,9 @@ pub mod f2_subspace;
 pub mod f2_vector;
 pub mod interpolation;
 pub mod metric;
-#[cfg(feature = "serde")]
-pub(crate) mod persistence;
 pub mod prelude;
+#[cfg(feature = "serde")]
+pub(crate) mod serialization;
 pub mod signature;
 pub mod storage;
 pub mod trajectory;

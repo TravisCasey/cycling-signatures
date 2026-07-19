@@ -53,7 +53,7 @@ use crate::{
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Trajectory {
-    #[cfg_attr(feature = "serde", serde(with = "crate::persistence::npy_field"))]
+    #[cfg_attr(feature = "serde", serde(with = "crate::serialization::npy_field"))]
     points: Array2<f64>,
     original_indices: Vec<usize>,
 }
@@ -271,7 +271,7 @@ impl Trajectory {
     /// - [`Error::Io`] on file or serialization failure.
     #[cfg(feature = "serde")]
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        crate::persistence::save_to_path(path, self)
+        crate::serialization::save_to_path(path, self)
     }
 
     /// Reads a trajectory written by [`save`](Self::save).
@@ -284,7 +284,7 @@ impl Trajectory {
     ///   decoded.
     #[cfg(feature = "serde")]
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        crate::persistence::load_from_path(path)
+        crate::serialization::load_from_path(path)
     }
 }
 

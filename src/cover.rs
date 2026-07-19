@@ -161,7 +161,7 @@ impl CubicalCover {
     /// - [`Error::Io`] on file or serialization failure.
     #[cfg(feature = "serde")]
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        crate::persistence::save_to_path(path, self)
+        crate::serialization::save_to_path(path, self)
     }
 
     /// Reads a cover written by [`save`](Self::save).
@@ -174,7 +174,7 @@ impl CubicalCover {
     ///   decoded.
     #[cfg(feature = "serde")]
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        crate::persistence::load_from_path(path)
+        crate::serialization::load_from_path(path)
     }
 }
 
@@ -338,7 +338,7 @@ fn compute_edge_classes(generators: &[Chain<Cube, F2>]) -> FxHashMap<Cube, F2Vec
 #[cfg(feature = "serde")]
 #[derive(Serialize, Deserialize)]
 struct CoverData {
-    #[serde(with = "crate::persistence::npy_field")]
+    #[serde(with = "crate::serialization::npy_field")]
     cubes: Array2<i64>,
     generators: Vec<Vec<Cube>>,
 }

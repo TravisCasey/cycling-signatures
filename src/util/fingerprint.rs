@@ -1,7 +1,7 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Stable content fingerprint used for persisted-artifact provenance.
+//! Stable content fingerprint used for saved-artifact provenance.
 
 const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 const FNV_PRIME: u64 = 0x00000100000001b3;

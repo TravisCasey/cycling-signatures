@@ -187,9 +187,9 @@ pub enum Error {
         max_length: usize,
     },
 
-    /// A persisted file's format version does not match this build's
+    /// A saved file's format version does not match this build's
     /// supported version.
-    #[error("persisted format version {found} does not match the supported version {expected}")]
+    #[error("serialized format version {found} does not match the supported version {expected}")]
     FormatVersionMismatch {
         /// The version this build writes and expects.
         expected: u32,

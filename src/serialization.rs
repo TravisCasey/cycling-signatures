@@ -1,11 +1,11 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Wire-format glue for persisted artifacts.
+//! Wire-format glue for saved artifacts.
 //!
 //! Defines the on-disk format version, the version envelope every file
 //! carries, and the read/write helpers shared by the save/load methods on the
-//! persistable types. The container is `MessagePack` with structs encoded as
+//! serializable types. The container is `MessagePack` with structs encoded as
 //! field-name maps; large arrays ride inside as `.npy` payloads via
 //! [`npy_field`].
 
@@ -21,11 +21,11 @@ use crate::error::{Error, Result};
 
 pub(crate) mod npy_field;
 
-/// The on-disk format version. Every persisted file carries it; loaders refuse
+/// The on-disk format version. Every saved file carries it; loaders refuse
 /// a value other than this one.
 pub(crate) const FORMAT_VERSION: u32 = 1;
 
-/// The envelope wrapping every persisted payload with its format version.
+/// The envelope wrapping every saved payload with its format version.
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Versioned<T> {
     pub(crate) format_version: u32,
