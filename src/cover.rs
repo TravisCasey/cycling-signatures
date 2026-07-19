@@ -1,8 +1,8 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Cubical cover: integer cubes with chomp3rs-computed cohomology generators
-//! and an edge-to-class lookup table.
+//! Cubical cover: integer cubes with cohomology generators computed over
+//! `F_2`.
 
 use std::cmp::Ordering;
 #[cfg(feature = "serde")]
@@ -25,9 +25,10 @@ use crate::{
 
 /// A cubical cover with computed cohomology generators over `F_2`.
 ///
-/// Built from an explicit set of integer cube coordinates. Stores cubes in
-/// lexicographically-sorted, deduplicated form and exposes the cohomology
-/// generators plus a chain-class lookup keyed by 1-cube edges.
+/// Built from an explicit set of integer cube coordinates; the cube set is
+/// canonicalized, so [`cubes`](Self::cubes) returns it lexicographically
+/// sorted and deduplicated. Exposes the cohomology generators and the
+/// homology class of any chain of 1-cube edges.
 #[derive(Debug)]
 pub struct CubicalCover {
     cubes: Array2<i64>,

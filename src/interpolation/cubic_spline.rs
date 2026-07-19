@@ -170,7 +170,9 @@ impl CubicSpline {
 ///
 /// Uses the natural boundary condition (zero second derivative at the
 /// endpoints) and a tridiagonal algorithm to solve for the second derivatives
-/// at each knot in time linear over the number of rows.
+/// at each knot in time linear over the number of rows. The moment
+/// (second-derivative) formulation and Thomas-algorithm solve follow Stoer &
+/// Bulirsch, *Introduction to Numerical Analysis*, section 2.4.
 fn compute_coefficients(knots: &[f64], values: ArrayView2<'_, f64>) -> Array3<f64> {
     let num_knots = knots.len();
     let num_intervals = num_knots - 1;
@@ -361,6 +363,35 @@ mod tests {
                 let higher = spline.sample_with_order(parameter, order);
                 assert!(higher.iter().all(|component| component.abs() < 1e-10));
             }
+        }
+    }
+
+    fn oscillating_spline() -> CubicSpline {
+        let knots = array![0.0, 1.0, 2.0, 3.0];
+        let values = array![[0.0], [1.0], [0.0], [1.0]];
+        CubicSpline::new(knots, values.view()).unwrap()
+    }
+
+    #[test]
+    fn matches_scipy_natural_spline_values() {
+        // Reference values from scipy.interpolate.CubicSpline with
+        // bc_type="natural" on the same knots and values.
+        let spline = oscillating_spline();
+        let references = [(0.5, 0.75), (1.5, 0.49999999999999994), (2.5, 0.25)];
+        for (parameter, expected) in references {
+            assert!(
+                (spline.sample(parameter)[0] - expected).abs() < 1e-10,
+                "sample at {parameter} deviates from the scipy reference {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn second_derivative_vanishes_at_endpoints() {
+        // The defining property of the natural boundary condition.
+        let spline = oscillating_spline();
+        for endpoint in [0.0, 3.0] {
+            assert!(spline.sample_with_order(endpoint, 2)[0].abs() < 1e-12);
         }
     }
 
