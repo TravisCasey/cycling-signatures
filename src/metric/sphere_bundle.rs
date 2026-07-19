@@ -94,7 +94,7 @@ fn split_and_normalize(point: ArrayView1<'_, f64>) -> (Array1<f64>, Array1<f64>)
 /// )
 /// .unwrap();
 /// let interpolator = ChebyshevSphereBundleInterpolator::new(spline, 3);
-/// // Calibrate the weight to the interpolator's radius (cube_halfspan + 0.5).
+/// // Calibrate the weight to the interpolator's radius (radius_floor + 0.5).
 /// let metric = SphereBundleMetric::new(interpolator.radius()).unwrap();
 /// assert_eq!(metric.direction_weight(), interpolator.radius());
 /// ```
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn distance_is_invariant_to_direction_scale() {
         // L2 normalization absorbs any positive rescaling of the direction
-        // half, so the cube_halfspan choice on the interpolator side does
+        // half, so the radius_floor choice on the interpolator side does
         // not change the metric value.
         let metric = SphereBundleMetric::new(1.5).unwrap();
 
@@ -255,7 +255,7 @@ mod tests {
         let baseline_y = array![0.0, 0.0, 0.0, 1.0];
         let baseline = metric.distance(baseline_x.view(), baseline_y.view());
 
-        // Same directions, multiplied by 7.5 (a different cube_halfspan + 0.5).
+        // Same directions, multiplied by 7.5 (a different radius_floor + 0.5).
         let scaled_x = array![0.0, 0.0, 7.5, 0.0];
         let scaled_y = array![0.0, 0.0, 0.0, 7.5];
         let scaled = metric.distance(scaled_x.view(), scaled_y.view());

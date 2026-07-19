@@ -30,8 +30,8 @@ import _support
 # enough that recurrences are frequent while the cover still resolves the
 # attractor's holes.
 BOXSIZE = 12.0
-SPHERE_HALFSPAN = 3
-DIRECTION_WEIGHT = SPHERE_HALFSPAN + 0.5
+SPHERE_RADIUS_FLOOR = 3
+DIRECTION_WEIGHT = SPHERE_RADIUS_FLOOR + 0.5
 RESAMPLE_BOUND = 0.45
 THRESHOLD = 0.45
 MAX_LENGTH = 600
@@ -44,7 +44,7 @@ def build() -> Path:
     sample_count = len(points)
 
     spline = cs.CubicSpline(np.arange(sample_count, dtype=np.float64), points / BOXSIZE)
-    interpolator = cs.ChebyshevSphereBundleInterpolator(spline, SPHERE_HALFSPAN)
+    interpolator = cs.ChebyshevSphereBundleInterpolator(spline, SPHERE_RADIUS_FLOOR)
     metric = cs.SphereBundle(DIRECTION_WEIGHT)
     trajectory = cs.Trajectory.resample(interpolator, metric, RESAMPLE_BOUND)
 

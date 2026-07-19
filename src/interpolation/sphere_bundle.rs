@@ -15,8 +15,8 @@ use crate::interpolation::{DerivativeInterpolator, Interpolator};
 /// sample has length twice that of the inner interpolator: the first half is
 /// the position, the second half is the scaled direction.
 ///
-/// The radius is set indirectly through a `cube_halfspan: u32` and is fixed at
-/// `cube_halfspan + 0.5`. The half-integer offset keeps every direction
+/// The radius is set indirectly through a `radius_floor: u32` and is fixed at
+/// `radius_floor + 0.5`. The half-integer offset keeps every direction
 /// coordinate strictly between two integers, so a coordinate of an extremal
 /// component never lands exactly where the floor function is sign-asymmetric.
 ///
@@ -35,9 +35,9 @@ pub struct ChebyshevSphereBundleInterpolator<Inner> {
 }
 
 impl<Inner: DerivativeInterpolator> ChebyshevSphereBundleInterpolator<Inner> {
-    /// Wraps `inner` with the given cube halfspan.
+    /// Wraps `inner` with the given radius floor.
     ///
-    /// The actual normalization radius is `cube_halfspan + 0.5`; see the
+    /// The actual normalization radius is `radius_floor + 0.5`; see the
     /// type-level documentation for the cubical-embedding reason. The radius
     /// is recoverable via [`radius`](Self::radius).
     ///
@@ -62,12 +62,12 @@ impl<Inner: DerivativeInterpolator> ChebyshevSphereBundleInterpolator<Inner> {
     /// assert_eq!(sample.len(), 4);
     /// ```
     #[must_use]
-    pub fn new(inner: Inner, cube_halfspan: u32) -> Self {
-        let radius = f64::from(cube_halfspan) + 0.5;
+    pub fn new(inner: Inner, radius_floor: u32) -> Self {
+        let radius = f64::from(radius_floor) + 0.5;
         Self { inner, radius }
     }
 
-    /// The normalization radius (`cube_halfspan + 0.5` from construction).
+    /// The normalization radius (`radius_floor + 0.5` from construction).
     #[must_use]
     pub fn radius(&self) -> f64 {
         self.radius

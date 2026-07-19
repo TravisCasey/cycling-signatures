@@ -67,7 +67,7 @@ impl PyCubicSpline {
 /// Chebyshev norm*, then scaled to the configured radius. Each sample has
 /// length twice that of the inner spline.
 ///
-/// The radius is ``cube_halfspan + 0.5``, where ``cube_halfspan`` is given at
+/// The radius is ``radius_floor + 0.5``, where ``radius_floor`` is given at
 /// construction. The half-integer offset keeps every direction coordinate
 /// strictly between two integers, ensuring that cube-floor assignments for the
 /// direction components are unambiguous at extremal values.
@@ -76,8 +76,8 @@ impl PyCubicSpline {
 /// ----------
 /// inner : ``CubicSpline``
 ///     The spline supplying positions and derivatives.
-/// cube_halfspan : int
-///     Sets the normalization radius to ``cube_halfspan + 0.5``.
+/// radius_floor : int
+///     Sets the normalization radius to ``radius_floor + 0.5``.
 ///
 /// Examples
 /// --------
@@ -99,15 +99,15 @@ pub(crate) struct PyChebyshevSphereBundleInterpolator {
 
 #[pymethods]
 impl PyChebyshevSphereBundleInterpolator {
-    /// Wraps a ``CubicSpline`` with the given cube halfspan.
+    /// Wraps a ``CubicSpline`` with the given radius floor.
     #[new]
-    fn new(inner: &Bound<'_, PyCubicSpline>, cube_halfspan: u32) -> Self {
+    fn new(inner: &Bound<'_, PyCubicSpline>, radius_floor: u32) -> Self {
         let spline = inner.borrow().inner.clone();
-        let bundle = ChebyshevSphereBundleInterpolator::new(spline, cube_halfspan);
+        let bundle = ChebyshevSphereBundleInterpolator::new(spline, radius_floor);
         Self { inner: bundle }
     }
 
-    /// Returns the normalization radius, ``cube_halfspan + 0.5`` from
+    /// Returns the normalization radius, ``radius_floor + 0.5`` from
     /// construction.
     ///
     /// Returns

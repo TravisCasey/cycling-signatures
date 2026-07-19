@@ -15,7 +15,7 @@ def test_sphere_bundle_rejects_nonpositive_weight():
         cs.SphereBundle(0.0)
 
 
-def test_bundle_radius_from_halfspan():
+def test_bundle_radius_from_radius_floor():
     spline = cs.CubicSpline(
         np.array([0.0, 1.0, 2.0]), np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]])
     )
