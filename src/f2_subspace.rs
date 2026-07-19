@@ -31,7 +31,7 @@ impl F2Subspace {
     ///
     /// `vectors` is a generating set in `F_2^n`. Independence is not assumed;
     /// the implementation reduces to reduced row echelon form (RREF) to
-    /// canonicalize. Passing an empty slice yields the trivial (rank 0)
+    /// canonicalize. Passing an empty vector yields the trivial (rank 0)
     /// subspace.
     ///
     /// # Examples
@@ -41,13 +41,13 @@ impl F2Subspace {
     ///
     /// // The 1-dim subspace of F_2^3 spanned by [1, 1, 0].
     /// let first =
-    ///     F2Subspace::new(&[F2Vector::from_nonzero(3, [0, 1])], 3).unwrap();
+    ///     F2Subspace::new(vec![F2Vector::from_nonzero(3, [0, 1])], 3).unwrap();
     ///
     /// // The 2-dim subspace spanned by {[1, 1, 0], [0, 1, 0]} equals the
     /// // subspace spanned by {[1, 0, 0], [0, 1, 0]}; canonicalization makes
     /// // the two representations equal.
     /// let from_first_pair = F2Subspace::new(
-    ///     &[
+    ///     vec![
     ///         F2Vector::from_nonzero(3, [0, 1]),
     ///         F2Vector::from_nonzero(3, [1]),
     ///     ],
@@ -55,7 +55,7 @@ impl F2Subspace {
     /// )
     /// .unwrap();
     /// let from_second_pair = F2Subspace::new(
-    ///     &[
+    ///     vec![
     ///         F2Vector::from_nonzero(3, [0]),
     ///         F2Vector::from_nonzero(3, [1]),
     ///     ],
@@ -66,8 +66,7 @@ impl F2Subspace {
     /// assert_eq!(from_first_pair.rank(), 2);
     ///
     /// // Empty input yields the trivial (rank-0) subspace.
-    /// let empty: &[F2Vector] = &[];
-    /// let trivial = F2Subspace::new(empty, 3).unwrap();
+    /// let trivial = F2Subspace::new(Vec::new(), 3).unwrap();
     /// assert_eq!(trivial, F2Subspace::trivial(3));
     /// ```
     ///
@@ -75,10 +74,8 @@ impl F2Subspace {
     ///
     /// Returns [`Error::F2SubspaceVectorLength`] if any vector's length differs
     /// from `num_generators`.
-    pub fn new<V: AsRef<F2Vector>>(vectors: &[V], num_generators: usize) -> Result<Self> {
-        let mut owned: Vec<F2Vector> = Vec::with_capacity(vectors.len());
+    pub fn new(vectors: Vec<F2Vector>, num_generators: usize) -> Result<Self> {
         for (index, vector) in vectors.iter().enumerate() {
-            let vector = vector.as_ref();
             if vector.len() != num_generators {
                 return Err(Error::F2SubspaceVectorLength {
                     index,
@@ -86,9 +83,8 @@ impl F2Subspace {
                     expected: num_generators,
                 });
             }
-            owned.push(vector.clone());
         }
-        let basis = rref_f2(owned, num_generators);
+        let basis = rref_f2(vectors, num_generators);
         Ok(Self {
             basis,
             num_generators,
@@ -130,7 +126,7 @@ impl F2Subspace {
     /// use cycling_signatures::{F2Subspace, F2Vector};
     ///
     /// let subspace = F2Subspace::new(
-    ///     &[
+    ///     vec![
     ///         F2Vector::from_nonzero(3, [0]),
     ///         F2Vector::from_nonzero(3, [1]),
     ///     ],
@@ -182,9 +178,10 @@ impl PartialOrd for F2Subspace {
     /// ```
     /// use cycling_signatures::{F2Subspace, F2Vector};
     ///
-    /// let small = F2Subspace::new(&[F2Vector::from_nonzero(3, [0])], 3).unwrap();
+    /// let small =
+    ///     F2Subspace::new(vec![F2Vector::from_nonzero(3, [0])], 3).unwrap();
     /// let big = F2Subspace::new(
-    ///     &[
+    ///     vec![
     ///         F2Vector::from_nonzero(3, [0]),
     ///         F2Vector::from_nonzero(3, [1]),
     ///     ],
@@ -196,7 +193,8 @@ impl PartialOrd for F2Subspace {
     /// assert!(big > small);
     ///
     /// // Two 1-dim subspaces along different axes are incomparable.
-    /// let other = F2Subspace::new(&[F2Vector::from_nonzero(3, [2])], 3).unwrap();
+    /// let other =
+    ///     F2Subspace::new(vec![F2Vector::from_nonzero(3, [2])], 3).unwrap();
     /// assert_eq!(small.partial_cmp(&other), None);
     /// ```
     ///
@@ -299,15 +297,15 @@ mod tests {
     fn new_canonicalizes_equivalent_spanning_sets() {
         // Two spanning sets of the same 2-dim subspace of F_2^3:
         // {[1,1,0], [0,1,0]}  and  {[1,0,0], [0,1,0]}.
-        let first = F2Subspace::new(&[vector(3, &[0, 1]), vector(3, &[1])], 3).unwrap();
-        let second = F2Subspace::new(&[vector(3, &[0]), vector(3, &[1])], 3).unwrap();
+        let first = F2Subspace::new(vec![vector(3, &[0, 1]), vector(3, &[1])], 3).unwrap();
+        let second = F2Subspace::new(vec![vector(3, &[0]), vector(3, &[1])], 3).unwrap();
         assert_eq!(first, second);
     }
 
     #[test]
     fn contains_in_span() {
         // Subspace spanned by [1,0,1] and [0,1,0] in F_2^3.
-        let subspace = F2Subspace::new(&[vector(3, &[0, 2]), vector(3, &[1])], 3).unwrap();
+        let subspace = F2Subspace::new(vec![vector(3, &[0, 2]), vector(3, &[1])], 3).unwrap();
         // [1,1,1] = [1,0,1] + [0,1,0] is in the span.
         assert!(subspace.contains(&vector(3, &[0, 1, 2])));
         // [0,0,1] is not in the span.
@@ -330,12 +328,12 @@ mod tests {
 
     #[test]
     fn partial_ord_inclusion() {
-        let small = F2Subspace::new(&[vector(3, &[0])], 3).unwrap();
-        let large = F2Subspace::new(&[vector(3, &[0]), vector(3, &[1])], 3).unwrap();
+        let small = F2Subspace::new(vec![vector(3, &[0])], 3).unwrap();
+        let large = F2Subspace::new(vec![vector(3, &[0]), vector(3, &[1])], 3).unwrap();
         assert!(small < large);
         assert!(large > small);
 
-        let other = F2Subspace::new(&[vector(3, &[2])], 3).unwrap();
+        let other = F2Subspace::new(vec![vector(3, &[2])], 3).unwrap();
         assert_eq!(small.partial_cmp(&other), None);
     }
 
@@ -352,7 +350,7 @@ mod tests {
     #[test]
     fn new_row_length_mismatch_returns_err() {
         let mismatched = vec![vector(3, &[0]), vector(4, &[1])];
-        let err = F2Subspace::new(&mismatched, 3).unwrap_err();
+        let err = F2Subspace::new(mismatched, 3).unwrap_err();
 
         assert!(matches!(
             err,
@@ -367,7 +365,7 @@ mod tests {
     #[test]
     fn new_dependent_and_zero_rows_drop() {
         let subspace = F2Subspace::new(
-            &[
+            vec![
                 vector(3, &[0]),
                 vector(3, &[0]),
                 F2Vector::zeros(3),
@@ -381,8 +379,8 @@ mod tests {
 
     #[test]
     fn hash_matches_eq() {
-        let first = F2Subspace::new(&[vector(3, &[0, 1]), vector(3, &[1])], 3).unwrap();
-        let second = F2Subspace::new(&[vector(3, &[0]), vector(3, &[1])], 3).unwrap();
+        let first = F2Subspace::new(vec![vector(3, &[0, 1]), vector(3, &[1])], 3).unwrap();
+        let second = F2Subspace::new(vec![vector(3, &[0]), vector(3, &[1])], 3).unwrap();
         assert_eq!(first, second);
 
         let mut hasher_first = DefaultHasher::new();

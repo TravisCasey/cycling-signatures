@@ -355,7 +355,7 @@ impl CycleStorage {
                 vectors.push(self.classes[component.class_id as usize].clone());
             }
         }
-        Ok(F2Subspace::new(&vectors, self.num_generators)
+        Ok(F2Subspace::new(vectors, self.num_generators)
             .expect("class vector lengths match num_generators by construction"))
     }
 

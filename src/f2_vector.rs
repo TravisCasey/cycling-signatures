@@ -145,12 +145,6 @@ impl F2Vector {
     }
 }
 
-impl AsRef<F2Vector> for F2Vector {
-    fn as_ref(&self) -> &F2Vector {
-        self
-    }
-}
-
 impl FromIterator<F2> for F2Vector {
     /// Collects an iterator of [`F2`] entries into an [`F2Vector`].
     ///

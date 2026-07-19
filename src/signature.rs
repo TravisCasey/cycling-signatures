@@ -76,7 +76,7 @@ impl CyclingSignature {
             .iter()
             .map(|component| component.class().clone())
             .collect();
-        let span = F2Subspace::new(&classes, num_generators)
+        let span = F2Subspace::new(classes, num_generators)
             .expect("class vectors have the expected length by construction");
         Self { span, components }
     }
