@@ -102,10 +102,6 @@ impl<Inner: DerivativeInterpolator> Interpolator for ChebyshevSphereBundleInterp
     fn knots(&self) -> &[f64] {
         self.inner.knots()
     }
-
-    fn dimension(&self) -> usize {
-        2 * self.inner.dimension()
-    }
 }
 
 #[cfg(test)]

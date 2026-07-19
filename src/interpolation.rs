@@ -30,11 +30,6 @@ pub trait Interpolator {
     /// increasing order.
     #[must_use]
     fn knots(&self) -> &[f64];
-
-    /// The embedding dimension of the interpolating curve. The size of arrays
-    /// output by [`Interpolator::sample`] must equal this value.
-    #[must_use]
-    fn dimension(&self) -> usize;
 }
 
 /// An interpolator that also exposes its first derivative.

@@ -242,10 +242,6 @@ impl Interpolator for CubicSpline {
     fn knots(&self) -> &[f64] {
         self.knots.as_slice().expect("knots stored contiguously")
     }
-
-    fn dimension(&self) -> usize {
-        self.coefficients.dim().2
-    }
 }
 
 impl DerivativeInterpolator for CubicSpline {

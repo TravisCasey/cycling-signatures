@@ -452,10 +452,6 @@ mod tests {
             fn knots(&self) -> &[f64] {
                 &[0.0]
             }
-
-            fn dimension(&self) -> usize {
-                2
-            }
         }
 
         let outcome = Trajectory::resample(&SingleKnotInterpolator, &Euclidean, 0.1);
@@ -487,10 +483,6 @@ mod tests {
 
             fn knots(&self) -> &[f64] {
                 &[0.0, 1.0]
-            }
-
-            fn dimension(&self) -> usize {
-                2
             }
         }
 
