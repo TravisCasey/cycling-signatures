@@ -3,7 +3,9 @@
 
 //! Metric on the L2 sphere bundle.
 
-use ndarray::{Array1, ArrayView1, ArrayView2, s};
+use ndarray::{Array1, ArrayView1, s};
+#[cfg(feature = "serde")]
+use serde::Serialize;
 
 use crate::{
     error::{Error, Result},
@@ -20,7 +22,6 @@ use crate::{
 /// # Panics
 ///
 /// Panics if `point.len()` is odd or if the direction half has zero L2 norm.
-#[allow(clippy::needless_pass_by_value)]
 fn split_and_normalize(point: ArrayView1<'_, f64>) -> (Array1<f64>, Array1<f64>) {
     assert!(
         point.len().is_multiple_of(2),
@@ -98,7 +99,7 @@ fn split_and_normalize(point: ArrayView1<'_, f64>) -> (Array1<f64>, Array1<f64>)
 /// assert_eq!(metric.direction_weight(), interpolator.radius());
 /// ```
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct SphereBundleMetric {
     direction_weight: f64,
 }
@@ -127,7 +128,7 @@ impl SphereBundleMetric {
     pub fn new(direction_weight: f64) -> Result<Self> {
         if !direction_weight.is_finite() || direction_weight <= 0.0 {
             return Err(Error::SphereBundleMetricWeight {
-                value: direction_weight,
+                weight: direction_weight,
             });
         }
         Ok(Self { direction_weight })
@@ -150,40 +151,18 @@ impl Metric for SphereBundleMetric {
     /// Panics if `point.len() != other.len()`, if the common length is not
     /// even, or if either direction half has zero L2 norm.
     fn distance(&self, point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
-        assert_eq!(point.len(), other.len(), "dimension mismatch");
+        assert_eq!(
+            point.len(),
+            other.len(),
+            "dimension mismatch: first {}, second {}",
+            point.len(),
+            other.len()
+        );
         let (position_point, direction_point) = split_and_normalize(point);
         let (position_other, direction_other) = split_and_normalize(other);
         let position_distance = euclidean_distance(position_point.view(), position_other.view());
         let direction_distance = euclidean_distance(direction_point.view(), direction_other.view());
         position_distance.max(self.direction_weight * direction_distance)
-    }
-
-    /// # Panics
-    ///
-    /// Panics if `out.len() != pairs.len()`, or if any index in `pairs` is out
-    /// of bounds for `points`, or if any row has odd length or a zero-norm
-    /// direction half, or if any two rows have mismatched lengths.
-    fn fill_distances(
-        &self,
-        points: ArrayView2<'_, f64>,
-        pairs: &[(usize, usize)],
-        out: &mut [f64],
-    ) {
-        assert_eq!(out.len(), pairs.len(), "out and pairs length mismatch");
-        for (slot, &(left, right)) in out.iter_mut().zip(pairs) {
-            let point = points.row(left);
-            let other = points.row(right);
-            assert_eq!(point.len(), other.len(), "dimension mismatch");
-
-            let (position_point, direction_point) = split_and_normalize(point);
-            let (position_other, direction_other) = split_and_normalize(other);
-            let position_distance =
-                euclidean_distance(position_point.view(), position_other.view());
-            let direction_distance =
-                euclidean_distance(direction_point.view(), direction_other.view());
-
-            *slot = position_distance.max(self.direction_weight * direction_distance);
-        }
     }
 
     /// # Panics
@@ -198,15 +177,12 @@ impl Metric for SphereBundleMetric {
         third: ArrayView1<'_, f64>,
         radius: f64,
     ) -> bool {
-        assert_eq!(
+        assert!(
+            first.len() == second.len() && first.len() == third.len(),
+            "dimension mismatch: first {}, second {}, third {}",
             first.len(),
             second.len(),
-            "dimension mismatch between first and second"
-        );
-        assert_eq!(
-            first.len(),
-            third.len(),
-            "dimension mismatch between first and third"
+            third.len()
         );
 
         let (position_first, direction_first) = split_and_normalize(first);
@@ -288,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "dimension mismatch")]
+    #[should_panic(expected = "dimension mismatch: first 2, second 4")]
     fn distance_dimension_mismatch_panics() {
         let metric = SphereBundleMetric::new(1.0).unwrap();
         let x = array![0.0, 0.0];
@@ -297,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "even dimension")]
+    #[should_panic(expected = "sphere bundle metric requires even dimension, got 3")]
     fn distance_odd_length_panics() {
         let metric = SphereBundleMetric::new(1.0).unwrap();
         let x = array![0.0, 0.0, 0.0];
@@ -306,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "zero direction")]
+    #[should_panic(expected = "zero direction L2 norm")]
     fn distance_zero_direction_norm_panics() {
         // Direction half of x is the zero vector; L2 normalization is undefined.
         let metric = SphereBundleMetric::new(1.0).unwrap();
@@ -321,8 +297,8 @@ mod tests {
             let outcome = SphereBundleMetric::new(weight);
             assert!(matches!(
                 outcome.unwrap_err(),
-                Error::SphereBundleMetricWeight { value }
-                    if value.to_bits() == weight.to_bits(),
+                Error::SphereBundleMetricWeight { weight: rejected }
+                    if rejected.to_bits() == weight.to_bits(),
             ));
         }
     }

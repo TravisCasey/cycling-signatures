@@ -50,10 +50,11 @@ fn enumerate_tile_column_ranges(
 /// Merges per-tile component partitions into a single global partition.
 ///
 /// Input is the per-tile result vector in tile-index order; per-tile cycles
-/// are deduplicated across tiles via their original-index ranges. When a
-/// tile-component contains cycles previously assigned to different global ids,
-/// those ids are merged via the global union-find; the final compaction
-/// renumbers representatives to a contiguous range.
+/// are deduplicated across tiles via their original-index ranges.
+///
+/// When a tile-component contains cycles previously assigned to different
+/// global ids, those ids are merged via the global union-find; the final
+/// compaction renumbers representatives to a contiguous range.
 fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Range<usize>>> {
     let mut global_id_of_cycle: FxHashMap<(usize, usize), u32> = FxHashMap::default();
     let mut union_find = DisjointSet::new();
@@ -197,7 +198,7 @@ pub(crate) fn detect_components_streaming(
         });
     }
     if max_length > tile_width {
-        return Err(Error::InvalidMaxLength { value: max_length });
+        return Err(Error::InvalidMaxLength { max_length });
     }
 
     let tile_column_ranges = enumerate_tile_column_ranges(range, tile_width, max_length);
@@ -243,7 +244,6 @@ pub(crate) fn detect_components_streaming(
 /// `threshold / 2`. Each emitted component is a list of cycle segments in
 /// original-index space. Any component that has merged with a length-1 entry
 /// (a self-comparison at `row = 0`) is filtered before return.
-#[allow(clippy::needless_pass_by_value)]
 fn detect_components_in_tile(
     tile: ArrayView2<'_, f64>,
     trajectory: &Trajectory,

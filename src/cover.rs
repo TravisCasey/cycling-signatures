@@ -41,7 +41,7 @@ impl CubicalCover {
     /// `cubes` has shape `(n, dimension)`; rows are deduplicated and
     /// sorted lexicographically. Coordinates must fit in
     /// `[i32::MIN, i32::MAX - 1]`. Cohomology generators are computed via
-    /// `chomp3rs` using `backend`.
+    /// `chomp3rs` under `backend`.
     ///
     /// # Errors
     ///
@@ -49,7 +49,6 @@ impl CubicalCover {
     /// - [`Error::CubicalCoverZeroDimension`] if `cubes` has zero columns.
     /// - [`Error::CubeCoordinateOutOfRange`] if any cube coordinate is outside
     ///   `[i32::MIN, i32::MAX - 1]`.
-    #[allow(clippy::needless_pass_by_value)]
     pub fn from_cubes(cubes: ArrayView2<'_, i64>, backend: &ExecutionBackend) -> Result<Self> {
         if cubes.nrows() == 0 {
             return Err(Error::CubicalCoverEmptyCubes);
@@ -57,13 +56,11 @@ impl CubicalCover {
         if cubes.ncols() == 0 {
             return Err(Error::CubicalCoverZeroDimension);
         }
+
         for row in cubes.outer_iter() {
             for (axis, &coordinate) in row.iter().enumerate() {
                 if coordinate < i64::from(i32::MIN) || coordinate > i64::from(i32::MAX) - 1 {
-                    return Err(Error::CubeCoordinateOutOfRange {
-                        axis,
-                        value: coordinate,
-                    });
+                    return Err(Error::CubeCoordinateOutOfRange { axis, coordinate });
                 }
             }
         }
@@ -103,7 +100,7 @@ impl CubicalCover {
     /// The cohomology generators as `F_2` chains in the cubical complex.
     ///
     /// The iteration order is implementation-defined; two builds of the same
-    /// cover may differ in the basis returned, though they span the same
+    /// cover might differ in the basis returned, though they span the same
     /// cohomology space.
     #[must_use]
     pub fn generators(&self) -> &[Chain<Cube, F2>] {
@@ -150,7 +147,6 @@ impl CubicalCover {
     /// component-wise to its integer cube, then located in the canonical
     /// (sorted) cube list.
     #[must_use]
-    #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn cube_index(&self, point: ArrayView1<'_, f64>) -> Option<usize> {
         let mut buffer: Vec<i64> = Vec::with_capacity(self.cubes.ncols());
         floor_to_cube(point, &mut buffer);
@@ -183,7 +179,6 @@ impl CubicalCover {
 /// Floors each coordinate of `point` to its integer cube index, writing the
 /// result into `out` (cleared first). A point's cube is the component-wise
 /// floor of its coordinates.
-#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn floor_to_cube(point: ArrayView1<'_, f64>, out: &mut Vec<i64>) {
     out.clear();
     out.extend(point.iter().map(|&value| value.floor() as i64));
@@ -192,7 +187,6 @@ pub(crate) fn floor_to_cube(point: ArrayView1<'_, f64>, out: &mut Vec<i64>) {
 /// Returns the row index of the cube equal to `target`, or `None` if no cube
 /// matches. `cubes` must be lexicographically sorted (the canonical order
 /// [`CubicalCover`] enforces); the lookup is a binary search over that order.
-#[allow(clippy::needless_pass_by_value)]
 fn find_cube(cubes: ArrayView2<'_, i64>, target: &[i64]) -> Option<usize> {
     let mut low = 0_usize;
     let mut high = cubes.nrows();
@@ -210,8 +204,7 @@ fn find_cube(cubes: ArrayView2<'_, i64>, target: &[i64]) -> Option<usize> {
 }
 
 /// Lexicographically sorts and deduplicates `cubes`, returning a new owned
-/// `Array2<i64>`.
-#[allow(clippy::needless_pass_by_value)]
+/// [`Array2<i64>`](Array2).
 fn canonicalize_cubes(cubes: ArrayView2<'_, i64>) -> Array2<i64> {
     let mut rows: Vec<Vec<i64>> = cubes.outer_iter().map(|row| row.to_vec()).collect();
     rows.sort();
@@ -313,7 +306,8 @@ fn compute_generators(
     generators
 }
 
-/// A total ordering on `Chain<Cube, F2>` used for deterministic sorting.
+/// A total ordering on [`Chain<Cube, F2>`](Chain) used for deterministic
+/// sorting.
 fn compare_chains(left: &Chain<Cube, F2>, right: &Chain<Cube, F2>) -> std::cmp::Ordering {
     let left_entries: Vec<&Cube> = left.into_iter().map(|(cube, _)| cube).collect();
     let right_entries: Vec<&Cube> = right.into_iter().map(|(cube, _)| cube).collect();
@@ -456,8 +450,8 @@ mod tests {
             outcome.unwrap_err(),
             Error::CubeCoordinateOutOfRange {
                 axis: 1,
-                value,
-            } if value == i64::from(i32::MAX),
+                coordinate,
+            } if coordinate == i64::from(i32::MAX),
         ));
     }
 

@@ -30,8 +30,8 @@ use crate::errors::to_pyerr;
 /// ------
 /// ``ValueError``
 ///     If ``knots`` has fewer than two elements, if the number of rows in
-///     ``values`` does not match the length of ``knots``, if ``values`` has
-///     zero columns, or if ``knots`` is not strictly increasing.
+///     ``values`` does not match the length of ``knots``, or if ``knots`` is
+///     not strictly increasing.
 ///
 /// Examples
 /// --------

@@ -102,9 +102,13 @@ impl PyHomologyClass {
 
     /// Returns the zero or one entry at generator ``index``.
     fn __getitem__(&self, index: isize) -> PyResult<u8> {
-        let index = resolve_index(index, self.inner.len())
-            .ok_or_else(|| PyIndexError::new_err("generator index out of bounds"))?;
-        Ok(u8::from(self.inner.get(index) == F2::from(1u64)))
+        let resolved = resolve_index(index, self.inner.len()).ok_or_else(|| {
+            PyIndexError::new_err(format!(
+                "generator index {index} out of bounds for {} generators",
+                self.inner.len()
+            ))
+        })?;
+        Ok(u8::from(self.inner.get(resolved) == F2::from(1u64)))
     }
 
     /// Returns whether this is the trivial (all-zero) class.
@@ -253,9 +257,11 @@ impl PySubspace {
     ///     generators of this subspace.
     fn contains(&self, homology_class: &PyHomologyClass) -> PyResult<bool> {
         if homology_class.inner.len() != self.inner.num_generators() {
-            return Err(PyValueError::new_err(
-                "homology class length does not match the subspace generator count",
-            ));
+            return Err(PyValueError::new_err(format!(
+                "homology class length {} does not match the subspace generator count {}",
+                homology_class.inner.len(),
+                self.inner.num_generators()
+            )));
         }
         Ok(self.inner.contains(&homology_class.inner))
     }

@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct F2Vector {
+    // The external interface uses `F2` from the `chomp3rs` crate, but the
+    // values are internally bitpacked for memory efficiency.
     bits: Vec<u64>,
     len: usize,
 }
@@ -77,7 +79,12 @@ impl F2Vector {
     /// Panics if `index` is out of bounds.
     #[must_use]
     pub fn get(&self, index: usize) -> F2 {
-        assert!(index < self.len, "index out of bounds");
+        assert!(
+            index < self.len,
+            "index {} out of bounds for F2Vector of length {}",
+            index,
+            self.len
+        );
         let word = self.bits[index / 64];
         let bit = (word >> (index % 64)) & 1;
         F2::from(bit)
@@ -89,7 +96,12 @@ impl F2Vector {
     ///
     /// Panics if `index` is out of bounds.
     pub fn set(&mut self, index: usize, value: F2) {
-        assert!(index < self.len, "index out of bounds");
+        assert!(
+            index < self.len,
+            "index {} out of bounds for F2Vector of length {}",
+            index,
+            self.len
+        );
         let mask = 1u64 << (index % 64);
         if value == F2::one() {
             self.bits[index / 64] |= mask;
@@ -177,7 +189,11 @@ impl BitXorAssign<&F2Vector> for F2Vector {
     ///
     /// Panics if the two vectors have different lengths.
     fn bitxor_assign(&mut self, other: &F2Vector) {
-        assert_eq!(self.len, other.len, "vector length mismatch");
+        assert_eq!(
+            self.len, other.len,
+            "vector length mismatch: first has length {}, second {}",
+            self.len, other.len
+        );
         for (left, right) in self.bits.iter_mut().zip(other.bits.iter()) {
             *left ^= *right;
         }
@@ -309,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "vector length mismatch")]
+    #[should_panic(expected = "vector length mismatch: first has length 64, second 65")]
     fn xor_assign_dimension_mismatch_panics() {
         let mut left = F2Vector::zeros(64);
         let right = F2Vector::zeros(65);
@@ -317,10 +333,17 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "index out of bounds")]
+    #[should_panic(expected = "index 10 out of bounds for F2Vector of length 10")]
     fn set_out_of_bounds_panics() {
         let mut vector = F2Vector::zeros(10);
         vector.set(10, F2::one());
+    }
+
+    #[test]
+    #[should_panic(expected = "index 10 out of bounds for F2Vector of length 10")]
+    fn get_out_of_bounds_panics() {
+        let vector = F2Vector::zeros(10);
+        _ = vector.get(10);
     }
 
     #[test]

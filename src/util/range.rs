@@ -1,16 +1,19 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Normalization of `RangeBounds<usize>` segments into half-open `Range<usize>`
-//! with bounds validation.
+//! Normalization of [`RangeBounds<usize>`](RangeBounds)-implementing segments
+//! into half-open [`Range<usize>`](Range) with bounds validation.
+//!
+//! Used for flexibility of trajectory segment specification with
+//! [`Range<usize>`](Range) being the canonical target.
 
 use std::ops::{Bound, Range, RangeBounds};
 
 use crate::error::{Error, Result};
 
-/// Normalizes any `RangeBounds<usize>` into a half-open `Range<usize>`,
-/// validated against `length` as an upper bound. Resolves unbounded start and
-/// end to `0` and `length` respectively.
+/// Normalizes any [`RangeBounds<usize>`](RangeBounds)-implementor into a
+/// half-open [`Range<usize>`](Range), validated against `length` as an upper
+/// bound. Resolves unbounded start and end to `0` and `length` respectively.
 ///
 /// # Errors
 ///
@@ -47,7 +50,6 @@ mod tests {
 
     #[test]
     fn bounded_range_normalizes() {
-        // Half-open: stays as-is. Inclusive: end widens by 1.
         assert_eq!(normalize_segment(2..7, 10).unwrap(), 2..7);
         assert_eq!(normalize_segment(2..=6, 10).unwrap(), 2..7);
     }

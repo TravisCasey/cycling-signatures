@@ -3,11 +3,14 @@
 
 //! The [`Metric`] trait and reference implementations.
 //!
-//! A metric is a distance function over rows of an `ndarray::Array2<f64>`.
+//! A metric is a distance function over rows of an
+//! [`Array2<f64>`](ndarray::Array2).
 
 use std::fmt::Debug;
 
 use ndarray::{ArrayView1, ArrayView2};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 pub mod sphere_bundle;
 
@@ -39,7 +42,13 @@ pub trait Metric: Send + Sync + Debug + 'static {
         pairs: &[(usize, usize)],
         out: &mut [f64],
     ) {
-        assert_eq!(out.len(), pairs.len(), "out and pairs length mismatch");
+        assert_eq!(
+            out.len(),
+            pairs.len(),
+            "length mismatch: {} pairs but the output slice has length {}",
+            pairs.len(),
+            out.len()
+        );
         for (slot, &(left, right)) in out.iter_mut().zip(pairs) {
             *slot = self.distance(points.row(left), points.row(right));
         }
@@ -75,7 +84,7 @@ pub trait Metric: Send + Sync + Debug + 'static {
 ///
 /// Distance is the square root of the sum of squared coordinate differences.
 #[derive(Clone, Copy, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Euclidean;
 
 impl Metric for Euclidean {
@@ -88,22 +97,6 @@ impl Metric for Euclidean {
     /// Panics if `point.len() != other.len()`.
     fn distance(&self, point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
         euclidean_distance(point, other)
-    }
-
-    /// # Panics
-    ///
-    /// Panics if `out.len() != pairs.len()`, or if any index in `pairs` is out
-    /// of bounds for `points`, or if any two rows have mismatched lengths.
-    fn fill_distances(
-        &self,
-        points: ArrayView2<'_, f64>,
-        pairs: &[(usize, usize)],
-        out: &mut [f64],
-    ) {
-        assert_eq!(out.len(), pairs.len(), "out and pairs length mismatch");
-        for (slot, &(left, right)) in out.iter_mut().zip(pairs) {
-            *slot = euclidean_distance(points.row(left), points.row(right));
-        }
     }
 
     fn covers_triple(
@@ -121,7 +114,7 @@ impl Metric for Euclidean {
 ///
 /// Distance is the largest absolute coordinate difference.
 #[derive(Clone, Copy, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Chebyshev;
 
 impl Metric for Chebyshev {
@@ -138,22 +131,6 @@ impl Metric for Chebyshev {
 
     /// # Panics
     ///
-    /// Panics if `out.len() != pairs.len()`, or if any index in `pairs` is out
-    /// of bounds for `points`, or if any two rows have mismatched lengths.
-    fn fill_distances(
-        &self,
-        points: ArrayView2<'_, f64>,
-        pairs: &[(usize, usize)],
-        out: &mut [f64],
-    ) {
-        assert_eq!(out.len(), pairs.len(), "out and pairs length mismatch");
-        for (slot, &(left, right)) in out.iter_mut().zip(pairs) {
-            *slot = chebyshev_distance(points.row(left), points.row(right));
-        }
-    }
-
-    /// # Panics
-    ///
     /// Panics if `first`, `second`, and `third` do not all have the same
     /// length.
     fn covers_triple(
@@ -163,13 +140,17 @@ impl Metric for Chebyshev {
         third: ArrayView1<'_, f64>,
         radius: f64,
     ) -> bool {
-        assert_eq!(first.len(), second.len(), "dimension mismatch");
-        assert_eq!(first.len(), third.len(), "dimension mismatch");
+        assert!(
+            first.len() == second.len() && first.len() == third.len(),
+            "dimension mismatch: first {}, second {}, third {}",
+            first.len(),
+            second.len(),
+            third.len()
+        );
         for axis in 0..first.len() {
             let max_coord = first[axis].max(second[axis]).max(third[axis]);
             let min_coord = first[axis].min(second[axis]).min(third[axis]);
-            let half_extent = (max_coord - min_coord) / 2.0;
-            if half_extent > radius {
+            if max_coord - min_coord > 2.0 * radius {
                 return false;
             }
         }
@@ -182,9 +163,14 @@ impl Metric for Chebyshev {
 /// # Panics
 ///
 /// Panics if `point.len() != other.len()`.
-#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn chebyshev_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
-    assert_eq!(point.len(), other.len(), "dimension mismatch");
+    assert_eq!(
+        point.len(),
+        other.len(),
+        "dimension mismatch: first {}, second {}",
+        point.len(),
+        other.len()
+    );
     point
         .iter()
         .zip(other.iter())
@@ -197,9 +183,14 @@ pub(crate) fn chebyshev_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'
 /// # Panics
 ///
 /// Panics if `point.len() != other.len()`.
-#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn euclidean_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
-    assert_eq!(point.len(), other.len(), "dimension mismatch");
+    assert_eq!(
+        point.len(),
+        other.len(),
+        "dimension mismatch: first {}, second {}",
+        point.len(),
+        other.len()
+    );
     point
         .iter()
         .zip(other.iter())
@@ -217,7 +208,6 @@ pub(crate) fn euclidean_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'
 ///   enclosing ball has `c` as diameter.
 /// - Otherwise the smallest enclosing ball is the circumscribed circle, with
 ///   radius `(a * b * c) / (4 * area)` and `area` from Heron's formula.
-#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn euclidean_covers_triple(
     first: ArrayView1<'_, f64>,
     second: ArrayView1<'_, f64>,
@@ -259,8 +249,8 @@ mod tests {
     fn covers_triple_distinguishes_default_from_euclidean_override() {
         // Stub metric with the trait's default covers_triple body.
         #[derive(Clone, Debug)]
-        struct Stub;
-        impl Metric for Stub {
+        struct EuclideanDefault;
+        impl Metric for EuclideanDefault {
             fn name(&self) -> String {
                 "stub".into()
             }
@@ -277,13 +267,12 @@ mod tests {
         // Equilateral triangle of side 2.0; ball radius 1.0.
         // Pairwise distances all equal 2.0 == 2 * radius (default accepts).
         // Smallest enclosing ball has radius 2.0 / sqrt(3) > 1.0
-        // (Euclidean override rejects). This is the test that justifies
-        // having the override at all.
+        // (Euclidean override rejects).
         let p1 = array![0.0, 0.0];
         let p2 = array![2.0, 0.0];
         let p3 = array![1.0, 3.0_f64.sqrt()];
 
-        assert!(Stub.covers_triple(p1.view(), p2.view(), p3.view(), 1.0));
+        assert!(EuclideanDefault.covers_triple(p1.view(), p2.view(), p3.view(), 1.0));
         assert!(!Euclidean.covers_triple(p1.view(), p2.view(), p3.view(), 1.0));
     }
 
@@ -317,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "dimension mismatch")]
+    #[should_panic(expected = "dimension mismatch: first 2, second 3")]
     fn distance_dimension_mismatch_panics() {
         let metric = Euclidean;
         let short = array![0.0, 0.0];

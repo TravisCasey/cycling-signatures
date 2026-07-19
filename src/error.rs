@@ -1,17 +1,14 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Crate-level error types.
+//! Crate-level error-handling and reporting.
 
-/// Errors specific to the cycling-signatures crate.
-///
-/// The enum is `#[non_exhaustive]`; downstream `match` statements should
-/// include a wildcard arm.
+/// Error type specific to the cycling-signatures crate.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// A spanning vector passed to [`crate::F2Subspace::new`] did not have
-    /// the expected length.
+    /// A spanning vector passed to [`crate::F2Subspace::new`] did not have the
+    /// expected length.
     #[error("spanning vector at index {index} has length {actual}, expected {expected}")]
     F2SubspaceVectorLength {
         /// Position of the offending vector in the input slice.
@@ -23,24 +20,20 @@ pub enum Error {
     },
 
     /// An interpolator was constructed with fewer than two knots.
-    #[error("interpolation requires at least two knots, got {actual}")]
+    #[error("interpolation requires at least two knots, got {knots}")]
     InterpolationKnotCount {
         /// Number of knots supplied.
-        actual: usize,
+        knots: usize,
     },
 
     /// Knot count and value row count disagreed.
-    #[error("interpolation has {knots} knots and {value_rows} value rows")]
+    #[error("interpolation has {knots} knots but {value_rows} rows of values")]
     InterpolationShapeMismatch {
         /// Number of knots supplied.
         knots: usize,
         /// Number of value rows supplied.
         value_rows: usize,
     },
-
-    /// Interpolation values had zero columns.
-    #[error("interpolation values have zero columns")]
-    InterpolationEmptyValues,
 
     /// Interpolation knots were not strictly increasing.
     #[error("interpolation knots are not strictly increasing at index {index}")]
@@ -52,16 +45,16 @@ pub enum Error {
 
     /// Sphere bundle metric direction weight was not finite or not strictly
     /// positive.
-    #[error("sphere bundle direction weight {value} is not finite or not strictly positive")]
+    #[error("sphere bundle direction weight {weight} is not finite or not strictly positive")]
     SphereBundleMetricWeight {
         /// The rejected weight.
-        value: f64,
+        weight: f64,
     },
 
     /// A cube coordinate is outside the range the cubical-homology backend
     /// accepts.
     #[error(
-        "cube coordinate {value} at axis {axis} is outside the allowed range [{}, {}]",
+        "cube coordinate {coordinate} at axis {axis} is outside the allowed range [{}, {}]",
         i32::MIN,
         i32::MAX - 1
     )]
@@ -69,7 +62,7 @@ pub enum Error {
         /// The axis (cube column) of the offending coordinate.
         axis: usize,
         /// The rejected coordinate.
-        value: i64,
+        coordinate: i64,
     },
 
     /// [`CubicalCover::from_cubes`](crate::CubicalCover::from_cubes) was called
@@ -142,7 +135,7 @@ pub enum Error {
     /// A trajectory segment passed to a window or cycle query falls outside
     /// the valid range of the trajectory.
     #[error(
-        "trajectory segment {start}..{end} does not fit in a trajectory of length \
+        "trajectory segment {start}..{end} does not lie within a trajectory of length \
          {trajectory_length}"
     )]
     WindowOutOfBounds {
@@ -158,11 +151,12 @@ pub enum Error {
     /// consecutive-distance bound under its metric: cycles below this
     /// resolution are not meaningfully detectable.
     #[error(
-        "adjacency threshold {given} is below the consecutive-distance bound {trajectory_bound}"
+        "adjacency threshold {threshold} is below the consecutive-distance bound \
+         {trajectory_bound}"
     )]
     ThresholdBelowTrajectoryBound {
         /// The threshold the caller supplied.
-        given: f64,
+        threshold: f64,
         /// The embedded trajectory's consecutive-distance bound under its
         /// metric.
         trajectory_bound: f64,
@@ -187,10 +181,10 @@ pub enum Error {
 
     /// A `max_length` value below the structure's minimum, or above the
     /// streaming tile width.
-    #[error("cycle length cap {value} is invalid")]
+    #[error("cycle length cap {max_length} is invalid")]
     InvalidMaxLength {
-        /// The rejected value.
-        value: usize,
+        /// The rejected length cap.
+        max_length: usize,
     },
 
     /// A persisted file's format version does not match this build's

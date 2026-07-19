@@ -1,7 +1,7 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Serde adapter encoding an `Array2` as a `NumPy` `.npy` payload.
+//! Serde adapter encoding an [`Array2`] as a `NumPy` `.npy` payload.
 //!
 //! The array is written as `.npy` bytes and carried as a single byte buffer, so
 //! a decoder in another language recovers a typed array with one `numpy.load`.
@@ -32,7 +32,7 @@ where
     serializer.serialize_bytes(&buffer)
 }
 
-/// Deserializes an `Array2` from a `.npy` byte payload.
+/// Deserializes an [`Array2`] from a `.npy` byte payload.
 ///
 /// # Errors
 ///

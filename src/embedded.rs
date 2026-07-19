@@ -105,7 +105,7 @@ impl EmbeddedTrajectory {
     pub(crate) fn check_threshold(&self, threshold: f64) -> Result<()> {
         if threshold < self.bound {
             return Err(Error::ThresholdBelowTrajectoryBound {
-                given: threshold,
+                threshold,
                 trajectory_bound: self.bound,
             });
         }
@@ -217,7 +217,9 @@ impl EmbeddedTrajectory {
         let segment = normalize_segment(segment, self.trajectory.original_count())?;
         assert!(
             segment.end > segment.start + 1,
-            "cycle segment must contain at least two points",
+            "cycle segment {}..{} must contain at least two points",
+            segment.start,
+            segment.end
         );
 
         let original_indices = self.trajectory.original_indices();

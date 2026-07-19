@@ -27,7 +27,7 @@ use crate::{
 
 /// A detected cycle paired with the metric distance between its endpoints.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Cycle {
     range: Range<u32>,
     birth: f64,
@@ -56,7 +56,7 @@ impl Cycle {
 /// One connected component of below-threshold near-recurrence, together with
 /// the homology class shared by every cycle in the component.
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Component {
     class_id: u32,
     coverage: Range<u32>,
@@ -170,7 +170,7 @@ impl CycleStorage {
         embedded.check_threshold(threshold)?;
         let range = normalize_segment(segment, trajectory.original_count())?;
         if max_length < 2 {
-            return Err(Error::InvalidMaxLength { value: max_length });
+            return Err(Error::InvalidMaxLength { max_length });
         }
 
         // Tile the segment in blocks of a default width, never wider than the
@@ -568,7 +568,10 @@ mod tests {
     fn max_length_below_minimum_is_rejected() {
         let embedded = loop_trajectory();
         let outcome = CycleStorage::build(&embedded, .., 1.5, 1, &ExecutionBackend::Sequential);
-        assert!(matches!(outcome, Err(Error::InvalidMaxLength { value: 1 })));
+        assert!(matches!(
+            outcome,
+            Err(Error::InvalidMaxLength { max_length: 1 })
+        ));
     }
 
     #[test]
@@ -577,13 +580,18 @@ mod tests {
         // cube centers), so bound() == 1.0. A threshold of 0.5 is below that.
         let embedded = loop_trajectory();
         let trajectory_bound = embedded.bound();
-        let threshold = trajectory_bound - 0.5;
-        let outcome =
-            CycleStorage::build(&embedded, .., threshold, 9, &ExecutionBackend::Sequential);
+        let lower_threshold = trajectory_bound - 0.5;
+        let outcome = CycleStorage::build(
+            &embedded,
+            ..,
+            lower_threshold,
+            9,
+            &ExecutionBackend::Sequential,
+        );
         assert!(matches!(
             outcome,
-            Err(Error::ThresholdBelowTrajectoryBound { given, trajectory_bound: bound })
-                if (given - threshold).abs() < 1e-12
+            Err(Error::ThresholdBelowTrajectoryBound { threshold, trajectory_bound: bound })
+                if (threshold - lower_threshold).abs() < 1e-12
                     && (bound - embedded.bound()).abs() < 1e-12
         ));
     }

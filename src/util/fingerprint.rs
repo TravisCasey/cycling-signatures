@@ -24,7 +24,7 @@ impl Fingerprint {
         }
     }
 
-    /// Folds `bytes` into the running digest.
+    /// Folds `bytes` into the running state.
     pub(crate) fn write(&mut self, bytes: &[u8]) {
         for &byte in bytes {
             self.state ^= u64::from(byte);
@@ -32,9 +32,9 @@ impl Fingerprint {
         }
     }
 
-    /// The digest of everything written so far.
+    /// The canonical fingerprint of everything written thus far.
     #[must_use]
-    pub(crate) fn finish(&self) -> u64 {
+    pub(crate) fn finish(self) -> u64 {
         self.state
     }
 }

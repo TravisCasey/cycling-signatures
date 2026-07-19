@@ -1,7 +1,7 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Subspaces of `F_2^n` stored in reduced row echelon form.
+//! Subspaces of vector spaces `F_2^n` stored in reduced row echelon form.
 
 use std::{cmp::Ordering, fmt};
 
@@ -14,7 +14,7 @@ use crate::{
     f2_vector::F2Vector,
 };
 
-/// A subspace of `F_2^n`.
+/// A subspace of the vector space `F_2^n`.
 ///
 /// Two subspaces compare equal if and only if they span the same set of
 /// vectors. The internal canonical form makes this comparison structurally
@@ -30,8 +30,9 @@ impl F2Subspace {
     /// Constructs the subspace spanned by `vectors`.
     ///
     /// `vectors` is a generating set in `F_2^n`. Independence is not assumed;
-    /// the implementation reduces to RREF to canonicalize. Passing an empty
-    /// slice yields the trivial (rank 0) subspace.
+    /// the implementation reduces to reduced row echelon form (RREF) to
+    /// canonicalize. Passing an empty slice yields the trivial (rank 0)
+    /// subspace.
     ///
     /// # Examples
     ///
@@ -72,8 +73,8 @@ impl F2Subspace {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::F2SubspaceVectorLength`] if any vector's length
-    /// differs from `num_generators`.
+    /// Returns [`Error::F2SubspaceVectorLength`] if any vector's length differs
+    /// from `num_generators`.
     pub fn new<V: AsRef<F2Vector>>(vectors: &[V], num_generators: usize) -> Result<Self> {
         let mut owned: Vec<F2Vector> = Vec::with_capacity(vectors.len());
         for (index, vector) in vectors.iter().enumerate() {
@@ -152,8 +153,11 @@ impl F2Subspace {
         assert_eq!(
             vector.len(),
             self.num_generators,
-            "vector length does not match generator count",
+            "vector length {} does not match generator count {}",
+            vector.len(),
+            self.num_generators
         );
+
         let mut residual = vector.clone();
         for basis_vector in &self.basis {
             let pivot = basis_vector
@@ -202,8 +206,10 @@ impl PartialOrd for F2Subspace {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         assert_eq!(
             self.num_generators, other.num_generators,
-            "comparing subspaces with different generator counts",
+            "comparing subspaces with different generator counts: first {}, second {}",
+            self.num_generators, other.num_generators
         );
+
         // Different ranks rule out equality and one inclusion direction; only
         // the larger-ranked side can possibly contain the smaller, so we test
         // a single direction.
@@ -261,6 +267,7 @@ fn rref_f2(mut rows: Vec<F2Vector>, num_generators: usize) -> Vec<F2Vector> {
         let candidate = (pivot_row..rows.len()).find(|&row| rows[row].get(column) == F2::one());
         let Some(found) = candidate else { continue };
         rows.swap(pivot_row, found);
+
         let pivot = rows[pivot_row].clone();
         let (head, tail) = rows.split_at_mut(pivot_row + 1);
         for row in head[..pivot_row].iter_mut().chain(tail.iter_mut()) {
@@ -315,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "vector length")]
+    #[should_panic(expected = "vector length 4 does not match generator count 3")]
     fn contains_dimension_mismatch_panics() {
         let subspace = F2Subspace::trivial(3);
         let _ = subspace.contains(&F2Vector::zeros(4));
@@ -327,12 +334,15 @@ mod tests {
         let large = F2Subspace::new(&[vector(3, &[0]), vector(3, &[1])], 3).unwrap();
         assert!(small < large);
         assert!(large > small);
+
         let other = F2Subspace::new(&[vector(3, &[2])], 3).unwrap();
         assert_eq!(small.partial_cmp(&other), None);
     }
 
     #[test]
-    #[should_panic(expected = "generator count")]
+    #[should_panic(
+        expected = "comparing subspaces with different generator counts: first 3, second 4"
+    )]
     fn partial_ord_dimension_mismatch_panics() {
         let left = F2Subspace::trivial(3);
         let right = F2Subspace::trivial(4);
@@ -343,7 +353,7 @@ mod tests {
     fn new_row_length_mismatch_returns_err() {
         let mismatched = vec![vector(3, &[0]), vector(4, &[1])];
         let err = F2Subspace::new(&mismatched, 3).unwrap_err();
-        // Second vector (index 1) has length 4, not the expected 3.
+
         assert!(matches!(
             err,
             Error::F2SubspaceVectorLength {
@@ -374,10 +384,12 @@ mod tests {
         let first = F2Subspace::new(&[vector(3, &[0, 1]), vector(3, &[1])], 3).unwrap();
         let second = F2Subspace::new(&[vector(3, &[0]), vector(3, &[1])], 3).unwrap();
         assert_eq!(first, second);
+
         let mut hasher_first = DefaultHasher::new();
         let mut hasher_second = DefaultHasher::new();
         first.hash(&mut hasher_first);
         second.hash(&mut hasher_second);
+
         assert_eq!(hasher_first.finish(), hasher_second.finish());
     }
 }

@@ -135,9 +135,10 @@ impl PyEmbeddedTrajectory {
     fn cycle_class(&self, segment: &Bound<'_, PyAny>) -> PyResult<PyHomologyClass> {
         let range = segment_from_py(segment)?;
         if range.end < range.start + 2 {
-            return Err(PyValueError::new_err(
-                "cycle segment must contain at least two points",
-            ));
+            return Err(PyValueError::new_err(format!(
+                "cycle segment {}..{} must contain at least two points",
+                range.start, range.end
+            )));
         }
         let homology_class = self.inner.cycle_class(range).map_err(to_pyerr)?;
         Ok(PyHomologyClass {

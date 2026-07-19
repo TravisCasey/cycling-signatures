@@ -22,9 +22,11 @@ fn scalar_distance(
     other: &PyReadonlyArray1<'_, f64>,
 ) -> PyResult<f64> {
     if point.as_array().len() != other.as_array().len() {
-        return Err(PyValueError::new_err(
-            "coordinate vectors must have equal length",
-        ));
+        return Err(PyValueError::new_err(format!(
+            "coordinate vectors have mismatched lengths: first {}, second {}",
+            point.as_array().len(),
+            other.as_array().len()
+        )));
     }
     Ok(metric.distance(point.as_array(), other.as_array()))
 }
@@ -314,9 +316,10 @@ pub(crate) fn metric_from_py(object: &Bound<'_, PyAny>) -> PyResult<Box<dyn Metr
     if let Ok(sphere) = object.cast::<PySphereBundle>() {
         return Ok(Box::new(sphere.get().metric));
     }
-    Err(PyTypeError::new_err(
-        "expected a Euclidean, Chebyshev, or SphereBundle metric",
-    ))
+    Err(PyTypeError::new_err(format!(
+        "expected a Euclidean, Chebyshev, or SphereBundle metric, got {}",
+        object.get_type().name()?
+    )))
 }
 
 /// Registers the metric classes on the module.

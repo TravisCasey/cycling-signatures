@@ -56,6 +56,7 @@ impl<Inner: DerivativeInterpolator> ChebyshevSphereBundleInterpolator<Inner> {
     /// .unwrap();
     /// let bundle = ChebyshevSphereBundleInterpolator::new(inner, 1);
     /// assert_eq!(bundle.radius(), 1.5);
+    ///
     /// let sample = bundle.sample(0.5);
     /// // Output is the inner sample concatenated with the scaled direction.
     /// assert_eq!(sample.len(), 4);
@@ -86,7 +87,7 @@ impl<Inner: DerivativeInterpolator> Interpolator for ChebyshevSphereBundleInterp
             .iter()
             .map(|component| component.abs())
             .fold(0.0_f64, f64::max);
-        assert!(linf_norm > 0.0, "zero derivative at parameter");
+        assert!(linf_norm > 0.0, "zero derivative at parameter {parameter}");
 
         let scaled: Array1<f64> = derivative.mapv(|component| component / linf_norm * self.radius);
 
@@ -94,6 +95,7 @@ impl<Inner: DerivativeInterpolator> Interpolator for ChebyshevSphereBundleInterp
         let mut result = Array1::<f64>::zeros(2 * dimension);
         result.slice_mut(ndarray::s![..dimension]).assign(&position);
         result.slice_mut(ndarray::s![dimension..]).assign(&scaled);
+
         result
     }
 
@@ -115,22 +117,24 @@ mod tests {
 
     #[test]
     fn sample_concatenates_position_and_scaled_direction() {
-        // Three properties asserted together: output length is 2 * inner dim,
-        // the spatial half matches an independently constructed inner sample,
-        // and the direction half has L-infinity norm equal to the radius.
+        // Three properties asserted together:
+        //   - output length is 2 * inner dimension,
+        //   - the spatial half matches the inner spline's own sample, and
+        //   - the direction half has L-infinity norm equal to the radius.
         let knots = array![0.0, 1.0, 2.0, 3.0];
         let values = array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]];
         let inner = CubicSpline::new(knots.clone(), values.view()).unwrap();
-        let bundle = ChebyshevSphereBundleInterpolator::new(inner, 2);
+        let bundle = ChebyshevSphereBundleInterpolator::new(inner.clone(), 2);
         let radius = bundle.radius();
-        let plain = CubicSpline::new(knots, values.view()).unwrap();
 
         for parameter in [0.5, 1.0, 1.5, 2.0, 2.5] {
             let sample = bundle.sample(parameter);
             assert_eq!(sample.len(), 4);
-            let plain_sample = plain.sample(parameter);
-            assert!((sample[0] - plain_sample[0]).abs() < 1e-12);
-            assert!((sample[1] - plain_sample[1]).abs() < 1e-12);
+
+            let inner_sample = inner.sample(parameter);
+            assert!((sample[0] - inner_sample[0]).abs() < 1e-12);
+            assert!((sample[1] - inner_sample[1]).abs() < 1e-12);
+
             let direction_linf = sample
                 .iter()
                 .skip(2)
@@ -145,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "zero derivative")]
+    #[should_panic(expected = "zero derivative at parameter 0.5")]
     fn sample_zero_inner_derivative_panics() {
         // Constant trajectory: derivative is zero everywhere.
         let inner = CubicSpline::new(

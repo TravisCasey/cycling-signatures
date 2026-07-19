@@ -92,9 +92,10 @@ impl PyTrajectory {
                 .map_err(to_pyerr)?;
             return Ok(Self { inner });
         }
-        Err(PyTypeError::new_err(
-            "expected a CubicSpline or ChebyshevSphereBundleInterpolator",
-        ))
+        Err(PyTypeError::new_err(format!(
+            "expected a CubicSpline or ChebyshevSphereBundleInterpolator, got {}",
+            interpolator.get_type().name()?
+        )))
     }
 
     /// Returns the trajectory points as a two-dimensional array.

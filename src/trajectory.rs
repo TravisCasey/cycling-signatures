@@ -7,6 +7,8 @@
 use std::path::Path;
 
 use ndarray::{Array2, ArrayView2, Axis};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, Result},
@@ -49,7 +51,7 @@ use crate::{
 /// trajectory by passing it to higher-level types and never touch the dense
 /// form directly.
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Trajectory {
     #[cfg_attr(feature = "serde", serde(with = "crate::persistence::npy_field"))]
     points: Array2<f64>,
@@ -77,7 +79,6 @@ impl Trajectory {
     ///
     /// - [`Error::TrajectoryEmpty`] if `points` has zero rows.
     /// - [`Error::TrajectoryNonFinite`] if any coordinate is not finite.
-    #[allow(clippy::needless_pass_by_value)]
     pub fn new(points: ArrayView2<'_, f64>) -> Result<Self> {
         if points.nrows() == 0 {
             return Err(Error::TrajectoryEmpty);
@@ -135,9 +136,7 @@ impl Trajectory {
     ) -> Result<Self> {
         let knots = interpolator.knots();
         if knots.len() < 2 {
-            return Err(Error::InterpolationKnotCount {
-                actual: knots.len(),
-            });
+            return Err(Error::InterpolationKnotCount { knots: knots.len() });
         }
 
         let mut samples: Vec<ndarray::Array1<f64>> = Vec::new();
@@ -336,7 +335,6 @@ impl Interval {
     }
 }
 
-#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn max_consecutive_distance(points: ArrayView2<'_, f64>, metric: &dyn Metric) -> f64 {
     let mut max = 0.0_f64;
     for point_index in 0..points.nrows().saturating_sub(1) {
@@ -465,7 +463,7 @@ mod tests {
 
         assert!(matches!(
             outcome.unwrap_err(),
-            Error::InterpolationKnotCount { actual: 1 },
+            Error::InterpolationKnotCount { knots: 1 },
         ));
     }
 

@@ -50,28 +50,35 @@ pub(crate) fn segment_from_py(object: &Bound<'_, PyAny>) -> PyResult<Range<usize
         let stop = python_range.stop()?;
         let increment = python_range.step()?;
         if increment != 1 {
-            return Err(PyValueError::new_err("segment range must have step 1"));
+            return Err(PyValueError::new_err(format!(
+                "segment range must have step 1, got {increment}"
+            )));
         }
         return validate_bounds(start, stop);
     }
     if let Ok((start, stop)) = object.extract::<(isize, isize)>() {
         return validate_bounds(start, stop);
     }
-    Err(PyValueError::new_err(
-        "segment must be a range or a (start, stop) tuple",
-    ))
+    Err(PyValueError::new_err(format!(
+        "segment must be a range or a (start, stop) tuple, got {}",
+        object.get_type().name()?
+    )))
 }
 
 /// Validates that `start` and `stop` are non-negative and ordered, then
 /// converts them to a `Range<usize>`.
 fn validate_bounds(start: isize, stop: isize) -> PyResult<Range<usize>> {
     if start < 0 || stop < 0 {
-        return Err(PyValueError::new_err("segment bounds must be non-negative"));
+        return Err(PyValueError::new_err(format!(
+            "segment bounds ({start}, {stop}) must be non-negative"
+        )));
     }
     let start = start as usize;
     let stop = stop as usize;
     if start > stop {
-        return Err(PyValueError::new_err("segment start must not exceed stop"));
+        return Err(PyValueError::new_err(format!(
+            "segment start {start} exceeds stop {stop}"
+        )));
     }
     Ok(start..stop)
 }

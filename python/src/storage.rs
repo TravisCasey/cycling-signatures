@@ -201,10 +201,14 @@ impl PyComponent {
     /// Returns the cycle at ``index`` in this component.
     fn __getitem__(&self, index: isize) -> PyResult<PyCycle> {
         let cycles = self.inner.cycles();
-        let index = resolve_index(index, cycles.len())
-            .ok_or_else(|| PyIndexError::new_err("cycle index out of bounds"))?;
+        let resolved = resolve_index(index, cycles.len()).ok_or_else(|| {
+            PyIndexError::new_err(format!(
+                "cycle index {index} out of bounds for {} cycles",
+                cycles.len()
+            ))
+        })?;
         Ok(PyCycle {
-            inner: cycles[index].clone(),
+            inner: cycles[resolved].clone(),
         })
     }
 
@@ -401,7 +405,10 @@ impl PyCycleStorage {
     ///     If ``component_id`` is out of bounds.
     fn component(&self, component_id: usize) -> PyResult<PyComponent> {
         if component_id >= self.inner.components().len() {
-            return Err(PyIndexError::new_err("component index out of bounds"));
+            return Err(PyIndexError::new_err(format!(
+                "component index {component_id} out of bounds for {} components",
+                self.inner.components().len()
+            )));
         }
         Ok(PyComponent {
             inner: self.inner.component(component_id).clone(),
@@ -426,7 +433,10 @@ impl PyCycleStorage {
     ///     If ``component_id`` is out of bounds.
     fn homology_class(&self, component_id: usize) -> PyResult<PyHomologyClass> {
         if component_id >= self.inner.components().len() {
-            return Err(PyIndexError::new_err("component index out of bounds"));
+            return Err(PyIndexError::new_err(format!(
+                "component index {component_id} out of bounds for {} components",
+                self.inner.components().len()
+            )));
         }
         Ok(PyHomologyClass {
             inner: self.inner.class(component_id).clone(),
@@ -486,10 +496,14 @@ impl PyCycleStorage {
 
     /// Returns the component at ``index``.
     fn __getitem__(&self, index: isize) -> PyResult<PyComponent> {
-        let index = resolve_index(index, self.inner.components().len())
-            .ok_or_else(|| PyIndexError::new_err("component index out of bounds"))?;
+        let resolved = resolve_index(index, self.inner.components().len()).ok_or_else(|| {
+            PyIndexError::new_err(format!(
+                "component index {index} out of bounds for {} components",
+                self.inner.components().len()
+            ))
+        })?;
         Ok(PyComponent {
-            inner: self.inner.component(index).clone(),
+            inner: self.inner.component(resolved).clone(),
         })
     }
 

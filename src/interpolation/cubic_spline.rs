@@ -40,8 +40,7 @@ impl CubicSpline {
     /// Constructs a natural cubic spline through the given knots and values.
     ///
     /// `knots` must be strictly increasing and have at least two elements.
-    /// `values` must have the same number of rows as `knots` and at least one
-    /// column.
+    /// `values` must have the same number of rows as `knots`.
     ///
     /// # Errors
     ///
@@ -51,15 +50,13 @@ impl CubicSpline {
     ///   supplied.
     /// - [`Error::InterpolationShapeMismatch`] if the number of rows in
     ///   `values` does not match the number of knots.
-    /// - [`Error::InterpolationEmptyValues`] if `values` has zero columns.
     /// - [`Error::InterpolationKnotsNotIncreasing`] if `knots` is not strictly
     ///   increasing.
-    #[allow(clippy::needless_pass_by_value, clippy::missing_panics_doc)]
+    #[allow(clippy::missing_panics_doc)]
     pub fn new(knots: Array1<f64>, values: ArrayView2<'_, f64>) -> Result<Self> {
         let num_knots = knots.len();
-
         if num_knots < 2 {
-            return Err(Error::InterpolationKnotCount { actual: num_knots });
+            return Err(Error::InterpolationKnotCount { knots: num_knots });
         }
 
         let num_value_rows = values.nrows();
@@ -68,11 +65,6 @@ impl CubicSpline {
                 knots: num_knots,
                 value_rows: num_value_rows,
             });
-        }
-
-        let dimension = values.ncols();
-        if dimension == 0 {
-            return Err(Error::InterpolationEmptyValues);
         }
 
         let knots_slice = knots.as_slice().expect("knots stored contiguously");
@@ -94,8 +86,7 @@ impl CubicSpline {
     ///
     /// # Errors
     ///
-    /// Returns the same variants as [`CubicSpline::new`].
-    #[allow(clippy::needless_pass_by_value)]
+    /// - [`Error::InterpolationKnotCount`] if `values` has fewer than two rows.
     pub fn with_integer_knots(values: ArrayView2<'_, f64>) -> Result<Self> {
         let knots = Array1::from_iter((0..values.nrows()).map(|index| index as f64));
         Self::new(knots, values)
@@ -117,7 +108,7 @@ impl CubicSpline {
         let last_knot = *knots.last().expect("at least two knots");
         assert!(
             parameter >= first_knot && parameter <= last_knot,
-            "parameter out of domain"
+            "parameter {parameter} outside of domain [{first_knot}, {last_knot}]",
         );
 
         // Binary search for the interval index.
@@ -180,7 +171,6 @@ impl CubicSpline {
 /// Uses the natural boundary condition (zero second derivative at the
 /// endpoints) and a tridiagonal algorithm to solve for the second derivatives
 /// at each knot in time linear over the number of rows.
-#[allow(clippy::needless_pass_by_value)]
 fn compute_coefficients(knots: &[f64], values: ArrayView2<'_, f64>) -> Array3<f64> {
     let num_knots = knots.len();
     let num_intervals = num_knots - 1;
@@ -266,7 +256,7 @@ impl DerivativeInterpolator for CubicSpline {
 
 #[cfg(test)]
 mod tests {
-    use ndarray::{Array2, array};
+    use ndarray::array;
 
     use super::CubicSpline;
     use crate::{
@@ -290,7 +280,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(Error::InterpolationKnotCount { actual: 1 })
+            Err(Error::InterpolationKnotCount { knots: 1 })
         ));
     }
 
@@ -311,16 +301,6 @@ mod tests {
     }
 
     #[test]
-    fn construction_rejects_empty_values() {
-        let knots = array![0.0, 1.0];
-        let values = Array2::<f64>::zeros((2, 0));
-
-        let result = CubicSpline::new(knots, values.view());
-
-        assert!(matches!(result, Err(Error::InterpolationEmptyValues)));
-    }
-
-    #[test]
     fn construction_rejects_non_increasing_knots() {
         let knots = array![0.0, 2.0, 1.0];
         let values = array![[0.0], [1.0], [2.0]];
@@ -338,6 +318,7 @@ mod tests {
         let knots = array![0.0, 1.0, 3.0, 6.0];
         let values = array![[1.0, 4.0], [3.0, 1.0], [2.0, 5.0], [7.0, 2.0]];
         let spline = CubicSpline::new(knots.clone(), values.view()).unwrap();
+
         for (row, &knot) in knots.iter().enumerate() {
             let sample = spline.sample(knot);
             for axis in 0..2 {
@@ -352,9 +333,11 @@ mod tests {
         let knots = array![0.0, 2.0];
         let values = array![[1.0, 4.0], [3.0, 0.0]];
         let spline = CubicSpline::new(knots, values.view()).unwrap();
+
         let mid = spline.sample(1.0);
         assert!((mid[0] - 2.0).abs() < 1e-12);
         assert!((mid[1] - 2.0).abs() < 1e-12);
+
         for parameter in [0.0, 0.5, 1.0, 1.5, 2.0] {
             let slope = spline.derivative(parameter);
             assert!((slope[0] - 1.0).abs() < 1e-12);
@@ -365,8 +348,9 @@ mod tests {
     #[test]
     fn linear_data_at_all_orders() {
         // A natural cubic spline through linear data is itself linear:
-        // order 0 reproduces the line, order 1 is the constant slope, and
-        // orders 2 and above vanish everywhere.
+        // order 0 reproduces the line,
+        // order 1 is the constant slope, and
+        // orders 2 and above vanish.
         let spline = linear_spline();
         for parameter in [0.25, 0.5, 0.75, 1.0, 1.3, 1.7, 2.0, 2.5, 2.99] {
             let sample = spline.sample_with_order(parameter, 0);
@@ -385,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "parameter out of domain")]
+    #[should_panic(expected = "parameter -0.001 outside of domain [0, 3]")]
     fn sample_outside_domain_panics() {
         let spline = linear_spline();
         let _ = spline.sample(-0.001);
