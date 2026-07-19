@@ -59,10 +59,3 @@ ndarray
 bool
 str
 subspace
-component_id
-cover_path
-direction_weight
-homology_class
-max_length
-radius_floor
-trajectory_path

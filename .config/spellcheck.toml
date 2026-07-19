@@ -4,3 +4,9 @@ search_dirs = ["."]
 extra_dictionaries = ["spellcheck.dic"]
 skip_os_lookups = true
 use_builtin = true
+
+[Hunspell.quirks]
+transform_regex = [
+    "^([a-z0-9]+)_([a-z0-9]+)$",
+    "^([a-z0-9]+)_([a-z0-9]+)_([a-z0-9]+)$",
+]
