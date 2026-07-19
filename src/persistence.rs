@@ -37,7 +37,7 @@ pub(crate) struct Versioned<T> {
 ///
 /// # Errors
 ///
-/// [`Error::Storage`] on serialization or input/output failure.
+/// [`Error::Io`] on serialization or input/output failure.
 pub(crate) fn save_to_writer<T, W>(mut writer: W, payload: &T) -> Result<()>
 where
     T: Serialize,
@@ -57,7 +57,7 @@ where
 /// # Errors
 ///
 /// - [`Error::FormatVersionMismatch`] if the payload's version differs.
-/// - [`Error::Storage`] on deserialization or input/output failure.
+/// - [`Error::Deserialize`] if the payload could not be read and decoded.
 pub(crate) fn load_from_reader<T, R>(reader: R) -> Result<T>
 where
     T: DeserializeOwned,
@@ -77,7 +77,7 @@ where
 ///
 /// # Errors
 ///
-/// [`Error::Storage`] on file or serialization failure.
+/// [`Error::Io`] on file or serialization failure.
 pub(crate) fn save_to_path<T, P>(path: P, payload: &T) -> Result<()>
 where
     T: Serialize,
@@ -92,7 +92,8 @@ where
 /// # Errors
 ///
 /// - [`Error::FormatVersionMismatch`] if the payload's version differs.
-/// - [`Error::Storage`] on file or deserialization failure.
+/// - [`Error::Io`] if the file could not be opened.
+/// - [`Error::Deserialize`] if the file contents could not be read and decoded.
 pub(crate) fn load_from_path<T, P>(path: P) -> Result<T>
 where
     T: DeserializeOwned,
@@ -100,4 +101,35 @@ where
 {
     let file = File::open(path)?;
     load_from_reader(BufReader::new(file))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A writer whose every operation fails.
+    struct FailingWriter;
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("writer failure"))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::other("writer failure"))
+        }
+    }
+
+    #[test]
+    fn failing_writer_reports_io_error() {
+        let result = save_to_writer(FailingWriter, &7_u32);
+        assert!(matches!(result, Err(Error::Io { .. })));
+    }
+
+    #[test]
+    fn malformed_payload_reports_deserialize_error() {
+        let malformed: &[u8] = b"not a MessagePack envelope";
+        let result = load_from_reader::<u32, _>(malformed);
+        assert!(matches!(result, Err(Error::Deserialize { .. })));
+    }
 }

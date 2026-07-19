@@ -157,7 +157,7 @@ impl CubicalCover {
     ///
     /// # Errors
     ///
-    /// - [`crate::error::Error::Storage`] on file or serialization failure.
+    /// - [`Error::Io`] on file or serialization failure.
     #[cfg(feature = "serde")]
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         crate::persistence::save_to_path(path, self)
@@ -167,9 +167,10 @@ impl CubicalCover {
     ///
     /// # Errors
     ///
-    /// - [`crate::error::Error::FormatVersionMismatch`] if the file's format
-    ///   version differs.
-    /// - [`crate::error::Error::Storage`] on file or deserialization failure.
+    /// - [`Error::FormatVersionMismatch`] if the file's format version differs.
+    /// - [`Error::Io`] if the file could not be opened.
+    /// - [`Error::Deserialize`] if the file contents could not be read and
+    ///   decoded.
     #[cfg(feature = "serde")]
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         crate::persistence::load_from_path(path)

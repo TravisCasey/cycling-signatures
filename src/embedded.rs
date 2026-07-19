@@ -294,7 +294,7 @@ impl EmbeddedTrajectory {
     ///
     /// # Errors
     ///
-    /// - [`crate::error::Error::Storage`] on file or serialization failure.
+    /// - [`Error::Io`] on file or serialization failure.
     #[cfg(feature = "serde")]
     pub fn save<P: AsRef<Path>, Q: AsRef<Path>>(
         &self,
@@ -313,13 +313,15 @@ impl EmbeddedTrajectory {
     ///
     /// # Errors
     ///
-    /// - [`crate::error::Error::EmbeddedDimensionMismatch`] if the loaded
-    ///   trajectory and cover disagree on spatial dimension.
-    /// - [`crate::error::Error::EmbeddedCubeNotInCover`] if a trajectory point
-    ///   maps to a cube absent from the loaded cover.
-    /// - [`crate::error::Error::FormatVersionMismatch`] if either file's format
-    ///   version differs.
-    /// - [`crate::error::Error::Storage`] on file or deserialization failure.
+    /// - [`Error::EmbeddedDimensionMismatch`] if the loaded trajectory and
+    ///   cover disagree on spatial dimension.
+    /// - [`Error::EmbeddedCubeNotInCover`] if a trajectory point maps to a cube
+    ///   absent from the loaded cover.
+    /// - [`Error::FormatVersionMismatch`] if either file's format version
+    ///   differs.
+    /// - [`Error::Io`] if either file could not be opened.
+    /// - [`Error::Deserialize`] if either file's contents could not be read and
+    ///   decoded.
     #[cfg(feature = "serde")]
     pub fn load<P: AsRef<Path>, Q: AsRef<Path>>(
         trajectory_path: P,

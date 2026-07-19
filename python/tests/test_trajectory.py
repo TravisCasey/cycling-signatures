@@ -35,3 +35,10 @@ def test_save_load_roundtrip(tmp_path):
 def test_load_missing_file_raises_oserror(tmp_path):
     with pytest.raises(OSError):
         cs.Trajectory.load(str(tmp_path / "missing.cyc"))
+
+
+def test_load_malformed_file_raises_valueerror(tmp_path):
+    path = tmp_path / "malformed.cyc"
+    path.write_bytes(b"not the expected format")
+    with pytest.raises(ValueError):
+        cs.Trajectory.load(str(path))

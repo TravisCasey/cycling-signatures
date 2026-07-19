@@ -430,7 +430,7 @@ impl CycleStorage {
     ///
     /// # Errors
     ///
-    /// [`Error::Storage`] on serialization or input/output failure.
+    /// [`Error::Io`] on file or serialization failure.
     #[cfg(feature = "serde")]
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         save_to_path(path, self)
@@ -445,7 +445,9 @@ impl CycleStorage {
     /// # Errors
     ///
     /// - [`Error::FormatVersionMismatch`] if the file's format version differs.
-    /// - [`Error::Storage`] on file or deserialization failure.
+    /// - [`Error::Io`] if the file could not be opened.
+    /// - [`Error::Deserialize`] if the file contents could not be read and
+    ///   decoded.
     #[cfg(feature = "serde")]
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         load_from_path(path)

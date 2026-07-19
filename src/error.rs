@@ -197,13 +197,20 @@ pub enum Error {
         found: u32,
     },
 
-    /// Serialization, deserialization, or input/output failure in the storage
-    /// layer.
-    #[error("storage serialization or input/output failure")]
-    Storage {
-        /// The underlying failure.
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+    /// An I/O operation on a saved-artifact file failed.
+    #[cfg(feature = "serde")]
+    #[error("file input/output failed: {source}")]
+    Io {
+        /// The underlying I/O failure.
+        source: std::io::Error,
+    },
+
+    /// A saved artifact could not be decoded.
+    #[cfg(feature = "serde")]
+    #[error("saved data could not be decoded: {source}")]
+    Deserialize {
+        /// The underlying decode failure.
+        source: rmp_serde::decode::Error,
     },
 }
 
@@ -213,17 +220,17 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[cfg(feature = "serde")]
 impl From<std::io::Error> for Error {
     fn from(source: std::io::Error) -> Self {
-        Error::Storage {
-            source: Box::new(source),
-        }
+        Error::Io { source }
     }
 }
 
+// Encode failures for the crate's plain serializable structs can only arise
+// from the underlying writer, so they are reported as I/O faults.
 #[cfg(feature = "serde")]
 impl From<rmp_serde::encode::Error> for Error {
     fn from(source: rmp_serde::encode::Error) -> Self {
-        Error::Storage {
-            source: Box::new(source),
+        Error::Io {
+            source: std::io::Error::other(source),
         }
     }
 }
@@ -231,8 +238,6 @@ impl From<rmp_serde::encode::Error> for Error {
 #[cfg(feature = "serde")]
 impl From<rmp_serde::decode::Error> for Error {
     fn from(source: rmp_serde::decode::Error) -> Self {
-        Error::Storage {
-            source: Box::new(source),
-        }
+        Error::Deserialize { source }
     }
 }
