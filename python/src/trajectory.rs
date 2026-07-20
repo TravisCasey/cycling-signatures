@@ -58,7 +58,7 @@ impl PyTrajectory {
     /// ----------
     /// interpolator : ``CubicSpline`` or ``ChebyshevSphereBundleInterpolator``
     ///     The interpolator to sample.
-    /// metric : ``Euclidean``, ``Chebyshev``, or ``SphereBundle``
+    /// metric : ``Euclidean`` or ``SphereBundle``
     ///     The metric that measures consecutive-point spacing.
     /// bound : float
     ///     The largest allowed distance between consecutive points.
@@ -83,13 +83,13 @@ impl PyTrajectory {
     ) -> PyResult<Self> {
         let metric = metric_from_py(metric)?;
         if let Ok(spline) = interpolator.cast::<PyCubicSpline>() {
-            let inner = Trajectory::resample(&spline.borrow().inner, metric.as_ref(), bound)
-                .map_err(to_pyerr)?;
+            let inner =
+                Trajectory::resample(&spline.borrow().inner, metric, bound).map_err(to_pyerr)?;
             return Ok(Self { inner });
         }
         if let Ok(bundle) = interpolator.cast::<PyChebyshevSphereBundleInterpolator>() {
-            let inner = Trajectory::resample(&bundle.borrow().inner, metric.as_ref(), bound)
-                .map_err(to_pyerr)?;
+            let inner =
+                Trajectory::resample(&bundle.borrow().inner, metric, bound).map_err(to_pyerr)?;
             return Ok(Self { inner });
         }
         Err(PyTypeError::new_err(format!(

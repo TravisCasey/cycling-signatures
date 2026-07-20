@@ -5,7 +5,6 @@ in dynamical systems.
 """
 
 from ._core import (
-    Chebyshev,
     ChebyshevSphereBundleInterpolator,
     Component,
     CubicSpline,
@@ -23,7 +22,6 @@ from ._core import (
 )
 
 __all__ = [
-    "Chebyshev",
     "ChebyshevSphereBundleInterpolator",
     "Component",
     "CubicSpline",

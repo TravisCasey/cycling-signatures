@@ -30,7 +30,7 @@ use crate::{
 /// ----------
 /// trajectory : ``Trajectory``
 ///     The trajectory to embed.
-/// metric : ``Euclidean``, ``Chebyshev``, or ``SphereBundle``
+/// metric : ``Euclidean`` or ``SphereBundle``
 ///     The metric used to build the cubical cover.
 ///
 /// Raises
@@ -211,7 +211,7 @@ impl PyEmbeddedTrajectory {
     ///     The source of the trajectory data.
     /// cover_path : str or ``os.PathLike``
     ///     The source of the cubical cover data.
-    /// metric : ``Euclidean``, ``Chebyshev``, or ``SphereBundle``
+    /// metric : ``Euclidean`` or ``SphereBundle``
     ///     The metric the embedding was built with.
     ///
     /// Returns

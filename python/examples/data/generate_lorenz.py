@@ -22,15 +22,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import _support
 
-# Sphere-bundle parameters are interdependent; see SphereBundleMetric for the
-# rationale. direction_weight equals the cover radius so the metric matches the
-# radius-scaled direction cubes; the threshold stays under 1/sqrt(3) (~0.577)
-# so cycle endpoints stay cube-adjacent; the resample bound equals the
-# threshold; boxsize is large enough that recurrences are frequent while the
-# cover still resolves both holes.
+# Sphere-bundle parameters are interdependent; see the SphereBundle metric
+# docs for the rationale. The metric derives its direction weight from
+# SPHERE_RADIUS_FLOOR, matching the interpolator's direction cubes; the
+# resample bound equals the threshold; boxsize is large enough that
+# recurrences are frequent while the cover still resolves both holes. The
+# threshold must stay below the trajectory's empirical adjacency bound so
+# cycle endpoints land in adjacent cubes.
 BOXSIZE = 5.0
 SPHERE_RADIUS_FLOOR = 3
-DIRECTION_WEIGHT = SPHERE_RADIUS_FLOOR + 0.5
 RESAMPLE_BOUND = 0.55
 THRESHOLD = 0.55
 MAX_LENGTH = 500
@@ -44,7 +44,7 @@ def build() -> Path:
 
     spline = cs.CubicSpline(np.arange(sample_count, dtype=np.float64), points / BOXSIZE)
     interpolator = cs.ChebyshevSphereBundleInterpolator(spline, SPHERE_RADIUS_FLOOR)
-    metric = cs.SphereBundle(DIRECTION_WEIGHT)
+    metric = cs.SphereBundle(SPHERE_RADIUS_FLOOR)
     trajectory = cs.Trajectory.resample(interpolator, metric, RESAMPLE_BOUND)
 
     embedded = cs.EmbeddedTrajectory(trajectory, metric)

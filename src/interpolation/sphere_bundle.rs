@@ -21,13 +21,10 @@ use crate::interpolation::{DerivativeInterpolator, Interpolator};
 /// component never lands exactly where the floor function is sign-asymmetric.
 ///
 /// To measure distances on the resulting embedding, pair this interpolator with
-/// a [`SphereBundleMetric`](crate::metric::SphereBundleMetric) whose
-/// `direction_weight` equals this interpolator's [`radius`](Self::radius). The
-/// interpolator normalizes the direction by the Chebyshev (L-infinity) norm
-/// while the metric normalizes it by the L2 norm, so matching the weight to the
-/// radius keeps recurrence thresholds compatible with cube adjacency; see
-/// [`SphereBundleMetric`](crate::metric::SphereBundleMetric) for the resulting
-/// threshold bounds.
+/// [`Metric::SphereBundle`](crate::metric::Metric::SphereBundle) using the same
+/// `radius_floor`. The sphere-bundle metric derives its direction weight from
+/// the same `radius_floor`, so passing one integer to both the interpolator and
+/// metric keeps recurrence thresholds compatible with cube adjacency.
 #[derive(Debug, Clone)]
 pub struct ChebyshevSphereBundleInterpolator<Inner> {
     inner: Inner,

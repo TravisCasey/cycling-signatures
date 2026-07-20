@@ -52,8 +52,6 @@ deserializes
 serializer's
 deserializer's
 tuple
-metric's
-renormalizes
 ndarray
 bool
 str

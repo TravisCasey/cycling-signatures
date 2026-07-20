@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import numpy as np
+
 import cycling_signatures as cs
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
@@ -19,4 +21,22 @@ def test_provenance_fingerprint_comparison():
     euclidean = _load(cs.Euclidean())
     storage = cs.CycleStorage.build(euclidean, range(0, 201), 1.0, 201)
     assert storage.fingerprint() == euclidean.fingerprint()
-    assert storage.fingerprint() != _load(cs.Chebyshev()).fingerprint()
+
+
+def test_fingerprint_distinguishes_metric():
+    # 4D sphere-bundle-valid square loop: positions step through adjacent
+    # cubes; the direction half is constant and nonzero.
+    points = np.array(
+        [
+            [0.5, 0.5, 1.0, 0.5],
+            [1.5, 0.5, 1.0, 0.5],
+            [1.5, 1.5, 1.0, 0.5],
+            [0.5, 1.5, 1.0, 0.5],
+        ]
+    )
+    trajectory = cs.Trajectory(points)
+    euclidean = cs.EmbeddedTrajectory(trajectory, cs.Euclidean())
+    sphere_zero = cs.EmbeddedTrajectory(trajectory, cs.SphereBundle(0))
+    sphere_one = cs.EmbeddedTrajectory(trajectory, cs.SphereBundle(1))
+    assert euclidean.fingerprint() != sphere_zero.fingerprint()
+    assert sphere_zero.fingerprint() != sphere_one.fingerprint()

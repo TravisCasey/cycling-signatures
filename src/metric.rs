@@ -1,30 +1,101 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! The [`Metric`] trait and reference implementations.
-//!
-//! A metric is a distance function over rows of an
+//! The [`Metric`] enum of distance modes over rows of an
 //! [`Array2<f64>`](ndarray::Array2).
 
-use std::fmt::Debug;
-
 use ndarray::{ArrayView1, ArrayView2};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
-pub mod sphere_bundle;
+mod sphere_bundle;
 
-pub use sphere_bundle::SphereBundleMetric;
+use sphere_bundle::{sphere_bundle_covers_triple, sphere_bundle_distance};
 
-/// A distance function over rows of a trajectory.
-pub trait Metric: Send + Sync + Debug + 'static {
-    /// A unique identifier for this metric.
-    #[must_use]
-    fn name(&self) -> String;
+/// A distance mode over rows of a trajectory.
+///
+/// The crate supports exactly two modes. [`Metric::Euclidean`] measures
+/// position coordinates directly. [`Metric::SphereBundle`] measures
+/// even-length points whose first half is a spatial position and whose second
+/// half is a nonzero scaling of a direction vector; see the variant
+/// documentation for the distance formula and its calibration with the
+/// cubical cover.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Metric {
+    /// The standard Euclidean metric.
+    ///
+    /// Distance is the square root of the sum of squared coordinate
+    /// differences.
+    Euclidean,
 
+    /// A distance on the L2 sphere bundle.
+    ///
+    /// Operates on any sphere-bundle-like input: a vector of even length
+    /// `2 * dimension` whose first half is a spatial position and whose
+    /// second half is some nonzero scaling of a direction (velocity) vector.
+    /// The direction half is L2-normalized to a unit vector before the
+    /// position and direction terms are combined, which lifts the input into
+    /// the sphere bundle. Following normalization the distance is
+    ///
+    /// ```text
+    /// max(
+    ///     euclidean(position_left, position_right),
+    ///     weight * euclidean(direction_left_unit, direction_right_unit),
+    /// )
+    /// ```
+    ///
+    /// where `weight` is the cover radius `radius_floor + 0.5`, derived from
+    /// the same `radius_floor` that
+    /// [`ChebyshevSphereBundleInterpolator`](crate::interpolation::ChebyshevSphereBundleInterpolator)
+    /// takes. The shared integer keeps the direction term measured on the
+    /// same scale as the radius-scaled direction cubes, so recurrence
+    /// thresholds stay compatible with cube adjacency.
+    ///
+    /// ```
+    /// use cycling_signatures::{
+    ///     interpolation::{ChebyshevSphereBundleInterpolator, CubicSpline},
+    ///     metric::Metric,
+    /// };
+    /// use ndarray::array;
+    ///
+    /// let spline = CubicSpline::new(
+    ///     array![0.0, 1.0, 2.0],
+    ///     array![[0.0, 0.0], [1.0, 0.0], [2.0, 1.0]].view(),
+    /// )
+    /// .unwrap();
+    /// // One integer drives both the interpolator and the metric.
+    /// let interpolator = ChebyshevSphereBundleInterpolator::new(spline, 3);
+    /// let metric = Metric::SphereBundle { radius_floor: 3 };
+    /// assert_eq!(interpolator.radius(), 3.5);
+    ///
+    /// // Identical directions: the position term dominates.
+    /// let left = array![0.0, 0.0, 1.0, 0.0];
+    /// let right = array![3.0, 4.0, 1.0, 0.0];
+    /// assert!((metric.distance(left.view(), right.view()) - 5.0).abs() < 1e-12);
+    /// ```
+    SphereBundle {
+        /// Integer floor of the direction-normalization radius. The cover
+        /// radius, and the direction weight derived from it, is
+        /// `radius_floor + 0.5`.
+        radius_floor: u32,
+    },
+}
+
+impl Metric {
     /// The distance from `point` to `other` under this metric.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `point.len() != other.len()`. The sphere-bundle mode also
+    /// panics if the common length is not even or if either direction half
+    /// has zero L2 norm.
     #[must_use]
-    fn distance(&self, point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64;
+    pub fn distance(self, point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
+        match self {
+            Metric::Euclidean => euclidean_distance(point, other),
+            Metric::SphereBundle { radius_floor } => {
+                sphere_bundle_distance(radius_floor, point, other)
+            },
+        }
+    }
 
     /// Fills `out[k]` with the distance between `points.row(pairs[k].0)` and
     /// `points.row(pairs[k].1)` for each `k`.
@@ -36,8 +107,8 @@ pub trait Metric: Send + Sync + Debug + 'static {
     /// Panics if `out.len() != pairs.len()`, or if any index in `pairs` is out
     /// of bounds for `points`, or for any reason the [`Metric::distance`]
     /// method panics.
-    fn fill_distances(
-        &self,
+    pub fn fill_distances(
+        self,
         points: ArrayView2<'_, f64>,
         pairs: &[(usize, usize)],
         out: &mut [f64],
@@ -57,125 +128,31 @@ pub trait Metric: Send + Sync + Debug + 'static {
     /// Returns `true` if balls with `radius` around `first`, `second`, and
     /// `third` share a common point.
     ///
-    /// The default body returns `true` if and only if all three pairwise
-    /// distances are at most `2 * radius` (the necessary condition that
-    /// pairwise balls touch). Greater precision, such as metrics with
-    /// closed-form three-ball-intersection tests, may override.
+    /// Both modes use closed-form smallest-enclosing-ball tests: in terms of
+    /// named complexes, this admits the Cech simplex, strictly more selective
+    /// than the Vietoris-Rips condition that all pairwise distances are at
+    /// most `2 * radius`.
     ///
-    /// In terms of named complexes: the default admits the Vietoris-Rips
-    /// simplex; the override admits the Cech simplex, which is strictly more
-    /// selective.
-    #[must_use]
-    fn covers_triple(
-        &self,
-        first: ArrayView1<'_, f64>,
-        second: ArrayView1<'_, f64>,
-        third: ArrayView1<'_, f64>,
-        radius: f64,
-    ) -> bool {
-        let diameter = 2.0 * radius;
-        self.distance(first, second) <= diameter
-            && self.distance(first, third) <= diameter
-            && self.distance(second, third) <= diameter
-    }
-}
-
-/// The standard Euclidean metric.
-///
-/// Distance is the square root of the sum of squared coordinate differences.
-#[derive(Clone, Copy, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Euclidean;
-
-impl Metric for Euclidean {
-    fn name(&self) -> String {
-        "Euclidean".to_owned()
-    }
-
-    /// # Panics
-    ///
-    /// Panics if `point.len() != other.len()`.
-    fn distance(&self, point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
-        euclidean_distance(point, other)
-    }
-
-    fn covers_triple(
-        &self,
-        first: ArrayView1<'_, f64>,
-        second: ArrayView1<'_, f64>,
-        third: ArrayView1<'_, f64>,
-        radius: f64,
-    ) -> bool {
-        euclidean_covers_triple(first, second, third, radius)
-    }
-}
-
-/// The Chebyshev metric.
-///
-/// Distance is the largest absolute coordinate difference.
-#[derive(Clone, Copy, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct Chebyshev;
-
-impl Metric for Chebyshev {
-    fn name(&self) -> String {
-        "Chebyshev".to_owned()
-    }
-
-    /// # Panics
-    ///
-    /// Panics if `point.len() != other.len()`.
-    fn distance(&self, point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
-        chebyshev_distance(point, other)
-    }
-
     /// # Panics
     ///
     /// Panics if `first`, `second`, and `third` do not all have the same
-    /// length.
-    fn covers_triple(
-        &self,
+    /// length, with the sphere-bundle additions listed on
+    /// [`Metric::distance`].
+    #[must_use]
+    pub fn covers_triple(
+        self,
         first: ArrayView1<'_, f64>,
         second: ArrayView1<'_, f64>,
         third: ArrayView1<'_, f64>,
         radius: f64,
     ) -> bool {
-        assert!(
-            first.len() == second.len() && first.len() == third.len(),
-            "dimension mismatch: first {}, second {}, third {}",
-            first.len(),
-            second.len(),
-            third.len()
-        );
-        for axis in 0..first.len() {
-            let max_coord = first[axis].max(second[axis]).max(third[axis]);
-            let min_coord = first[axis].min(second[axis]).min(third[axis]);
-            if max_coord - min_coord > 2.0 * radius {
-                return false;
-            }
+        match self {
+            Metric::Euclidean => euclidean_covers_triple(first, second, third, radius),
+            Metric::SphereBundle { radius_floor } => {
+                sphere_bundle_covers_triple(radius_floor, first, second, third, radius)
+            },
         }
-        true
     }
-}
-
-/// The Chebyshev distance between two equal-length slices.
-///
-/// # Panics
-///
-/// Panics if `point.len() != other.len()`.
-pub(crate) fn chebyshev_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
-    assert_eq!(
-        point.len(),
-        other.len(),
-        "dimension mismatch: first {}, second {}",
-        point.len(),
-        other.len()
-    );
-    point
-        .iter()
-        .zip(other.iter())
-        .map(|(left, right)| (left - right).abs())
-        .fold(0.0_f64, f64::max)
 }
 
 /// The Euclidean distance between two equal-length slices.
@@ -243,75 +220,41 @@ pub(crate) fn euclidean_covers_triple(
 mod tests {
     use ndarray::array;
 
-    use super::{Chebyshev, Euclidean, Metric, euclidean_distance};
-
-    #[test]
-    fn covers_triple_distinguishes_default_from_euclidean_override() {
-        // Stub metric with the trait's default covers_triple body.
-        #[derive(Clone, Debug)]
-        struct EuclideanDefault;
-        impl Metric for EuclideanDefault {
-            fn name(&self) -> String {
-                "stub".into()
-            }
-
-            fn distance(
-                &self,
-                point: ndarray::ArrayView1<'_, f64>,
-                other: ndarray::ArrayView1<'_, f64>,
-            ) -> f64 {
-                euclidean_distance(point, other)
-            }
-        }
-
-        // Equilateral triangle of side 2.0; ball radius 1.0.
-        // Pairwise distances all equal 2.0 == 2 * radius (default accepts).
-        // Smallest enclosing ball has radius 2.0 / sqrt(3) > 1.0
-        // (Euclidean override rejects).
-        let p1 = array![0.0, 0.0];
-        let p2 = array![2.0, 0.0];
-        let p3 = array![1.0, 3.0_f64.sqrt()];
-
-        assert!(EuclideanDefault.covers_triple(p1.view(), p2.view(), p3.view(), 1.0));
-        assert!(!Euclidean.covers_triple(p1.view(), p2.view(), p3.view(), 1.0));
-    }
-
-    #[test]
-    fn chebyshev_covers_triple_uses_per_axis_extent() {
-        // Three points whose per-axis half-extent is 1.0 on axis 0 and
-        // 0.5 on axis 1. Smallest enclosing l_inf ball radius = 1.0.
-        let p1 = array![0.0, 0.0];
-        let p2 = array![2.0, 0.0];
-        let p3 = array![1.0, 1.0];
-        assert!(Chebyshev.covers_triple(p1.view(), p2.view(), p3.view(), 1.0));
-        assert!(!Chebyshev.covers_triple(p1.view(), p2.view(), p3.view(), 0.99));
-    }
+    use super::Metric;
 
     #[test]
     fn euclidean_known_distance() {
-        let metric = Euclidean;
         let origin = array![0.0, 0.0, 0.0];
         let target = array![3.0, 4.0, 0.0];
-        let distance = metric.distance(origin.view(), target.view());
+        let distance = Metric::Euclidean.distance(origin.view(), target.view());
         assert!((distance - 5.0).abs() < 1e-12);
     }
 
     #[test]
-    fn chebyshev_known_distance() {
-        let metric = Chebyshev;
-        let origin = array![0.0, 0.0, 0.0];
-        let target = array![3.0, -4.0, 2.0];
-        let distance = metric.distance(origin.view(), target.view());
-        assert!((distance - 4.0).abs() < 1e-12);
+    fn euclidean_covers_triple_uses_smallest_enclosing_ball() {
+        // Equilateral triangle of side 2.0. All pairwise distances equal
+        // 2 * radius at radius 1.0, so a pairwise (Vietoris-Rips) test would
+        // accept; the smallest enclosing ball has radius 2 / sqrt(3) > 1.0,
+        // so the Cech test rejects there and accepts just above the
+        // circumradius.
+        let first = array![0.0, 0.0];
+        let second = array![2.0, 0.0];
+        let third = array![1.0, 3.0_f64.sqrt()];
+        assert!(!Metric::Euclidean.covers_triple(first.view(), second.view(), third.view(), 1.0));
+        assert!(Metric::Euclidean.covers_triple(
+            first.view(),
+            second.view(),
+            third.view(),
+            2.0 / 3.0_f64.sqrt() + 1e-9,
+        ));
     }
 
     #[test]
     #[should_panic(expected = "dimension mismatch: first 2, second 3")]
     fn distance_dimension_mismatch_panics() {
-        let metric = Euclidean;
         let short = array![0.0, 0.0];
         let longer = array![1.0, 2.0, 3.0];
-        let _ = metric.distance(short.view(), longer.view());
+        let _ = Metric::Euclidean.distance(short.view(), longer.view());
     }
 
     #[test]
@@ -320,19 +263,12 @@ mod tests {
         let pairs = [(0, 1), (1, 2), (0, 3)];
 
         let mut out = vec![0.0; pairs.len()];
-        Euclidean.fill_distances(points.view(), &pairs, &mut out);
+        Metric::Euclidean.fill_distances(points.view(), &pairs, &mut out);
         for (slot, &(left_index, right_index)) in out.iter().zip(&pairs) {
             assert!(
-                (slot - Euclidean.distance(points.row(left_index), points.row(right_index))).abs()
-                    < 1e-12
-            );
-        }
-
-        let mut out_chebyshev = vec![0.0; pairs.len()];
-        Chebyshev.fill_distances(points.view(), &pairs, &mut out_chebyshev);
-        for (slot, &(left_index, right_index)) in out_chebyshev.iter().zip(&pairs) {
-            assert!(
-                (slot - Chebyshev.distance(points.row(left_index), points.row(right_index))).abs()
+                (slot
+                    - Metric::Euclidean.distance(points.row(left_index), points.row(right_index)))
+                .abs()
                     < 1e-12
             );
         }

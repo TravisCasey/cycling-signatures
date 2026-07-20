@@ -9,9 +9,6 @@ Metrics
 .. autoclass:: cycling_signatures.Euclidean
    :members:
 
-.. autoclass:: cycling_signatures.Chebyshev
-   :members:
-
 .. autoclass:: cycling_signatures.SphereBundle
    :members:
 

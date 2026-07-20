@@ -43,14 +43,6 @@ pub enum Error {
         index: usize,
     },
 
-    /// Sphere bundle metric direction weight was not finite or not strictly
-    /// positive.
-    #[error("sphere bundle direction weight {weight} is not finite or not strictly positive")]
-    SphereBundleMetricWeight {
-        /// The rejected weight.
-        weight: f64,
-    },
-
     /// A cube coordinate is outside the range the cubical-homology backend
     /// accepts.
     #[error(

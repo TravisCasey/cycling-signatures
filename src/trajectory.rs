@@ -109,10 +109,11 @@ impl Trajectory {
     /// let knots = array![0.0, 1.0, 2.0];
     /// let values = array![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0]];
     /// let spline = CubicSpline::new(knots, values.view()).unwrap();
-    /// let trajectory = Trajectory::resample(&spline, &Euclidean, 0.5).unwrap();
+    /// let trajectory =
+    ///     Trajectory::resample(&spline, Metric::Euclidean, 0.5).unwrap();
     /// let embedded = EmbeddedTrajectory::new(
     ///     trajectory,
-    ///     Box::new(Euclidean),
+    ///     Metric::Euclidean,
     ///     &ExecutionBackend::default(),
     /// )
     /// .unwrap();
@@ -129,11 +130,7 @@ impl Trajectory {
     /// - [`Error::ResampleStagnation`] if bisection cannot reduce the metric
     ///   distance below `bound` at machine precision.
     #[allow(clippy::missing_panics_doc)]
-    pub fn resample<I: Interpolator>(
-        interpolator: &I,
-        metric: &dyn Metric,
-        bound: f64,
-    ) -> Result<Self> {
+    pub fn resample<I: Interpolator>(interpolator: &I, metric: Metric, bound: f64) -> Result<Self> {
         let knots = interpolator.knots();
         if knots.len() < 2 {
             return Err(Error::InterpolationKnotCount { knots: knots.len() });
@@ -334,7 +331,7 @@ impl Interval {
     }
 }
 
-pub(crate) fn max_consecutive_distance(points: ArrayView2<'_, f64>, metric: &dyn Metric) -> f64 {
+pub(crate) fn max_consecutive_distance(points: ArrayView2<'_, f64>, metric: Metric) -> f64 {
     let mut max = 0.0_f64;
     for point_index in 0..points.nrows().saturating_sub(1) {
         let distance = metric.distance(points.row(point_index), points.row(point_index + 1));
@@ -362,7 +359,7 @@ mod tests {
     use crate::{
         error::Error,
         interpolation::{CubicSpline, Interpolator},
-        metric::{Euclidean, Metric},
+        metric::Metric,
     };
 
     #[test]
@@ -402,11 +399,11 @@ mod tests {
         let spline = CubicSpline::new(knots, values.view()).unwrap();
         let bound = 0.5;
 
-        let trajectory = Trajectory::resample(&spline, &Euclidean, bound).unwrap();
+        let trajectory = Trajectory::resample(&spline, Metric::Euclidean, bound).unwrap();
 
-        assert!(max_consecutive_distance(trajectory.points(), &Euclidean) <= bound);
+        assert!(max_consecutive_distance(trajectory.points(), Metric::Euclidean) <= bound);
         for point_index in 0..trajectory.len() - 1 {
-            let distance = Euclidean.distance(
+            let distance = Metric::Euclidean.distance(
                 trajectory.points().row(point_index),
                 trajectory.points().row(point_index + 1),
             );
@@ -431,7 +428,7 @@ mod tests {
         let values = array![[0.0, 0.0], [1.0, 1.0], [3.0, 2.0]];
         let spline = CubicSpline::new(knots.clone(), values.view()).unwrap();
 
-        let trajectory = Trajectory::resample(&spline, &Euclidean, 0.1).unwrap();
+        let trajectory = Trajectory::resample(&spline, Metric::Euclidean, 0.1).unwrap();
 
         let last = trajectory.points().row(trajectory.len() - 1).to_owned();
         let knot_last = spline.sample(knots[knots.len() - 1]);
@@ -454,7 +451,7 @@ mod tests {
             }
         }
 
-        let outcome = Trajectory::resample(&SingleKnotInterpolator, &Euclidean, 0.1);
+        let outcome = Trajectory::resample(&SingleKnotInterpolator, Metric::Euclidean, 0.1);
 
         assert!(matches!(
             outcome.unwrap_err(),
@@ -486,7 +483,7 @@ mod tests {
             }
         }
 
-        let outcome = Trajectory::resample(&PathologicalInterpolator, &Euclidean, 0.1);
+        let outcome = Trajectory::resample(&PathologicalInterpolator, Metric::Euclidean, 0.1);
 
         assert!(matches!(
             outcome.unwrap_err(),

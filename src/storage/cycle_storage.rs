@@ -516,7 +516,7 @@ mod tests {
     use super::{Component, Cycle, CycleStorage};
     #[cfg(feature = "serde")]
     use crate::serialization::save_to_writer;
-    use crate::{EmbeddedTrajectory, F2Vector, Trajectory, error::Error, metric::Euclidean};
+    use crate::{EmbeddedTrajectory, F2Vector, Trajectory, error::Error, metric::Metric};
 
     /// Builds an embedded 2D trajectory that traces a recurrent loop around a
     /// missing center cube, then returns near its starting point. The cubical
@@ -540,12 +540,8 @@ mod tests {
         let flat: Vec<f64> = positions.iter().flatten().copied().collect();
         let points = Array2::from_shape_vec((positions.len(), 2), flat).unwrap();
         let trajectory = Trajectory::new(points.view()).unwrap();
-        EmbeddedTrajectory::new(
-            trajectory,
-            Box::new(Euclidean),
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap()
+        EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
+            .unwrap()
     }
 
     #[test]
@@ -822,7 +818,7 @@ mod tests {
         let other_trajectory = Trajectory::new(other_points.view()).unwrap();
         let other_embedded = EmbeddedTrajectory::new(
             other_trajectory,
-            Box::new(Euclidean),
+            Metric::Euclidean,
             &ExecutionBackend::Sequential,
         )
         .unwrap();

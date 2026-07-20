@@ -7,7 +7,7 @@
 
 use std::{error::Error, path::Path};
 
-use cycling_signatures::{EmbeddedTrajectory, Euclidean, ExecutionBackend, Trajectory};
+use cycling_signatures::{EmbeddedTrajectory, ExecutionBackend, Metric, Trajectory};
 use ndarray::Array2;
 
 /// Builds a closed square loop of side length 2.0, sampled with 50 points per
@@ -48,11 +48,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let points = square_loop();
     let trajectory = Trajectory::new(points.view())?;
-    let embedded = EmbeddedTrajectory::new(
-        trajectory,
-        Box::new(Euclidean),
-        &ExecutionBackend::default(),
-    )?;
+    let embedded =
+        EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())?;
     embedded.save(
         output_directory.join("trajectory.cyc"),
         output_directory.join("cover.cyc"),
