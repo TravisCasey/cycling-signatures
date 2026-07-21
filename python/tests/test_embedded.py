@@ -1,5 +1,6 @@
 from typing import Any, cast
 
+import numpy as np
 import pytest
 
 import cycling_signatures as cs
@@ -40,3 +41,9 @@ def test_cycle_class_rejects_short_segment(square_loop_points):
     embedded = cs.EmbeddedTrajectory(cs.Trajectory(square_loop_points), cs.Euclidean())
     with pytest.raises(ValueError):
         embedded.cycle_class((0, 1))
+
+
+def test_adjacency_bound_reports_band_minimum():
+    points = np.array([[0.5], [1.5], [2.5], [3.5]])
+    embedded = cs.EmbeddedTrajectory(cs.Trajectory(points), cs.Euclidean())
+    assert embedded.adjacency_bound(range(0, 4), max_length=4) == pytest.approx(2.0, abs=1e-12)

@@ -12,6 +12,8 @@ use std::{
 use chomp3rs::{ExecutionBackend, parallel::map::ParallelMap};
 use ndarray::{Array2, ArrayView2};
 use rustc_hash::FxHashMap;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, Result},
@@ -19,6 +21,25 @@ use crate::{
     trajectory::Trajectory,
     util::{disjoint::DisjointSet, range::normalize_segment},
 };
+
+/// A single tile's detection outcome.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+enum TileOutcome {
+    /// The tile's component partition and its smallest metric distance over
+    /// non-adjacent candidate pairs (positive infinity if every candidate
+    /// pair is adjacent).
+    Components {
+        components: Vec<Vec<Range<usize>>>,
+        non_adjacent_minimum: f64,
+    },
+    /// Detection aborted: a candidate pair at or below the threshold landed
+    /// in non-adjacent cubes. The distance certifies that the threshold
+    /// exceeds the tile's adjacency bound.
+    ThresholdExceeded { distance: f64 },
+}
+
+/// Default tile width for streaming banded-distance passes.
+pub(crate) const DEFAULT_TILE_WIDTH: usize = 1024;
 
 /// Lays out tile column ranges across `range` with stride `tile_width -
 /// (max_length - 1)`. The last tile is right-clipped to the extent; all
@@ -146,6 +167,8 @@ fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Ran
 ///
 /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a valid
 ///   sub-range of `0..trajectory.original_count()`.
+/// - [`Error::ThresholdExceedsAdjacencyBound`] if the threshold admits a
+///   candidate endpoint pair in non-adjacent cubes.
 pub(crate) fn detect_components(
     trajectory: &Trajectory,
     metric: Metric,
@@ -158,7 +181,7 @@ pub(crate) fn detect_components(
     // tile, so this routes through the streaming path without splitting into
     // multiple tiles.
     let tile_width = range.len().max(max_length);
-    detect_components_streaming(
+    let (components, _adjacency_bound) = detect_components_streaming(
         trajectory,
         metric,
         range,
@@ -166,7 +189,8 @@ pub(crate) fn detect_components(
         max_length,
         tile_width,
         &ExecutionBackend::Sequential,
-    )
+    )?;
+    Ok(components)
 }
 
 /// Connected components of below-threshold pair-edges over `range`, streamed
@@ -176,11 +200,17 @@ pub(crate) fn detect_components(
 /// is dispatched through `backend`. The stitching pass that merges per-tile
 /// partitions into a global partition runs on the dispatching process.
 ///
+/// Alongside the components, returns the smallest distance over non-adjacent
+/// candidate pairs in the band, positive infinity if every candidate pair is
+/// adjacent.
+///
 /// # Errors
 ///
 /// - [`Error::WindowOutOfBounds`] if `range` is outside the trajectory's
 ///   original-index space.
 /// - [`Error::InvalidMaxLength`] if `max_length > tile_width`.
+/// - [`Error::ThresholdExceedsAdjacencyBound`] if the threshold admits a
+///   candidate endpoint pair in non-adjacent cubes.
 pub(crate) fn detect_components_streaming(
     trajectory: &Trajectory,
     metric: Metric,
@@ -189,7 +219,7 @@ pub(crate) fn detect_components_streaming(
     max_length: usize,
     tile_width: usize,
     backend: &ExecutionBackend,
-) -> Result<Vec<Vec<Range<usize>>>> {
+) -> Result<(Vec<Vec<Range<usize>>>, f64)> {
     if range.start > range.end || range.end > trajectory.original_count() {
         return Err(Error::WindowOutOfBounds {
             start: range.start,
@@ -205,34 +235,128 @@ pub(crate) fn detect_components_streaming(
 
     // `build_distance_tile`'s only failure mode is `WindowOutOfBounds`,
     // already validated above against `trajectory.original_count()` before
-    // dispatch. The closure is thus infallible at this point, so the per-tile
-    // result is unwrapped inside the closure rather than returning a `Result`
-    let mut per_tile: Vec<(usize, Vec<Vec<Range<usize>>>)> = ParallelMap::new(backend).run(
+    // dispatch, so it is unwrapped inside the closure.
+    // `detect_components_in_tile` carries its failure case in its
+    // `TileOutcome` return.
+    let mut per_tile: Vec<(usize, TileOutcome)> = ParallelMap::new(backend).run(
         tile_column_ranges.into_iter(),
         |column_range: Range<usize>| {
             let start = column_range.start;
             let tile = build_distance_tile(trajectory, metric, column_range, max_length)
                 .expect("tile column range fits inside the validated window");
-            let components =
+            let outcome =
                 detect_components_in_tile(tile.view(), trajectory, metric, start, threshold);
-            vec![(start, components)]
+            vec![(start, outcome)]
         },
     );
 
     // Stitching is order-sensitive: it must see tiles in column-range order
-    // to produce a deterministic global partition. Parallel dispatch returns
-    // items in arbitrary order, so sort before stitching.
+    // to produce a deterministic global partition; taking the first error in
+    // tile order keeps the reported exceeding distance deterministic under
+    // parallel dispatch.
     per_tile.sort_by_key(|&(start, _)| start);
-    Ok(stitch_per_tile_results(
-        per_tile
-            .into_iter()
-            .map(|(_, components)| components)
-            .collect(),
+    let mut non_adjacent_minimum = f64::INFINITY;
+    let mut tile_components = Vec::new();
+    for (_, outcome) in per_tile {
+        match outcome {
+            TileOutcome::ThresholdExceeded { distance } => {
+                return Err(Error::ThresholdExceedsAdjacencyBound {
+                    threshold,
+                    distance,
+                });
+            },
+            TileOutcome::Components {
+                components,
+                non_adjacent_minimum: tile_non_adjacent_minimum,
+            } => {
+                non_adjacent_minimum = non_adjacent_minimum.min(tile_non_adjacent_minimum);
+                tile_components.push(components);
+            },
+        }
+    }
+    Ok((
+        stitch_per_tile_results(tile_components),
+        non_adjacent_minimum,
     ))
 }
 
+/// The smallest metric distance between two candidate endpoint samples in
+/// `range` whose cubes are not adjacent, over the banded pair set
+/// `(sample, sample + offset)` with `1 <= offset < max_length`; positive
+/// infinity if every candidate pair is adjacent.
+///
+/// This is the distance-only counterpart of
+/// [`detect_components_streaming`]: it streams the same tiles but performs no
+/// admission, merging, or component assembly.
+///
+/// # Errors
+///
+/// - [`Error::WindowOutOfBounds`] if `range` is outside the trajectory's
+///   original-index space.
+/// - [`Error::InvalidMaxLength`] if `max_length > tile_width`.
+pub(crate) fn adjacency_bound_streaming(
+    trajectory: &Trajectory,
+    metric: Metric,
+    range: Range<usize>,
+    max_length: usize,
+    tile_width: usize,
+    backend: &ExecutionBackend,
+) -> Result<f64> {
+    if range.start > range.end || range.end > trajectory.original_count() {
+        return Err(Error::WindowOutOfBounds {
+            start: range.start,
+            end: range.end,
+            trajectory_length: trajectory.original_count(),
+        });
+    }
+    if max_length > tile_width {
+        return Err(Error::InvalidMaxLength { max_length });
+    }
+
+    let tile_column_ranges = enumerate_tile_column_ranges(range, tile_width, max_length);
+    let points = trajectory.points();
+    let original_indices = trajectory.original_indices();
+
+    let per_tile: Vec<f64> = ParallelMap::new(backend).run(
+        tile_column_ranges.into_iter(),
+        |column_range: Range<usize>| {
+            let base = column_range.start;
+            let tile = build_distance_tile(trajectory, metric, column_range, max_length)
+                .expect("tile column range fits inside the validated window");
+            let mut non_adjacent_minimum = f64::INFINITY;
+            for ((row, col), &distance) in tile.indexed_iter() {
+                // Row 0 is the self-comparison; padded entries hold infinity.
+                if row > 0 && distance < non_adjacent_minimum {
+                    let left_point = original_indices[base + col];
+                    let right_point = original_indices[base + col + row];
+                    if !cubes_adjacent(points, left_point, right_point) {
+                        non_adjacent_minimum = distance;
+                    }
+                }
+            }
+            vec![non_adjacent_minimum]
+        },
+    );
+
+    Ok(per_tile.into_iter().fold(f64::INFINITY, f64::min))
+}
+
+/// Returns `true` if the cubes of the two dense point rows differ by at most
+/// 1 on every axis. Cube coordinates are component-wise floors, consistent
+/// with the cover's cube mapping.
+fn cubes_adjacent(points: ArrayView2<'_, f64>, left_point: usize, right_point: usize) -> bool {
+    let left_row = points.row(left_point);
+    let right_row = points.row(right_point);
+    for axis in 0..left_row.len() {
+        if (left_row[axis].floor() - right_row[axis].floor()).abs() > 1.0 {
+            return false;
+        }
+    }
+    true
+}
+
 /// Connected components of below-threshold pair-edges over a pre-built
-/// distance tile.
+/// distance tile, alongside the tile's smallest non-adjacent-pair distance.
 ///
 /// `tile` has shape `(max_length, width)`; `base` is the original-index
 /// of the tile's first column (i.e., `tile[(row, col)]` is the distance
@@ -244,17 +368,23 @@ pub(crate) fn detect_components_streaming(
 /// `threshold / 2`. Each emitted component is a list of cycle segments in
 /// original-index space. Any component that has merged with a length-1 entry
 /// (a self-comparison at `row = 0`) is filtered before return.
+///
+/// Returns [`TileOutcome::ThresholdExceeded`] if any non-adjacent candidate
+/// pair lies at or below `threshold`, reporting the first such pair in
+/// row-major scan order: such a pair certifies that `threshold` exceeds the
+/// tile's adjacency bound.
 fn detect_components_in_tile(
     tile: ArrayView2<'_, f64>,
     trajectory: &Trajectory,
     metric: Metric,
     base: usize,
     threshold: f64,
-) -> Vec<Vec<Range<usize>>> {
+) -> TileOutcome {
     let width = tile.ncols();
     let points = trajectory.points();
     let original_indices = trajectory.original_indices();
     let ball_radius = threshold / 2.0;
+    let mut non_adjacent_minimum = f64::INFINITY;
 
     let mut disjoint = DisjointSet::new();
     let mut entry_ids: FxHashMap<(usize, usize), usize> = FxHashMap::default();
@@ -263,6 +393,25 @@ fn detect_components_in_tile(
     // in row-major order, which suits the predecessor convention (both
     // required predecessors are at `row - 1`).
     for ((row, col), &distance) in tile.indexed_iter() {
+        // Track the smallest distance over non-adjacent candidate pairs.
+        // Row 0 is the self-comparison (trivially adjacent); padded entries
+        // hold infinity and never undercut the running minimum.
+        // An admitted non-adjacent pair proves the threshold exceeds the
+        // window's adjacency bound: abort.
+        // The running minimum stays above the threshold whenever
+        // `TileOutcome::ThresholdExceeded` has not been returned, so only pairs
+        // below the minimum need the cube comparison.
+        if row > 0 && distance < non_adjacent_minimum {
+            let left_point = original_indices[base + col];
+            let right_point = original_indices[base + col + row];
+            if !cubes_adjacent(points, left_point, right_point) {
+                if distance <= threshold {
+                    return TileOutcome::ThresholdExceeded { distance };
+                }
+                non_adjacent_minimum = distance;
+            }
+        }
+
         if distance > threshold {
             continue;
         }
@@ -330,7 +479,10 @@ fn detect_components_in_tile(
     // self-comparison at row 0). Such entries chain into a single trivial
     // component under the connectivity relation.
     components.retain(|cycles| !cycles.iter().any(|cycle| cycle.end <= cycle.start + 1));
-    components
+    TileOutcome::Components {
+        components,
+        non_adjacent_minimum,
+    }
 }
 
 /// Builds a rectangular distance tile of shape `(max_length, width)` for the
@@ -497,7 +649,7 @@ mod tests {
         let max_length = 5;
         let range = 0..30;
 
-        let single_tile = super::detect_components_streaming(
+        let (single_tile, _) = super::detect_components_streaming(
             &trajectory,
             Metric::Euclidean,
             range.clone(),
@@ -508,7 +660,7 @@ mod tests {
         )
         .unwrap();
 
-        let multi_tile = super::detect_components_streaming(
+        let (multi_tile, _) = super::detect_components_streaming(
             &trajectory,
             Metric::Euclidean,
             range.clone(),
@@ -547,5 +699,56 @@ mod tests {
             found,
             "expected to find the loop-closing cycle 0..9 in some component; got {components:?}",
         );
+    }
+
+    #[test]
+    fn adjacency_bound_matches_brute_force_on_sine_fixture() {
+        let positions: Vec<f64> = (0..30)
+            .map(|index| (index as f64 * 0.4).sin() * 2.0)
+            .collect();
+        let points = Array2::from_shape_vec((30, 1), positions).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let max_length = 5;
+
+        let mut expected = f64::INFINITY;
+        let trajectory_points = trajectory.points();
+        for left in 0..30_usize {
+            for right in (left + 1)..(left + max_length).min(30) {
+                let left_row = trajectory_points.row(left);
+                let right_row = trajectory_points.row(right);
+                let adjacent = (left_row[0].floor() - right_row[0].floor()).abs() <= 1.0;
+                if !adjacent {
+                    let distance = Metric::Euclidean.distance(left_row, right_row);
+                    expected = expected.min(distance);
+                }
+            }
+        }
+
+        // Multi-tile streaming agrees with the brute force, and the
+        // piggybacked minimum from component detection agrees with the
+        // standalone sweep.
+        let standalone = super::adjacency_bound_streaming(
+            &trajectory,
+            Metric::Euclidean,
+            0..30,
+            max_length,
+            8,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+        assert!((standalone - expected).abs() < 1e-12);
+
+        let bound = max_consecutive_distance(trajectory.points(), Metric::Euclidean);
+        let (_, piggybacked) = super::detect_components_streaming(
+            &trajectory,
+            Metric::Euclidean,
+            0..30,
+            bound,
+            max_length,
+            8,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+        assert!((piggybacked - expected).abs() < 1e-12);
     }
 }

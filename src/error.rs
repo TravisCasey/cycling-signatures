@@ -154,6 +154,22 @@ pub enum Error {
         trajectory_bound: f64,
     },
 
+    /// A cycle-detection threshold admits a candidate endpoint pair landing in
+    /// non-adjacent cubes; the closing step of the walker requires adjacency.
+    /// Thresholds must stay strictly below the window's empirical adjacency
+    /// bound.
+    #[error(
+        "adjacency threshold {threshold} admits a recurrence between points in non-adjacent cubes \
+         (pair distance {distance})"
+    )]
+    ThresholdExceedsAdjacencyBound {
+        /// The threshold the caller supplied.
+        threshold: f64,
+        /// Metric distance of the non-adjacent pair; an upper bound for the
+        /// window's valid threshold band.
+        distance: f64,
+    },
+
     /// A cycle's endpoint cubes differ by more than 1 in some axis; the
     /// closing step of the walker requires adjacency.
     #[error(

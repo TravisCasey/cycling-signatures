@@ -91,8 +91,10 @@ impl PyEmbeddedTrajectory {
     /// ------
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if ``threshold`` is below
-    ///     ``bound``, if the segment indices are out of range, or if a detected
-    ///     cycle's consecutive or endpoint points fall in non-adjacent cubes.
+    ///     ``bound``, if ``threshold`` admits an endpoint pair in non-adjacent
+    ///     cubes (at or above ``adjacency_bound``), if the segment indices are
+    ///     out of range, or if a detected cycle's consecutive or endpoint
+    ///     points fall in non-adjacent cubes.
     fn signature(
         &self,
         py: Python<'_>,
@@ -159,6 +161,55 @@ impl PyEmbeddedTrajectory {
     #[must_use]
     fn bound(&self) -> f64 {
         self.inner.bound()
+    }
+
+    /// Returns the empirical adjacency bound of ``segment``.
+    ///
+    /// The bound is the smallest distance between two candidate endpoint
+    /// samples in the segment whose cubes are not adjacent; any threshold
+    /// strictly below it admits only adjacent-cube endpoint pairs. Candidate
+    /// pairs are sample pairs strictly less than ``max_length`` apart, the
+    /// banded set a storage build with that cycle-length cap considers as
+    /// cycle endpoints. A signature query has no length cap: to validate
+    /// one, pass the segment length as ``max_length``.
+    ///
+    /// This is not a cheap accessor: it streams the segment's full candidate
+    /// band in bounded-width tiles, evaluating the metric over every
+    /// candidate pair. Time scales with the band size; memory is
+    /// proportional to a single tile (``max_length`` rows by the tile
+    /// width), not to the band.
+    ///
+    /// Parameters
+    /// ----------
+    /// segment : range or tuple of int
+    ///     A half-open range of sample indices, given as a Python ``range``
+    ///     or a ``(start, stop)`` integer tuple.
+    /// max_length : int
+    ///     The cycle-length cap bounding the candidate pair band: the cap of
+    ///     the storage build being validated, or the segment length to
+    ///     validate a signature query.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///     The adjacency bound; ``math.inf`` when every candidate pair is
+    ///     adjacent.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If ``segment`` is not a valid range or its indices are out of
+    ///     range.
+    fn adjacency_bound(
+        &self,
+        py: Python<'_>,
+        segment: &Bound<'_, PyAny>,
+        max_length: usize,
+    ) -> PyResult<f64> {
+        let range = segment_from_py(segment)?;
+        let embedded = &self.inner;
+        py.detach(move || embedded.adjacency_bound(range, max_length, &ExecutionBackend::Rayon))
+            .map_err(to_pyerr)
     }
 
     /// Returns a content fingerprint of the embedded trajectory.

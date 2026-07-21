@@ -16,7 +16,7 @@ use walker::{for_each_cycle_edge, walk_and_canonicalize};
 use crate::{
     F2Vector,
     cover::{CubicalCover, floor_to_cube},
-    distance::detect_components,
+    distance::{DEFAULT_TILE_WIDTH, adjacency_bound_streaming, detect_components},
     error::{Error, Result},
     metric::Metric,
     signature::{CycleComponent, CyclingSignature},
@@ -94,6 +94,51 @@ impl EmbeddedTrajectory {
     #[must_use]
     pub fn bound(&self) -> f64 {
         self.bound
+    }
+
+    /// The window's empirical adjacency bound: the smallest metric distance
+    /// between two candidate endpoint samples in `segment` whose cubes are
+    /// not adjacent, or positive infinity if every candidate pair is adjacent.
+    ///
+    /// Candidate pairs are sample pairs `(i, j)` inside the segment with
+    /// `j - i < max_length`, the banded set a
+    /// [`CycleStorage::build`](crate::CycleStorage::build) with that length
+    /// cap considers as cycle endpoints. A [`signature`](Self::signature)
+    /// query has no length cap: to validate one, pass the segment length as
+    /// `max_length`. Any threshold strictly below the returned bound admits
+    /// only adjacent-cube endpoint pairs on this trajectory, so the valid
+    /// threshold band for the window is
+    /// `bound() <= threshold < adjacency_bound`.
+    ///
+    /// This is not a cheap accessor: it streams the segment's full candidate
+    /// band in bounded-width tiles, evaluating the metric over every
+    /// candidate pair. Time scales with the band size; memory is
+    /// proportional to a single tile (`max_length` rows by the tile width),
+    /// not to the band.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
+    ///   valid sub-range of the trajectory.
+    pub fn adjacency_bound(
+        &self,
+        segment: impl RangeBounds<usize>,
+        max_length: usize,
+        backend: &ExecutionBackend,
+    ) -> Result<f64> {
+        let range = normalize_segment(segment, self.trajectory.original_count())?;
+        // Tile the segment in blocks of a default width, never wider than the
+        // segment and never narrower than `max_length` (so the streaming
+        // requirement `max_length <= tile_width` holds).
+        let tile_width = DEFAULT_TILE_WIDTH.min(range.len()).max(max_length);
+        adjacency_bound_streaming(
+            &self.trajectory,
+            self.metric,
+            range,
+            max_length,
+            tile_width,
+            backend,
+        )
     }
 
     /// Returns an error if `threshold` is below the embedded trajectory's
@@ -353,6 +398,9 @@ impl EmbeddedTrajectory {
     ///   valid sub-range of the trajectory.
     /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
     ///   self.bound()`.
+    /// - [`Error::ThresholdExceedsAdjacencyBound`] if `threshold` admits a
+    ///   candidate endpoint pair in non-adjacent cubes (at or above the
+    ///   window's [`adjacency_bound`](Self::adjacency_bound)).
     /// - [`Error::ConsecutiveCubesNonAdjacent`] when a detected cycle contains
     ///   consecutive points in non-adjacent cubes. This is only possible when
     ///   using [`from_parts`](Self::from_parts)-constructed trajectories that
@@ -758,5 +806,37 @@ mod tests {
             EmbeddedTrajectory::from_parts(trajectory, cover, Metric::Euclidean).unwrap();
 
         assert_eq!(loaded_storage.fingerprint(), reassembled.fingerprint());
+    }
+
+    #[test]
+    fn adjacency_bound_and_nonadjacency_on_staircase() {
+        // 1D staircase through cubes 0..=3: consecutive pairs adjacent at
+        // distance 1.0, closest non-adjacent pair at distance 2.0.
+        let points = array![[0.5], [1.5], [2.5], [3.5]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded =
+            EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())
+                .unwrap();
+
+        let full_band = embedded
+            .adjacency_bound(.., 4, &ExecutionBackend::Sequential)
+            .unwrap();
+        assert!((full_band - 2.0).abs() < 1e-12);
+        assert!(
+            embedded
+                .adjacency_bound(.., 2, &ExecutionBackend::Sequential)
+                .unwrap()
+                .is_infinite()
+        );
+
+        // A threshold at the bound admits the non-adjacent pair and fails; a
+        // threshold strictly below it succeeds.
+        let err = embedded.signature(.., 2.0).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::ThresholdExceedsAdjacencyBound { threshold, distance }
+                if (threshold - 2.0).abs() < 1e-12 && (distance - 2.0).abs() < 1e-12
+        ));
+        assert!(embedded.signature(.., 1.0).is_ok());
     }
 }

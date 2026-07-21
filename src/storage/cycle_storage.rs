@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::serialization::{load_from_path, save_to_path};
 use crate::{
     EmbeddedTrajectory, F2Subspace, F2Vector,
-    distance::detect_components_streaming,
+    distance::{DEFAULT_TILE_WIDTH, detect_components_streaming},
     error::{Error, Result},
     storage::interval_subsumption::IntervalSubsumptionIndex,
     util::range::normalize_segment,
@@ -119,10 +119,6 @@ impl Component {
     }
 }
 
-/// Default tile width for the streaming cycle-detection pass in
-/// [`CycleStorage::build`].
-const DEFAULT_TILE_WIDTH: usize = 1024;
-
 /// Component-first cache of near-recurrent cycles over a trajectory extent.
 #[derive(Clone, Debug)]
 pub struct CycleStorage {
@@ -149,6 +145,9 @@ impl CycleStorage {
     /// - [`Error::InvalidMaxLength`] if `max_length < 2`.
     /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
     ///   embedded.bound()`.
+    /// - [`Error::ThresholdExceedsAdjacencyBound`] if `threshold` admits a
+    ///   candidate endpoint pair in non-adjacent cubes (at or above the
+    ///   window's [`adjacency_bound`](EmbeddedTrajectory::adjacency_bound)).
     /// - [`Error::CycleEndpointsNonAdjacent`] from
     ///   [`EmbeddedTrajectory::cycle_class`] when walking a component
     ///   representative.
@@ -177,7 +176,7 @@ impl CycleStorage {
         // segment and never narrower than `max_length` (so the streaming
         // requirement `max_length <= tile_width` holds).
         let tile_width = DEFAULT_TILE_WIDTH.min(range.len()).max(max_length);
-        let raw_components = detect_components_streaming(
+        let (raw_components, _adjacency_bound) = detect_components_streaming(
             trajectory,
             metric,
             range.clone(),
