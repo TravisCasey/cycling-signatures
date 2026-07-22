@@ -1,14 +1,16 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Python wrappers for the homology value types returned by signature queries.
+//! Python wrappers for the homology value types (classes and subspaces)
+//! returned by signature queries. The signature type itself lives in
+//! [`crate::signature`].
 
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
 };
 
-use cycling_signatures::{CycleComponent, CyclingSignature, F2, F2Subspace, F2Vector};
+use cycling_signatures::{F2, F2Subspace, F2Vector};
 use numpy::PyArray1;
 use pyo3::{
     exceptions::{PyIndexError, PyValueError},
@@ -69,28 +71,6 @@ pub(crate) struct PyHomologyClass {
 #[pyclass(name = "Subspace")]
 pub(crate) struct PySubspace {
     pub(crate) inner: F2Subspace,
-}
-
-/// One connected group of recurrent cycle segments sharing a homology class.
-///
-/// A cycling signature decomposes into connected components of near-recurrent
-/// segments; every segment in a component carries the same homology class, and
-/// every component holds at least one segment.
-#[pyclass(name = "CycleComponent")]
-pub(crate) struct PyCycleComponent {
-    cycles: Vec<(usize, usize)>,
-    homology_class: F2Vector,
-}
-
-/// The cycling signature of a trajectory segment.
-///
-/// The signature is the cycle space (a ``Subspace``) spanned by the homology
-/// classes of the detected recurrence components. Its ``rank`` is the number of
-/// independent cycling classes it carries, and ``components`` exposes the
-/// per-component breakdown.
-#[pyclass(name = "CyclingSignature")]
-pub(crate) struct PyCyclingSignature {
-    pub(crate) inner: CyclingSignature,
 }
 
 #[pymethods]
@@ -267,126 +247,9 @@ impl PySubspace {
     }
 }
 
-#[pymethods]
-impl PyCycleComponent {
-    /// Returns the cycle segments in this component as ``(start, stop)`` pairs.
-    ///
-    /// Each pair is a half-open range of sample indices covering the cycle
-    /// ``start..stop``. Sample indices index into the original input data,
-    /// the range ``0`` up to ``trajectory.original_count()``.
-    ///
-    /// Returns
-    /// -------
-    /// list of tuple of int
-    ///     One ``(start, stop)`` pair per cycle in the component.
-    #[must_use]
-    fn cycles(&self) -> Vec<(usize, usize)> {
-        self.cycles.clone()
-    }
-
-    /// Returns the homology class shared by every cycle in this component.
-    ///
-    /// Returns
-    /// -------
-    /// ``HomologyClass``
-    ///     The class carried by all cycles in the component.
-    #[must_use]
-    fn homology_class(&self) -> PyHomologyClass {
-        PyHomologyClass {
-            inner: self.homology_class.clone(),
-        }
-    }
-
-    /// Returns a string representation of the component.
-    fn __repr__(&self) -> String {
-        format!("CycleComponent(cycles={})", self.cycles.len())
-    }
-}
-
-#[pymethods]
-impl PyCyclingSignature {
-    /// Returns the subspace spanned by the component classes.
-    ///
-    /// This is the signature's value identity: two signatures with the same
-    /// span compare equal regardless of how many components contributed.
-    ///
-    /// Returns
-    /// -------
-    /// ``Subspace``
-    ///     The cycle space spanned by the component classes.
-    #[must_use]
-    fn span(&self) -> PySubspace {
-        PySubspace {
-            inner: self.inner.span().clone(),
-        }
-    }
-
-    /// Returns the number of independent cycling classes in the signature.
-    ///
-    /// Returns
-    /// -------
-    /// int
-    ///     The rank of the spanned cycle space.
-    #[must_use]
-    fn rank(&self) -> usize {
-        self.inner.rank()
-    }
-
-    /// Returns the per-component decomposition of the signature.
-    ///
-    /// Each entry pairs the cycle segments of one connected recurrence
-    /// component with the homology class those cycles share.
-    ///
-    /// Returns
-    /// -------
-    /// list of ``CycleComponent``
-    ///     One entry per connected recurrence component.
-    #[must_use]
-    fn components(&self) -> Vec<PyCycleComponent> {
-        self.inner
-            .components()
-            .iter()
-            .map(component_to_py)
-            .collect()
-    }
-
-    /// Returns whether this signature equals ``other`` by span comparison.
-    fn __eq__(&self, other: &Self) -> bool {
-        self.inner == other.inner
-    }
-
-    /// Returns a hash consistent with equality, derived from the spanned
-    /// subspace.
-    fn __hash__(&self) -> u64 {
-        hash_of(self.inner.span())
-    }
-
-    /// Returns a string representation of the signature.
-    fn __repr__(&self) -> String {
-        format!(
-            "CyclingSignature(rank={}, components={})",
-            self.inner.rank(),
-            self.inner.components().len()
-        )
-    }
-}
-
-fn component_to_py(component: &CycleComponent) -> PyCycleComponent {
-    PyCycleComponent {
-        cycles: component
-            .cycles()
-            .iter()
-            .map(|range| (range.start, range.end))
-            .collect(),
-        homology_class: component.class().clone(),
-    }
-}
-
 /// Registers the homology value types on the module.
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyHomologyClass>()?;
     module.add_class::<PySubspace>()?;
-    module.add_class::<PyCycleComponent>()?;
-    module.add_class::<PyCyclingSignature>()?;
     Ok(())
 }

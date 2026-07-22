@@ -11,6 +11,6 @@
 
 pub use crate::{
     ChebyshevSphereBundleInterpolator, Component, Cube, CubicSpline, CubicalCover, Cycle,
-    CycleComponent, CycleStorage, CyclingSignature, EmbeddedTrajectory, Error, ExecutionBackend,
-    F2Subspace, F2Vector, Interpolator, Metric, Result, Trajectory,
+    CycleStorage, CyclingSignature, EmbeddedTrajectory, Error, ExecutionBackend, F2Subspace,
+    F2Vector, Interpolator, Metric, Result, SignatureGenerator, Trajectory,
 };

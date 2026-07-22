@@ -660,7 +660,9 @@ mod tests {
         let segments: &[Range<usize>] =
             &[0..embedded.trajectory().original_count(), 0..4, 4..9, 2..7];
         for segment in segments {
-            let embedded_span = embedded.signature(segment.clone(), threshold).unwrap();
+            let embedded_span = embedded
+                .signature_with_threshold(segment.clone(), threshold)
+                .unwrap();
             let storage_span = storage.signature(segment.clone()).unwrap();
             assert_eq!(embedded_span.span(), &storage_span, "segment {segment:?}");
         }

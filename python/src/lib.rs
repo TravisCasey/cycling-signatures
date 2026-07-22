@@ -9,6 +9,7 @@ mod homology;
 mod interpolation;
 mod metric;
 mod segment;
+mod signature;
 mod storage;
 mod trajectory;
 
@@ -23,6 +24,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     interpolation::register(module)?;
     trajectory::register(module)?;
     homology::register(module)?;
+    signature::register(module)?;
     embedded::register(module)?;
     storage::register(module)?;
     Ok(())

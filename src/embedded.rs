@@ -19,7 +19,7 @@ use crate::{
     distance::{DEFAULT_TILE_WIDTH, adjacency_bound_streaming, detect_components},
     error::{Error, Result},
     metric::Metric,
-    signature::{CycleComponent, CyclingSignature},
+    signature::CyclingSignature,
     trajectory::{Trajectory, max_consecutive_distance},
     util::{fingerprint::Fingerprint, range::normalize_segment},
 };
@@ -379,18 +379,22 @@ impl EmbeddedTrajectory {
         Self::from_parts(trajectory, cover, metric)
     }
 
-    /// The cycling signature of the trajectory over the given segment.
+    /// The cycling signature of the trajectory over the given segment, at an
+    /// explicit adjacency threshold.
     ///
-    /// Returns the `F_2` subspace spanned by the non-trivial homology
-    /// classes of recurrent cycles whose endpoint pairs fall within
-    /// `segment`, together with the per-component decomposition (each
-    /// component's cycle segments and shared class) accessible through
-    /// [`CyclingSignature::components`].
+    /// Returns the filtered `F_2` subspace spanned by the homology classes
+    /// of recurrent cycles whose endpoint pairs fall within `segment`. A
+    /// cycle's birth is the metric distance between its two endpoint
+    /// samples, folded to a minimum across every cycle in its connected
+    /// component; the signature is complete up to `threshold`
+    /// ([`CyclingSignature::threshold_max`]).
     ///
     /// `threshold` is the adjacency threshold for cycle detection: pairs of
     /// trajectory points with metric distance `<= threshold` are candidate
     /// cycle endpoints, and union-find merges are gated by
-    /// [`Metric::covers_triple`].
+    /// [`Metric::covers_triple`]. For a threshold at the top of the window's
+    /// valid band instead of an explicit value, prefer
+    /// [`signature`](Self::signature).
     ///
     /// # Errors
     ///
@@ -408,7 +412,7 @@ impl EmbeddedTrajectory {
     /// - [`Error::CycleEndpointsNonAdjacent`] when a detected cycle's endpoint
     ///   cubes differ by more than 1 in some axis.
     #[allow(clippy::missing_panics_doc)]
-    pub fn signature(
+    pub fn signature_with_threshold(
         &self,
         segment: impl RangeBounds<usize>,
         threshold: f64,
@@ -422,21 +426,69 @@ impl EmbeddedTrajectory {
             self.trajectory.original_count(),
         )?;
 
-        let mut survivors: Vec<CycleComponent> = Vec::new();
+        let points = self.trajectory.points();
+        let original_indices = self.trajectory.original_indices();
+        let mut candidates: Vec<(f64, F2Vector)> = Vec::with_capacity(components.len());
         for cycles in components {
             let representative = cycles
                 .first()
                 .expect("connected components are nonempty by construction");
             let class = self.cycle_class(representative.clone())?;
-            if !class.is_zero() {
-                survivors.push(CycleComponent::new(cycles, class));
-            }
+            let birth = cycles
+                .iter()
+                .map(|cycle| {
+                    self.metric.distance(
+                        points.row(original_indices[cycle.start]),
+                        points.row(original_indices[cycle.end - 1]),
+                    )
+                })
+                .fold(f64::INFINITY, f64::min);
+            candidates.push((birth, class));
         }
 
-        Ok(CyclingSignature::from_components(
-            survivors,
+        Ok(CyclingSignature::from_candidates(
+            candidates,
             self.cover.num_generators(),
+            threshold,
         ))
+    }
+
+    /// The cycling signature of the trajectory over the given segment, at the
+    /// top of the window's valid adjacency-threshold band.
+    ///
+    /// Runs the segment's whole-band [`adjacency_bound`](Self::adjacency_bound)
+    /// sweep, then detects cycles at the largest threshold that keeps every
+    /// admitted pair in adjacent cubes (the bound's
+    /// [`next_down`](f64::next_down)). The returned signature's
+    /// [`threshold_max`](CyclingSignature::threshold_max) is that effective
+    /// threshold. The sweep runs sequentially; callers who need parallel
+    /// control can run [`adjacency_bound`](Self::adjacency_bound) themselves
+    /// with a backend of their choice and pass an explicit threshold to
+    /// [`signature_with_threshold`](Self::signature_with_threshold) instead.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
+    ///   valid sub-range of the trajectory.
+    /// - [`Error::EmptyThresholdBand`] if the window's adjacency bound does not
+    ///   exceed [`bound`](Self::bound): no threshold admits a recurrence there.
+    /// - [`Error::ConsecutiveCubesNonAdjacent`] when a detected cycle contains
+    ///   consecutive points in non-adjacent cubes. This is only possible when
+    ///   using [`from_parts`](Self::from_parts)-constructed trajectories that
+    ///   bypassed the adjacency check in [`new`](Self::new).
+    /// - [`Error::CycleEndpointsNonAdjacent`] when a detected cycle's endpoint
+    ///   cubes differ by more than 1 in some axis.
+    pub fn signature(&self, segment: impl RangeBounds<usize>) -> Result<CyclingSignature> {
+        let range = normalize_segment(segment, self.trajectory.original_count())?;
+        let adjacency_bound =
+            self.adjacency_bound(range.clone(), range.len(), &ExecutionBackend::Sequential)?;
+        if adjacency_bound <= self.bound {
+            return Err(Error::EmptyThresholdBand {
+                trajectory_bound: self.bound,
+                adjacency_bound,
+            });
+        }
+        self.signature_with_threshold(range, adjacency_bound.next_down())
     }
 }
 
@@ -683,9 +735,8 @@ mod tests {
             EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())
                 .unwrap();
 
-        let signature = embedded.signature(.., 0.6).unwrap();
+        let signature = embedded.signature_with_threshold(.., 0.6).unwrap();
         assert_eq!(signature.rank(), 0);
-        assert!(signature.components().is_empty());
     }
 
     #[test]
@@ -733,9 +784,8 @@ mod tests {
             EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())
                 .unwrap();
 
-        let signature = embedded.signature(.., 1.5).unwrap();
+        let signature = embedded.signature_with_threshold(.., 1.5).unwrap();
         assert_eq!(signature.rank(), 1);
-        assert!(!signature.components().is_empty());
     }
 
     /// Builds the small 4-point Euclidean square loop used in round-trip tests.
@@ -831,12 +881,44 @@ mod tests {
 
         // A threshold at the bound admits the non-adjacent pair and fails; a
         // threshold strictly below it succeeds.
-        let err = embedded.signature(.., 2.0).unwrap_err();
+        let err = embedded.signature_with_threshold(.., 2.0).unwrap_err();
         assert!(matches!(
             err,
             Error::ThresholdExceedsAdjacencyBound { threshold, distance }
                 if (threshold - 2.0).abs() < 1e-12 && (distance - 2.0).abs() < 1e-12
         ));
-        assert!(embedded.signature(.., 1.0).is_ok());
+        assert!(embedded.signature_with_threshold(.., 1.0).is_ok());
+
+        // The threshold-free variant detects the adjacency bound itself and
+        // runs at its next-representable-below value. The comparison is
+        // exact: both sides are the same deterministic subtraction of
+        // exactly representable inputs.
+        let filtered = embedded.signature(..).unwrap();
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(filtered.threshold_max(), 2.0_f64.next_down());
+        }
+    }
+
+    #[test]
+    fn signature_rejects_empty_threshold_band() {
+        // 1D fixture where every step is adjacent (cubes 0, 1, 2, 3): the
+        // trajectory bound is the largest consecutive-distance step (2.001 to
+        // 3.999, 1.998), and the window's adjacency bound is the smallest
+        // non-adjacent pair distance (samples 0 and 2, cubes 0 and 2,
+        // distance 1.5). Since the adjacency bound does not exceed the
+        // trajectory bound, no threshold admits a recurrence.
+        let points = array![[0.501], [1.999], [2.001], [3.999]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded =
+            EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())
+                .unwrap();
+
+        let err = embedded.signature(..).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::EmptyThresholdBand { trajectory_bound, adjacency_bound }
+                if (trajectory_bound - 1.998).abs() < 1e-12 && (adjacency_bound - 1.5).abs() < 1e-12
+        ));
     }
 }

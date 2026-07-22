@@ -9,11 +9,8 @@ use cycling_signatures::{EmbeddedTrajectory, ExecutionBackend};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
-    errors::to_pyerr,
-    homology::{PyCyclingSignature, PyHomologyClass},
-    metric::metric_from_py,
-    segment::segment_from_py,
-    trajectory::PyTrajectory,
+    errors::to_pyerr, homology::PyHomologyClass, metric::metric_from_py, segment::segment_from_py,
+    signature::PyCyclingSignature, trajectory::PyTrajectory,
 };
 
 /// A trajectory embedded in a cubical complex, ready for homological analysis.
@@ -69,18 +66,29 @@ impl PyEmbeddedTrajectory {
 
     /// Returns the cycling signature of the trajectory segment ``segment``.
     ///
-    /// Detects all near-recurrent cycles within ``segment`` whose endpoint
-    /// distance is at most ``threshold``, and returns the signature describing
-    /// the homological content of those cycles.
+    /// Detects all near-recurrent cycles within ``segment`` and returns the
+    /// filtered signature describing their homological content, ordered by
+    /// birth (the adjacency threshold at which each independent class first
+    /// enters).
+    ///
+    /// When ``threshold`` is given, detection runs at that explicit adjacency
+    /// threshold and the signature is complete up to it. When omitted,
+    /// detection runs at the largest threshold strictly below the segment's
+    /// empirical adjacency bound, and the signature is complete up to that
+    /// derived threshold. That sweep runs sequentially, unlike
+    /// ``adjacency_bound``; callers who want the faster parallel sweep can
+    /// call ``adjacency_bound`` themselves and pass an explicit ``threshold``
+    /// strictly below the returned bound.
     ///
     /// Parameters
     /// ----------
     /// segment : range or tuple of int
     ///     A half-open range of sample indices, given as a Python ``range`` or
     ///     a ``(start, stop)`` integer tuple.
-    /// threshold : float
+    /// threshold : float, optional
     ///     The largest endpoint distance admitted as a cycle. Must be at least
-    ///     ``bound``.
+    ///     ``bound``. When omitted, detection runs at the largest threshold
+    ///     strictly below the segment's empirical adjacency bound.
     ///
     /// Returns
     /// -------
@@ -92,19 +100,25 @@ impl PyEmbeddedTrajectory {
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if ``threshold`` is below
     ///     ``bound``, if ``threshold`` admits an endpoint pair in non-adjacent
-    ///     cubes (at or above ``adjacency_bound``), if the segment indices are
-    ///     out of range, or if a detected cycle's consecutive or endpoint
-    ///     points fall in non-adjacent cubes.
+    ///     cubes (at or above ``adjacency_bound``), if no threshold admits a
+    ///     recurrence in ``segment`` (only possible when ``threshold`` is
+    ///     omitted), if the segment indices are out of range, or if a
+    ///     detected cycle's consecutive or endpoint points fall in
+    ///     non-adjacent cubes.
+    #[pyo3(signature = (segment, threshold=None))]
     fn signature(
         &self,
         py: Python<'_>,
         segment: &Bound<'_, PyAny>,
-        threshold: f64,
+        threshold: Option<f64>,
     ) -> PyResult<PyCyclingSignature> {
         let range = segment_from_py(segment)?;
         let embedded = &self.inner;
         let cycling_signature = py
-            .detach(move || embedded.signature(range, threshold))
+            .detach(move || match threshold {
+                Some(threshold) => embedded.signature_with_threshold(range, threshold),
+                None => embedded.signature(range),
+            })
             .map_err(to_pyerr)?;
         Ok(PyCyclingSignature {
             inner: cycling_signature,

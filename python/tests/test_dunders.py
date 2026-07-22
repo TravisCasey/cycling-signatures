@@ -64,11 +64,7 @@ def test_value_type_reprs(square_loop_storage, square_loop_embedded, square_loop
         repr(storage[0])
         == f"Component(class_id=0, coverage=(0, {count}), cycles={len(storage[0])})"
     )
-    assert repr(signature) == "CyclingSignature(rank=1, components=1)"
-    assert (
-        repr(signature.components()[0])
-        == f"CycleComponent(cycles={len(signature.components()[0].cycles())})"
-    )
+    assert repr(signature) == "CyclingSignature(rank=1, threshold_max=1.0)"
 
 
 def test_equatable_types_hash_consistently_with_equality(
@@ -78,16 +74,18 @@ def test_equatable_types_hash_consistently_with_equality(
     count = square_loop_points.shape[0]
 
     # Distinct instances that compare equal must hash equal and deduplicate in a
-    # set. A signature hashes by its spanned subspace, matching its equality.
+    # set.
     pairs = [
         (storage.classes()[0], storage.homology_class(0)),
         (storage.signature((0, count)), storage.signature((0, count))),
-        (
-            square_loop_embedded.signature(range(count), 1.0),
-            square_loop_embedded.signature(range(count), 1.0),
-        ),
     ]
     for left, right in pairs:
         assert left == right
         assert hash(left) == hash(right)
         assert len({left, right}) == 1
+
+    # CyclingSignature has no equality of its own; two signatures built the
+    # same way still compare equal through their spanned subspace.
+    first = square_loop_embedded.signature(range(count), 1.0)
+    second = square_loop_embedded.signature(range(count), 1.0)
+    assert first.span() == second.span()

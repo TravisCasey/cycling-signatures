@@ -10,8 +10,16 @@ def test_signature_of_square_loop(square_loop_points):
     embedded = cs.EmbeddedTrajectory(cs.Trajectory(square_loop_points), cs.Euclidean())
     signature = embedded.signature(range(0, square_loop_points.shape[0]), 1.0)
     assert signature.rank() == 1
-    component_class = signature.components()[0].homology_class()
-    assert signature.span().contains(component_class)
+    generator_class = signature.generators()[0]
+    assert signature.span().contains(generator_class)
+
+
+def test_signature_with_omitted_threshold(square_loop_points):
+    embedded = cs.EmbeddedTrajectory(cs.Trajectory(square_loop_points), cs.Euclidean())
+    signature = embedded.signature(range(0, square_loop_points.shape[0]))
+    assert signature.rank_at(signature.threshold_max()) == signature.rank()
+    assert signature.births() == sorted(signature.births())
+    assert len(signature.births()) == signature.rank()
 
 
 def test_threshold_below_bound_raises(square_loop_points):

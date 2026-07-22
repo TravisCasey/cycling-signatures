@@ -170,6 +170,33 @@ pub enum Error {
         distance: f64,
     },
 
+    /// A window's adjacency bound does not exceed the trajectory's own
+    /// consecutive-distance resolution, so no threshold admits a recurrence
+    /// there.
+    #[error(
+        "trajectory bound {trajectory_bound} is not below the window's adjacency bound \
+         {adjacency_bound}, so no threshold admits a recurrence"
+    )]
+    EmptyThresholdBand {
+        /// The trajectory's consecutive-distance resolution.
+        trajectory_bound: f64,
+        /// The window's empirical adjacency bound.
+        adjacency_bound: f64,
+    },
+
+    /// A signature query's threshold exceeds the range the filtered
+    /// signature is complete for.
+    #[error(
+        "adjacency threshold {threshold} exceeds the largest threshold {threshold_max} this \
+         signature is complete for"
+    )]
+    ThresholdExceedsFiltrationBand {
+        /// The rejected query threshold.
+        threshold: f64,
+        /// The largest valid query threshold.
+        threshold_max: f64,
+    },
+
     /// A cycle's endpoint cubes differ by more than 1 in some axis; the
     /// closing step of the walker requires adjacency.
     #[error(

@@ -42,9 +42,6 @@ Homology values
 .. autoclass:: cycling_signatures.CyclingSignature
    :members:
 
-.. autoclass:: cycling_signatures.CycleComponent
-   :members:
-
 Cycle storage
 -------------
 
