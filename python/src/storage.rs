@@ -230,9 +230,14 @@ impl PyCycleStorage {
     /// Builds a ``CycleStorage`` from an embedded trajectory.
     ///
     /// Detects all near-recurrent cycles within ``segment`` of ``embedded``
-    /// whose endpoint metric distance is at most ``threshold`` and whose point
-    /// count does not exceed ``max_length``, and computes the homology class
-    /// each one represents.
+    /// whose point count does not exceed ``max_length``, and computes the
+    /// homology class each one represents.
+    ///
+    /// When ``threshold`` is given, detection runs at that explicit adjacency
+    /// threshold. When omitted, detection runs at the largest threshold
+    /// strictly below the segment's empirical adjacency bound (banded by
+    /// ``max_length``), and the storage's ``threshold`` records that derived
+    /// value.
     ///
     /// Parameters
     /// ----------
@@ -241,11 +246,13 @@ impl PyCycleStorage {
     /// segment : range or tuple of int
     ///     A half-open range of sample indices, given as a Python ``range`` or
     ///     a ``(start, stop)`` integer tuple.
-    /// threshold : float
-    ///     The largest endpoint distance admitted as a cycle. Must be at least
-    ///     the embedded trajectory's ``bound``.
     /// max_length : int
     ///     The largest cycle point count to detect. Must be at least ``2``.
+    /// threshold : float, optional
+    ///     The largest endpoint distance admitted as a cycle. Must be at least
+    ///     the embedded trajectory's ``bound``. When omitted, detection runs at
+    ///     the largest threshold strictly below the segment's empirical
+    ///     adjacency bound.
     ///
     /// Returns
     /// -------
@@ -257,27 +264,33 @@ impl PyCycleStorage {
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if the segment indices are out
     ///     of bounds, if ``max_length`` is less than ``2``, if ``threshold`` is
-    ///     below the embedded trajectory's ``bound``, or if a detected cycle's
-    ///     consecutive or endpoint points fall in non-adjacent cubes.
+    ///     below the embedded trajectory's ``bound``, if no threshold admits a
+    ///     recurrence in ``segment`` (only possible when ``threshold`` is
+    ///     omitted), or if a detected cycle's consecutive or endpoint points
+    ///     fall in non-adjacent cubes.
     #[staticmethod]
+    #[pyo3(signature = (embedded, segment, max_length, threshold=None))]
     fn build(
         py: Python<'_>,
         embedded: &Bound<'_, PyEmbeddedTrajectory>,
         segment: &Bound<'_, PyAny>,
-        threshold: f64,
         max_length: usize,
+        threshold: Option<f64>,
     ) -> PyResult<Self> {
         let range = segment_from_py(segment)?;
         let embedded_ref = &embedded.borrow().inner;
         let inner = py
-            .detach(move || {
-                CycleStorage::build(
+            .detach(move || match threshold {
+                Some(threshold) => CycleStorage::build_with_threshold(
                     embedded_ref,
                     range,
                     threshold,
                     max_length,
                     &ExecutionBackend::Rayon,
-                )
+                ),
+                None => {
+                    CycleStorage::build(embedded_ref, range, max_length, &ExecutionBackend::Rayon)
+                },
             })
             .map_err(to_pyerr)?;
         Ok(Self { inner })
@@ -310,15 +323,35 @@ impl PyCycleStorage {
         self.inner.fingerprint()
     }
 
-    /// Returns the adjacency threshold used when building this storage.
+    /// Returns the inclusive upper end of this storage's valid query band (the
+    /// effective adjacency threshold used when building it).
     ///
     /// Returns
     /// -------
     /// float
-    ///     The endpoint-distance threshold passed to ``build``.
+    ///     The threshold detection ran at, whether passed explicitly or
+    ///     derived from the segment's empirical adjacency bound.
     #[must_use]
     fn threshold(&self) -> f64 {
         self.inner.threshold()
+    }
+
+    /// Returns the empirical adjacency bound of the band this storage was
+    /// built over.
+    ///
+    /// The bound is the smallest metric distance between two candidate
+    /// endpoint samples in the build's segment whose cubes are not adjacent.
+    /// ``threshold`` is always strictly below this value, except when the
+    /// bound is infinite, where ``threshold`` is ``sys.float_info.max``.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///     The adjacency bound; ``math.inf`` when every candidate pair was
+    ///     adjacent.
+    #[must_use]
+    fn adjacency_bound(&self) -> f64 {
+        self.inner.adjacency_bound()
     }
 
     /// Returns the maximum cycle point count used when building this storage.

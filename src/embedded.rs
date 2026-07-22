@@ -16,7 +16,7 @@ use walker::{for_each_cycle_edge, walk_and_canonicalize};
 use crate::{
     F2Vector,
     cover::{CubicalCover, floor_to_cube},
-    distance::{DEFAULT_TILE_WIDTH, adjacency_bound_streaming, detect_components},
+    distance::{adjacency_bound_streaming, detect_components, detection_tile_width},
     error::{Error, Result},
     metric::Metric,
     signature::CyclingSignature,
@@ -127,10 +127,7 @@ impl EmbeddedTrajectory {
         backend: &ExecutionBackend,
     ) -> Result<f64> {
         let range = normalize_segment(segment, self.trajectory.original_count())?;
-        // Tile the segment in blocks of a default width, never wider than the
-        // segment and never narrower than `max_length` (so the streaming
-        // requirement `max_length <= tile_width` holds).
-        let tile_width = DEFAULT_TILE_WIDTH.min(range.len()).max(max_length);
+        let tile_width = detection_tile_width(range.len(), max_length);
         adjacency_bound_streaming(
             &self.trajectory,
             self.metric,
@@ -839,8 +836,14 @@ mod tests {
     #[test]
     fn storage_provenance_matches_reassembled_embedded() {
         let embedded = euclidean_square_loop();
-        let storage =
-            CycleStorage::build(&embedded, .., 1.5, 4, &ExecutionBackend::Sequential).unwrap();
+        let storage = CycleStorage::build_with_threshold(
+            &embedded,
+            ..,
+            1.5,
+            4,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
 
         let mut storage_buffer = Vec::new();
         save_to_writer(&mut storage_buffer, &storage).unwrap();

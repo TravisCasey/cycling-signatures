@@ -41,6 +41,20 @@ enum TileOutcome {
 /// Default tile width for streaming banded-distance passes.
 pub(crate) const DEFAULT_TILE_WIDTH: usize = 1024;
 
+/// The tile width for a streaming banded-distance pass over a segment of
+/// `range_length` samples with cycle-length cap `max_length`.
+///
+/// Never wider than the segment and never narrower than `max_length`, so the
+/// streaming requirement `max_length <= tile_width` holds. Every streaming
+/// pass over the same segment and cap must use this exact width: two passes
+/// (an adjacency-bound sweep and a detection pass, or two detection passes)
+/// tile identically only when they agree on this value, which is what makes
+/// their results (in particular, an adjacency bound computed in one pass and
+/// reproduced as the piggybacked minimum of another) comparable.
+pub(crate) fn detection_tile_width(range_length: usize, max_length: usize) -> usize {
+    DEFAULT_TILE_WIDTH.min(range_length).max(max_length)
+}
+
 /// Lays out tile column ranges across `range` with stride `tile_width -
 /// (max_length - 1)`. The last tile is right-clipped to the extent; all
 /// preceding tiles have full width.

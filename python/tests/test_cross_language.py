@@ -19,7 +19,7 @@ def test_load_rust_fixture_and_query():
 
 def test_provenance_fingerprint_comparison():
     euclidean = _load(cs.Euclidean())
-    storage = cs.CycleStorage.build(euclidean, range(0, 201), 1.0, 201)
+    storage = cs.CycleStorage.build(euclidean, range(0, 201), 201, threshold=1.0)
     assert storage.fingerprint() == euclidean.fingerprint()
 
 

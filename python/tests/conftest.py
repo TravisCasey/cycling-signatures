@@ -36,4 +36,4 @@ def square_loop_embedded(square_loop_points):
 def square_loop_storage(square_loop_embedded, square_loop_points):
     """A ``CycleStorage`` built over the whole square loop at threshold 1.0."""
     count = square_loop_points.shape[0]
-    return cs.CycleStorage.build(square_loop_embedded, range(count), 1.0, count)
+    return cs.CycleStorage.build(square_loop_embedded, range(count), count, threshold=1.0)

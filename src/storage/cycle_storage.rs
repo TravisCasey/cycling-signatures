@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::serialization::{load_from_path, save_to_path};
 use crate::{
     EmbeddedTrajectory, F2Subspace, F2Vector,
-    distance::{DEFAULT_TILE_WIDTH, detect_components_streaming},
+    distance::{adjacency_bound_streaming, detect_components_streaming, detection_tile_width},
     error::{Error, Result},
     storage::interval_subsumption::IntervalSubsumptionIndex,
     util::range::normalize_segment,
@@ -126,6 +126,7 @@ pub struct CycleStorage {
     extent: Range<u32>,
     max_length: u32,
     threshold: f64,
+    adjacency_bound: f64,
     num_generators: usize,
     classes: Vec<F2Vector>,
     components: Vec<Component>,
@@ -133,10 +134,74 @@ pub struct CycleStorage {
 }
 
 impl CycleStorage {
-    /// Builds the storage by running cycle detection over `segment`, walking
-    /// one representative cycle per surviving component to obtain its
-    /// homology class, computing per-cycle birth distance, applying class
-    /// deduplication, and assembling the segment-containment index.
+    /// Builds the storage by running cycle detection over `segment` at the
+    /// largest threshold that keeps every admitted candidate pair in adjacent
+    /// cubes.
+    ///
+    /// Runs the segment's whole-band empirical adjacency bound sweep, then
+    /// detects cycles at the largest threshold strictly below that bound
+    /// (its [`next_down`](f64::next_down)). The returned storage's
+    /// [`threshold`](Self::threshold) is that effective threshold, and
+    /// [`adjacency_bound`](Self::adjacency_bound) records the bound itself.
+    /// For an explicit threshold instead, use
+    /// [`build_with_threshold`](Self::build_with_threshold).
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::WindowOutOfBounds`] if `segment` does not fit inside
+    ///   `0..embedded.trajectory().original_count()`.
+    /// - [`Error::InvalidMaxLength`] if `max_length < 2`.
+    /// - [`Error::EmptyThresholdBand`] if the segment's empirical adjacency
+    ///   bound does not exceed `embedded.bound()`: no threshold admits a
+    ///   recurrence there.
+    /// - [`Error::CycleEndpointsNonAdjacent`] from
+    ///   [`EmbeddedTrajectory::cycle_class`] when walking a component
+    ///   representative.
+    /// - [`Error::ConsecutiveCubesNonAdjacent`] from
+    ///   [`EmbeddedTrajectory::cycle_class`] when walking a component
+    ///   representative on an `EmbeddedTrajectory` constructed via
+    ///   [`EmbeddedTrajectory::from_parts`] with adjacency violations.
+    pub fn build(
+        embedded: &EmbeddedTrajectory,
+        segment: impl RangeBounds<usize>,
+        max_length: usize,
+        backend: &ExecutionBackend,
+    ) -> Result<Self> {
+        let range = normalize_segment(segment, embedded.trajectory().original_count())?;
+        if max_length < 2 {
+            return Err(Error::InvalidMaxLength { max_length });
+        }
+
+        let tile_width = detection_tile_width(range.len(), max_length);
+        let empirical_bound = adjacency_bound_streaming(
+            embedded.trajectory(),
+            embedded.metric(),
+            range.clone(),
+            max_length,
+            tile_width,
+            backend,
+        )?;
+        if empirical_bound <= embedded.bound() {
+            return Err(Error::EmptyThresholdBand {
+                trajectory_bound: embedded.bound(),
+                adjacency_bound: empirical_bound,
+            });
+        }
+
+        Self::assemble(
+            embedded,
+            range,
+            empirical_bound.next_down(),
+            max_length,
+            backend,
+        )
+    }
+
+    /// Builds the storage by running cycle detection over `segment` at an
+    /// explicit adjacency threshold, walking one representative cycle per
+    /// surviving component to obtain its homology class, computing per-cycle
+    /// birth distance, applying class deduplication, and assembling the
+    /// segment-containment index.
     ///
     /// # Errors
     ///
@@ -155,10 +220,36 @@ impl CycleStorage {
     ///   [`EmbeddedTrajectory::cycle_class`] when walking a component
     ///   representative on an `EmbeddedTrajectory` constructed via
     ///   [`EmbeddedTrajectory::from_parts`] with adjacency violations.
-    #[allow(clippy::missing_panics_doc)]
-    pub fn build(
+    pub fn build_with_threshold(
         embedded: &EmbeddedTrajectory,
         segment: impl RangeBounds<usize>,
+        threshold: f64,
+        max_length: usize,
+        backend: &ExecutionBackend,
+    ) -> Result<Self> {
+        embedded.check_threshold(threshold)?;
+        let range = normalize_segment(segment, embedded.trajectory().original_count())?;
+        if max_length < 2 {
+            return Err(Error::InvalidMaxLength { max_length });
+        }
+
+        Self::assemble(embedded, range, threshold, max_length, backend)
+    }
+
+    /// Shared assembly path for [`build`](Self::build) and
+    /// [`build_with_threshold`](Self::build_with_threshold): runs cycle
+    /// detection over the already-validated `range` at `threshold`, then
+    /// walks representatives, computes births, deduplicates classes, and
+    /// builds the containment index.
+    ///
+    /// `range` must already be normalized and `max_length` already validated
+    /// as at least 2; `threshold` must already be at least the embedded
+    /// trajectory's consecutive-distance bound and strictly below every
+    /// non-adjacent candidate pair's distance in `range`.
+    #[allow(clippy::missing_panics_doc)]
+    fn assemble(
+        embedded: &EmbeddedTrajectory,
+        range: Range<usize>,
         threshold: f64,
         max_length: usize,
         backend: &ExecutionBackend,
@@ -166,17 +257,9 @@ impl CycleStorage {
         let trajectory = embedded.trajectory();
         let metric = embedded.metric();
         let fingerprint = embedded.fingerprint();
-        embedded.check_threshold(threshold)?;
-        let range = normalize_segment(segment, trajectory.original_count())?;
-        if max_length < 2 {
-            return Err(Error::InvalidMaxLength { max_length });
-        }
 
-        // Tile the segment in blocks of a default width, never wider than the
-        // segment and never narrower than `max_length` (so the streaming
-        // requirement `max_length <= tile_width` holds).
-        let tile_width = DEFAULT_TILE_WIDTH.min(range.len()).max(max_length);
-        let (raw_components, _adjacency_bound) = detect_components_streaming(
+        let tile_width = detection_tile_width(range.len(), max_length);
+        let (raw_components, adjacency_bound) = detect_components_streaming(
             trajectory,
             metric,
             range.clone(),
@@ -259,6 +342,7 @@ impl CycleStorage {
                 ..u32::try_from(range.end).expect("extent end exceeds u32::MAX"),
             max_length: u32::try_from(max_length).expect("cycle length cap exceeds u32::MAX"),
             threshold,
+            adjacency_bound,
             num_generators,
             classes,
             components,
@@ -278,10 +362,23 @@ impl CycleStorage {
         self.fingerprint
     }
 
-    /// Adjacency threshold the storage was built with.
+    /// Inclusive upper end of the storage's valid query band (the effective
+    /// detection threshold).
     #[must_use]
     pub fn threshold(&self) -> f64 {
         self.threshold
+    }
+
+    /// The empirical adjacency bound of the band this storage was built
+    /// over: the smallest metric distance between two candidate endpoint
+    /// samples in the build's segment whose cubes are not adjacent, or
+    /// positive infinity if every candidate pair was adjacent.
+    ///
+    /// [`threshold`](Self::threshold) is always strictly below this value
+    /// (or, for an infinite bound, equal to [`f64::MAX`]).
+    #[must_use]
+    pub fn adjacency_bound(&self) -> f64 {
+        self.adjacency_bound
     }
 
     /// Cycle-length cap (point count) the storage was built with.
@@ -395,11 +492,13 @@ impl CycleStorage {
     /// Component invariants (`coverage` bounds the cycle ranges, `class_id` is
     /// in range, cycles are non-empty) are the caller's responsibility.
     #[cfg(any(test, feature = "serde"))]
+    #[allow(clippy::too_many_arguments)]
     fn from_parts(
         fingerprint: u64,
         extent: Range<u32>,
         max_length: u32,
         threshold: f64,
+        adjacency_bound: f64,
         num_generators: usize,
         classes: Vec<F2Vector>,
         components: Vec<Component>,
@@ -420,6 +519,7 @@ impl CycleStorage {
             extent,
             max_length,
             threshold,
+            adjacency_bound,
             num_generators,
             classes,
             components,
@@ -462,6 +562,7 @@ struct CycleStorageData {
     extent: Range<u32>,
     max_length: u32,
     threshold: f64,
+    adjacency_bound: f64,
     num_generators: usize,
     classes: Vec<F2Vector>,
     components: Vec<Component>,
@@ -478,6 +579,7 @@ impl Serialize for CycleStorage {
             extent: self.extent.clone(),
             max_length: self.max_length,
             threshold: self.threshold,
+            adjacency_bound: self.adjacency_bound,
             num_generators: self.num_generators,
             classes: self.classes.clone(),
             components: self.components.clone(),
@@ -498,6 +600,7 @@ impl<'de> Deserialize<'de> for CycleStorage {
             data.extent,
             data.max_length,
             data.threshold,
+            data.adjacency_bound,
             data.num_generators,
             data.classes,
             data.components,
@@ -510,9 +613,7 @@ mod tests {
     use std::{collections::BTreeSet, ops::Range};
 
     use chomp3rs::ExecutionBackend;
-    use ndarray::Array2;
-    #[cfg(feature = "serde")]
-    use ndarray::array;
+    use ndarray::{Array2, array};
 
     use super::{Component, Cycle, CycleStorage};
     #[cfg(feature = "serde")]
@@ -545,11 +646,29 @@ mod tests {
             .unwrap()
     }
 
+    /// Builds the small 4-point Euclidean square loop, whose consecutive and
+    /// diagonal cube pairs are all adjacent: every candidate endpoint pair
+    /// within `max_length` shares an adjacent cube, so the band has no upper
+    /// constraint.
+    #[cfg(feature = "serde")]
+    fn euclidean_square_loop() -> EmbeddedTrajectory {
+        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
+            .unwrap()
+    }
+
     #[test]
     fn build_smoke() {
         let embedded = loop_trajectory();
-        let storage =
-            CycleStorage::build(&embedded, .., 1.5, 9, &ExecutionBackend::Sequential).unwrap();
+        let storage = CycleStorage::build_with_threshold(
+            &embedded,
+            ..,
+            1.5,
+            9,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
         assert!(!storage.components().is_empty());
         for component in storage.components() {
             assert!(component.cycle_count() >= 1);
@@ -566,7 +685,13 @@ mod tests {
     #[test]
     fn max_length_below_minimum_is_rejected() {
         let embedded = loop_trajectory();
-        let outcome = CycleStorage::build(&embedded, .., 1.5, 1, &ExecutionBackend::Sequential);
+        let outcome = CycleStorage::build_with_threshold(
+            &embedded,
+            ..,
+            1.5,
+            1,
+            &ExecutionBackend::Sequential,
+        );
         assert!(matches!(
             outcome,
             Err(Error::InvalidMaxLength { max_length: 1 })
@@ -580,7 +705,7 @@ mod tests {
         let embedded = loop_trajectory();
         let trajectory_bound = embedded.bound();
         let lower_threshold = trajectory_bound - 0.5;
-        let outcome = CycleStorage::build(
+        let outcome = CycleStorage::build_with_threshold(
             &embedded,
             ..,
             lower_threshold,
@@ -612,9 +737,15 @@ mod tests {
     fn max_length_behavior() {
         let embedded = loop_trajectory();
         let original_count = embedded.trajectory().original_count();
-        let small =
-            CycleStorage::build(&embedded, .., 1.5, 4, &ExecutionBackend::Sequential).unwrap();
-        let medium = CycleStorage::build(
+        let small = CycleStorage::build_with_threshold(
+            &embedded,
+            ..,
+            1.5,
+            4,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+        let medium = CycleStorage::build_with_threshold(
             &embedded,
             ..,
             1.5,
@@ -622,7 +753,7 @@ mod tests {
             &ExecutionBackend::Sequential,
         )
         .unwrap();
-        let huge = CycleStorage::build(
+        let huge = CycleStorage::build_with_threshold(
             &embedded,
             ..,
             1.5,
@@ -646,7 +777,7 @@ mod tests {
     fn segment_signature_equivalence_with_embedded() {
         let embedded = loop_trajectory();
         let threshold = 1.5;
-        let storage = CycleStorage::build(
+        let storage = CycleStorage::build_with_threshold(
             &embedded,
             ..,
             threshold,
@@ -712,6 +843,7 @@ mod tests {
             0..100,
             10,
             1.5,
+            2.0,
             2,
             vec![class_zero.clone(), class_one.clone()],
             vec![component_zero, component_one],
@@ -750,6 +882,7 @@ mod tests {
             0..20,
             10,
             1.5,
+            2.0,
             2,
             vec![class_zero, class_one],
             vec![component_a, component_b],
@@ -764,7 +897,7 @@ mod tests {
         let embedded = loop_trajectory();
         let threshold = 1.5;
         let max_length = embedded.trajectory().original_count();
-        let storage = CycleStorage::build(
+        let storage = CycleStorage::build_with_threshold(
             &embedded,
             ..,
             threshold,
@@ -804,8 +937,14 @@ mod tests {
     #[test]
     fn loaded_fingerprint_distinguishes_embedded() {
         let embedded = loop_trajectory();
-        let storage =
-            CycleStorage::build(&embedded, .., 1.5, 9, &ExecutionBackend::Sequential).unwrap();
+        let storage = CycleStorage::build_with_threshold(
+            &embedded,
+            ..,
+            1.5,
+            9,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
         let mut buffer: Vec<u8> = Vec::new();
         save_to_writer(&mut buffer, &storage).unwrap();
 
@@ -826,5 +965,107 @@ mod tests {
         )
         .unwrap();
         assert_ne!(loaded.fingerprint(), other_embedded.fingerprint());
+    }
+
+    #[test]
+    fn build_free_and_capped_agree_at_empirical_bound() {
+        let embedded = loop_trajectory();
+        let max_length = embedded.trajectory().original_count();
+        let empirical_bound = embedded
+            .adjacency_bound(.., max_length, &ExecutionBackend::Sequential)
+            .unwrap();
+
+        let free =
+            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
+        let capped = CycleStorage::build_with_threshold(
+            &embedded,
+            ..,
+            empirical_bound.next_down(),
+            max_length,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        // Both paths derive from the same deterministic pipeline (the free
+        // path's threshold is exactly the capped path's input, and both report
+        // the same pass-2 piggybacked bound), so the comparison is exact.
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(free.threshold(), capped.threshold());
+            assert_eq!(free.adjacency_bound(), capped.adjacency_bound());
+        }
+        assert_eq!(free.classes(), capped.classes());
+        assert_eq!(cycle_set(&free), cycle_set(&capped));
+    }
+
+    #[test]
+    fn build_rejects_empty_threshold_band() {
+        // Every consecutive step lands in an adjacent cube, but the smallest
+        // non-adjacent candidate pair distance (samples 0 and 2) does not
+        // exceed the trajectory's own consecutive-distance bound (samples 2
+        // and 3), so no threshold admits a recurrence.
+        let points = array![[0.501], [1.999], [2.001], [3.999]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded =
+            EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
+                .unwrap();
+
+        let outcome = CycleStorage::build(&embedded, .., 4, &ExecutionBackend::Sequential);
+        assert!(matches!(outcome, Err(Error::EmptyThresholdBand { .. })));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn build_on_unconstrained_band_is_infinite_and_round_trips() {
+        let embedded = euclidean_square_loop();
+        let storage = CycleStorage::build(&embedded, .., 4, &ExecutionBackend::Sequential).unwrap();
+
+        // Every candidate pair in this fixture is cube-adjacent, so the bound
+        // and its derived threshold take on exact sentinel values that
+        // round-trip unchanged through serde.
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(storage.adjacency_bound(), f64::INFINITY);
+            assert_eq!(storage.threshold(), f64::MAX);
+        }
+
+        let mut buffer: Vec<u8> = Vec::new();
+        save_to_writer(&mut buffer, &storage).unwrap();
+        let loaded =
+            crate::serialization::load_from_reader::<CycleStorage, _>(&buffer[..]).unwrap();
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(loaded.adjacency_bound(), f64::INFINITY);
+            assert_eq!(loaded.threshold(), f64::MAX);
+        }
+    }
+
+    #[test]
+    fn build_adjacency_bound_matches_standalone_computation() {
+        let embedded = loop_trajectory();
+        let max_length = embedded.trajectory().original_count();
+        let standalone_bound = embedded
+            .adjacency_bound(.., max_length, &ExecutionBackend::Sequential)
+            .unwrap();
+
+        let free =
+            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
+
+        let capped = CycleStorage::build_with_threshold(
+            &embedded,
+            ..,
+            standalone_bound.next_down(),
+            max_length,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        // Both builds' pass-2 piggybacked minimum equals the standalone
+        // pass-1 sweep exactly: same pair set, same pure minimum.
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(free.adjacency_bound(), standalone_bound);
+            assert_eq!(capped.adjacency_bound(), standalone_bound);
+        }
     }
 }

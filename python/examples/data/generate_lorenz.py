@@ -48,7 +48,9 @@ def build() -> Path:
     trajectory = cs.Trajectory.resample(interpolator, metric, RESAMPLE_BOUND)
 
     embedded = cs.EmbeddedTrajectory(trajectory, metric)
-    storage = cs.CycleStorage.build(embedded, range(0, sample_count), THRESHOLD, MAX_LENGTH)
+    storage = cs.CycleStorage.build(
+        embedded, range(0, sample_count), MAX_LENGTH, threshold=THRESHOLD
+    )
     target = raw_path.parent / "lorenz_storage.cyc"
     storage.save(target)
     return target
