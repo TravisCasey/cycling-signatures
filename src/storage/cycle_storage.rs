@@ -212,7 +212,7 @@ impl CycleStorage {
         let points = trajectory.points();
         let original_indices = trajectory.original_indices();
         let mut components: Vec<Component> = Vec::with_capacity(raw_components.len());
-        let mut all_cycle_records: Vec<(Range<u32>, u32)> = Vec::new();
+        let mut all_cycle_records: Vec<(Range<u32>, u32, f64)> = Vec::new();
 
         for (component_index, cycles) in raw_components.into_iter().enumerate() {
             let mut cycle_records: Vec<Cycle> = Vec::with_capacity(cycles.len());
@@ -230,6 +230,7 @@ impl CycleStorage {
                 all_cycle_records.push((
                     range_u32,
                     u32::try_from(component_index).expect("component count exceeds u32::MAX"),
+                    birth,
                 ));
             }
             let coverage_start = cycle_records
@@ -403,12 +404,13 @@ impl CycleStorage {
         classes: Vec<F2Vector>,
         components: Vec<Component>,
     ) -> Self {
-        let mut all_cycle_records: Vec<(Range<u32>, u32)> = Vec::new();
+        let mut all_cycle_records: Vec<(Range<u32>, u32, f64)> = Vec::new();
         for (component_index, component) in components.iter().enumerate() {
             for cycle in &component.cycles {
                 all_cycle_records.push((
                     cycle.range.clone(),
                     u32::try_from(component_index).expect("component count exceeds u32::MAX"),
+                    cycle.birth,
                 ));
             }
         }
