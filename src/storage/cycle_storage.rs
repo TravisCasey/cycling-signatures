@@ -11,14 +11,13 @@ use std::{
 };
 
 use chomp3rs::ExecutionBackend;
-use rustc_hash::FxHashSet;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "serde")]
 use crate::serialization::{load_from_path, save_to_path};
 use crate::{
-    EmbeddedTrajectory, F2Subspace, F2Vector,
+    CyclingSignature, EmbeddedTrajectory, F2Vector,
     distance::{adjacency_bound_streaming, detect_components_streaming, detection_tile_width},
     error::{Error, Result},
     storage::interval_subsumption::IntervalSubsumptionIndex,
@@ -425,15 +424,20 @@ impl CycleStorage {
         &self.classes[self.components[component_id].class_id as usize]
     }
 
-    /// The `F_2` subspace spanned by classes of all components having at least
-    /// one stored cycle whose range is fully contained in `segment`.
+    /// The filtered cycling signature spanned by classes of all components
+    /// having at least one stored cycle whose range is fully contained in
+    /// `segment`.
+    ///
+    /// Each contributing component's birth is the minimum birth over its
+    /// cycles contained in `segment`; the signature is complete up to
+    /// [`Self::threshold`].
     ///
     /// # Errors
     ///
     /// [`Error::WindowOutOfBounds`] if `segment` does not fit inside
     /// [`Self::extent`].
     #[allow(clippy::missing_panics_doc)]
-    pub fn signature(&self, segment: impl RangeBounds<usize>) -> Result<F2Subspace> {
+    pub fn signature(&self, segment: impl RangeBounds<usize>) -> Result<CyclingSignature> {
         let range = normalize_segment(segment, self.extent.end as usize)?;
         if (range.start as u32) < self.extent.start {
             return Err(Error::WindowOutOfBounds {
@@ -444,16 +448,42 @@ impl CycleStorage {
         }
         let query = (range.start as u32)..(range.end as u32);
 
-        let mut seen: FxHashSet<u32> = FxHashSet::default();
-        let mut vectors: Vec<F2Vector> = Vec::new();
-        for stored in self.index.contained_in(query) {
-            if seen.insert(stored.payload) {
-                let component = &self.components[stored.payload as usize];
-                vectors.push(self.classes[component.class_id as usize].clone());
+        // One candidate per contributing component at its minimum finite
+        // birth, in ascending component id: sorting by component id keeps
+        // candidate order deterministic and independent of the index's
+        // (begin, end) iteration order, and the finiteness filter drops
+        // components with no finite birth before the fold (a lone non-finite
+        // birth must not survive as a candidate).
+        let mut admitted: Vec<(u32, f64)> = self
+            .index
+            .contained_in(query)
+            .map(|stored| (stored.payload, stored.birth))
+            .filter(|(_, birth)| birth.is_finite())
+            .collect();
+        admitted.sort_unstable_by_key(|&(component_id, _)| component_id);
+        let mut component_minima: Vec<(u32, f64)> = Vec::new();
+        for (component_id, birth) in admitted {
+            match component_minima.last_mut() {
+                Some((last_component_id, last_birth)) if *last_component_id == component_id => {
+                    *last_birth = last_birth.min(birth);
+                },
+                _ => component_minima.push((component_id, birth)),
             }
         }
-        Ok(F2Subspace::new(vectors, self.num_generators)
-            .expect("class vector lengths match num_generators by construction"))
+        let candidates = component_minima
+            .into_iter()
+            .map(|(component_id, birth)| {
+                (
+                    birth,
+                    self.classes[self.components[component_id as usize].class_id as usize].clone(),
+                )
+            })
+            .collect();
+        Ok(CyclingSignature::from_candidates(
+            candidates,
+            self.num_generators,
+            self.threshold,
+        ))
     }
 
     /// Component IDs whose stored cycles cover sample index `point`.
@@ -616,9 +646,9 @@ mod tests {
     use ndarray::{Array2, array};
 
     use super::{Component, Cycle, CycleStorage};
-    #[cfg(feature = "serde")]
-    use crate::serialization::save_to_writer;
     use crate::{EmbeddedTrajectory, F2Vector, Trajectory, error::Error, metric::Metric};
+    #[cfg(feature = "serde")]
+    use crate::{SignatureGenerator, serialization::save_to_writer};
 
     /// Builds an embedded 2D trajectory that traces a recurrent loop around a
     /// missing center cube, then returns near its starting point. The cubical
@@ -774,29 +804,79 @@ mod tests {
     }
 
     #[test]
-    fn segment_signature_equivalence_with_embedded() {
+    fn signature_rank_and_span_agree_with_embedded_across_thresholds() {
+        // Path agreement: filtering a threshold-free storage's signature down
+        // to a threshold `t` must report the same rank and span as detecting
+        // cycles directly at `t` through the in-memory walker, for every
+        // segment and every threshold inside the valid band.
         let embedded = loop_trajectory();
-        let threshold = 1.5;
-        let storage = CycleStorage::build_with_threshold(
-            &embedded,
-            ..,
-            threshold,
-            embedded.trajectory().original_count(),
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let max_length = embedded.trajectory().original_count();
+        let storage =
+            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
+        let trajectory_bound = embedded.bound();
+        let band_top = storage.threshold();
 
-        // Several segments; each should produce the same span via the
-        // in-memory walker path and the storage path.
-        let segments: &[Range<usize>] =
-            &[0..embedded.trajectory().original_count(), 0..4, 4..9, 2..7];
+        let segments: &[Range<usize>] = &[0..max_length, 0..4, 4..9, 2..7];
+        let thresholds = [
+            trajectory_bound,
+            f64::midpoint(trajectory_bound, band_top),
+            band_top,
+        ];
+
         for segment in segments {
-            let embedded_span = embedded
-                .signature_with_threshold(segment.clone(), threshold)
-                .unwrap();
-            let storage_span = storage.signature(segment.clone()).unwrap();
-            assert_eq!(embedded_span.span(), &storage_span, "segment {segment:?}");
+            let storage_signature = storage.signature(segment.clone()).unwrap();
+            for &threshold in &thresholds {
+                let embedded_signature = embedded
+                    .signature_with_threshold(segment.clone(), threshold)
+                    .unwrap();
+                assert_eq!(
+                    storage_signature.rank_at(threshold).unwrap(),
+                    embedded_signature.rank(),
+                    "rank mismatch for segment {segment:?} at threshold {threshold}"
+                );
+                let storage_span = storage_signature.span_at(threshold).unwrap();
+                assert_eq!(
+                    &storage_span,
+                    embedded_signature.span(),
+                    "span mismatch for segment {segment:?} at threshold {threshold}"
+                );
+            }
         }
+    }
+
+    #[test]
+    fn window_signature_reports_per_component_minimum_birth() {
+        // Component 0 has two cycles: the wide [10, 60) at birth 0.1 and the
+        // narrow [40, 45) at birth 0.5. The container survives the
+        // birth-aware subsumption dedup because its birth (0.1) is smaller
+        // than that of the interval it contains (0.5). A window admitting
+        // both cycles reports the smaller birth; a window admitting only the
+        // narrow cycle reports its own, larger birth.
+        let class = F2Vector::from_nonzero(1, [0]);
+        let component = Component {
+            class_id: 0,
+            coverage: 10..60,
+            cycles: vec![
+                Cycle {
+                    range: 10..60,
+                    birth: 0.1,
+                },
+                Cycle {
+                    range: 40..45,
+                    birth: 0.5,
+                },
+            ],
+        };
+        let storage =
+            CycleStorage::from_parts(0, 0..100, 60, 1.5, 2.0, 1, vec![class], vec![component]);
+
+        let wide = storage.signature(0..100).unwrap();
+        assert_eq!(wide.generators().len(), 1);
+        assert!((wide.generators()[0].birth() - 0.1).abs() < 1e-12);
+
+        let narrow = storage.signature(35..50).unwrap();
+        assert_eq!(narrow.generators().len(), 1);
+        assert!((narrow.generators()[0].birth() - 0.5).abs() < 1e-12);
     }
 
     #[test]
@@ -918,10 +998,36 @@ mod tests {
         let segments: &[Range<usize>] =
             &[0..embedded.trajectory().original_count(), 0..4, 4..9, 2..7];
         for segment in segments {
+            // `CyclingSignature` has no equality of its own, so compare its
+            // full-band span, its per-generator births, and its band top
+            // instead.
+            let signature = storage.signature(segment.clone()).unwrap();
+            let loaded_signature = loaded_storage.signature(segment.clone()).unwrap();
             assert_eq!(
-                storage.signature(segment.clone()).unwrap(),
-                loaded_storage.signature(segment.clone()).unwrap(),
-                "signature differs after round-trip for segment {segment:?}",
+                signature.span(),
+                loaded_signature.span(),
+                "span differs after round-trip for segment {segment:?}",
+            );
+            let births: Vec<f64> = signature
+                .generators()
+                .iter()
+                .map(SignatureGenerator::birth)
+                .collect();
+            let loaded_births: Vec<f64> = loaded_signature
+                .generators()
+                .iter()
+                .map(SignatureGenerator::birth)
+                .collect();
+            assert_eq!(
+                births, loaded_births,
+                "births differ after round-trip for segment {segment:?}",
+            );
+            assert!(
+                signature
+                    .threshold_max()
+                    .total_cmp(&loaded_signature.threshold_max())
+                    .is_eq(),
+                "band top differs after round-trip for segment {segment:?}",
             );
         }
         for point in 0..embedded.trajectory().original_count() {

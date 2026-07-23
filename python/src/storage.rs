@@ -11,8 +11,9 @@ use pyo3::{exceptions::PyIndexError, prelude::*};
 use crate::{
     embedded::PyEmbeddedTrajectory,
     errors::to_pyerr,
-    homology::{PyHomologyClass, PySubspace},
+    homology::PyHomologyClass,
     segment::{resolve_index, segment_from_py},
+    signature::PyCyclingSignature,
 };
 
 /// A single detected near-recurrent cycle in a trajectory.
@@ -476,11 +477,12 @@ impl PyCycleStorage {
         })
     }
 
-    /// Returns the subspace spanned by the classes of all components with a
-    /// stored cycle fully contained in ``segment``.
+    /// Returns the filtered cycling signature spanned by the classes of all
+    /// components with a stored cycle fully contained in ``segment``.
     ///
-    /// Each contributing component adds its class once, so a component with
-    /// several contained cycles is not counted more than once.
+    /// Each contributing component adds its class once, with birth equal to
+    /// the minimum birth over its cycles contained in ``segment``, so a
+    /// component with several contained cycles is not counted more than once.
     ///
     /// Parameters
     /// ----------
@@ -490,18 +492,18 @@ impl PyCycleStorage {
     ///
     /// Returns
     /// -------
-    /// ``Subspace``
-    ///     The cycle space spanned over the segment.
+    /// ``CyclingSignature``
+    ///     The filtered cycling signature over the segment.
     ///
     /// Raises
     /// ------
     /// ``ValueError``
     ///     If ``segment`` is not a valid range or if it falls outside the
     ///     stored extent.
-    fn signature(&self, segment: &Bound<'_, PyAny>) -> PyResult<PySubspace> {
+    fn signature(&self, segment: &Bound<'_, PyAny>) -> PyResult<PyCyclingSignature> {
         let range = segment_from_py(segment)?;
-        let subspace = self.inner.signature(range).map_err(to_pyerr)?;
-        Ok(PySubspace { inner: subspace })
+        let signature = self.inner.signature(range).map_err(to_pyerr)?;
+        Ok(PyCyclingSignature { inner: signature })
     }
 
     /// Returns the ids of all components with a stored cycle covering the

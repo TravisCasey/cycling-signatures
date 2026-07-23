@@ -59,7 +59,7 @@ extent_start, extent_stop = STORAGE.extent()
 
 frequency: Counter[cs.Subspace] = Counter()
 for window_start in range(extent_start, extent_stop - LIBRARY_LENGTH + 1, LIBRARY_STEP):
-    subspace = STORAGE.signature(range(window_start, window_start + LIBRARY_LENGTH))
+    subspace = STORAGE.signature(range(window_start, window_start + LIBRARY_LENGTH)).span()
     if subspace.rank() != 0:
         frequency[subspace] += 1
 
@@ -87,7 +87,7 @@ for row_index, length in enumerate(WINDOW_LENGTHS):
     for col_index, time in enumerate(column_times):
         if time + length > extent_stop:
             continue
-        subspace = STORAGE.signature(range(time, time + length))
+        subspace = STORAGE.signature(range(time, time + length)).span()
         labels[row_index, col_index] = library_index.get(subspace, -1)
 
 # %%

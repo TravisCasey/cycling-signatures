@@ -59,7 +59,7 @@ def test_value_type_reprs(square_loop_storage, square_loop_embedded, square_loop
         f"birth={cycle.birth()!r}, length={cycle.length()})"
     )
     assert repr(storage.classes()[0]) == "HomologyClass(generators=1, set={0})"
-    assert repr(storage.signature((0, count))) == "Subspace(rank=1, generators=1)"
+    assert repr(storage.signature((0, count))) == "CyclingSignature(rank=1, threshold_max=1.0)"
     assert (
         repr(storage[0])
         == f"Component(class_id=0, coverage=(0, {count}), cycles={len(storage[0])})"
@@ -77,7 +77,7 @@ def test_equatable_types_hash_consistently_with_equality(
     # set.
     pairs = [
         (storage.classes()[0], storage.homology_class(0)),
-        (storage.signature((0, count)), storage.signature((0, count))),
+        (storage.signature((0, count)).span(), storage.signature((0, count)).span()),
     ]
     for left, right in pairs:
         assert left == right

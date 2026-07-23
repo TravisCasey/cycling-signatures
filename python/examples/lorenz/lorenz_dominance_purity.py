@@ -90,7 +90,7 @@ extent_start, extent_stop = STORAGE.extent()
 
 frequency: Counter[cs.Subspace] = Counter()
 for window_start in range(extent_start, extent_stop - WINDOW_LENGTH + 1, LIBRARY_SCAN_STEP):
-    subspace = STORAGE.signature(range(window_start, window_start + WINDOW_LENGTH))
+    subspace = STORAGE.signature(range(window_start, window_start + WINDOW_LENGTH)).span()
     if subspace.rank() != 0:
         frequency[subspace] += 1
 
@@ -107,7 +107,7 @@ labeled_stop = extent_stop - WINDOW_LENGTH
 labeled_samples = np.arange(extent_start, labeled_stop)
 labeled_values = np.array(
     [
-        library_index.get(STORAGE.signature(range(sample, sample + WINDOW_LENGTH)), -1)
+        library_index.get(STORAGE.signature(range(sample, sample + WINDOW_LENGTH)).span(), -1)
         for sample in labeled_samples
     ],
     dtype=np.int32,

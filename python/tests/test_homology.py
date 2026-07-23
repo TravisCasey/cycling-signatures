@@ -1,16 +1,16 @@
-def test_subspace_basis_round_trips_to_homology_classes(square_loop_storage):
+def test_signature_span_basis_round_trips_to_homology_classes(square_loop_storage):
     start, stop = square_loop_storage.extent()
-    subspace = square_loop_storage.signature((start, stop))
+    signature = square_loop_storage.signature((start, stop))
     # The loop spans one class, so its basis is exactly that stored class.
-    assert subspace.rank() == 1
-    assert subspace.basis() == [square_loop_storage.classes()[0]]
+    assert signature.rank() == 1
+    assert signature.span().basis() == [square_loop_storage.classes()[0]]
 
 
-def test_trivial_subspace_has_empty_basis(square_loop_storage):
+def test_trivial_signature_has_empty_basis(square_loop_storage):
     # A single-sample window encloses no cycle, so its signature is trivial.
     trivial = square_loop_storage.signature((0, 1))
     assert trivial.rank() == 0
-    assert trivial.basis() == []
+    assert trivial.span().basis() == []
 
 
 def test_homology_class_is_zero(square_loop_storage, square_loop_embedded):

@@ -48,8 +48,9 @@ impl SignatureGenerator {
 /// homology spanned by its recurrent cycles.
 ///
 /// Constructed by
-/// [`EmbeddedTrajectory::signature`](crate::EmbeddedTrajectory::signature) or
-/// [`EmbeddedTrajectory::signature_with_threshold`](crate::EmbeddedTrajectory::signature_with_threshold).
+/// [`EmbeddedTrajectory::signature`](crate::EmbeddedTrajectory::signature),
+/// [`EmbeddedTrajectory::signature_with_threshold`](crate::EmbeddedTrajectory::signature_with_threshold),
+/// or [`CycleStorage::signature`](crate::CycleStorage::signature).
 /// [`span`](Self::span) and [`rank`](Self::rank) report the full band;
 /// [`span_at`](Self::span_at) and [`rank_at`](Self::rank_at) restrict to a
 /// smaller threshold, up to [`threshold_max`](Self::threshold_max).
