@@ -18,7 +18,7 @@ use crate::{
 ///
 /// ``span`` is the full-band subspace, complete up to ``threshold_max``;
 /// ``span_at`` and ``rank_at`` restrict to a smaller threshold. ``births``
-/// and ``generators`` give the per-generator breakdown, aligned by index.
+/// and ``classes`` give the per-generator breakdown, aligned by index.
 #[pyclass(name = "CyclingSignature")]
 pub(crate) struct PyCyclingSignature {
     pub(crate) inner: CyclingSignature,
@@ -101,7 +101,7 @@ impl PyCyclingSignature {
     /// Returns
     /// -------
     /// list of float
-    ///     One birth per generator, aligned by index with ``generators``.
+    ///     One birth per generator, aligned by index with ``classes``.
     #[must_use]
     fn births(&self) -> Vec<f64> {
         self.inner
@@ -118,7 +118,7 @@ impl PyCyclingSignature {
     /// list of ``HomologyClass``
     ///     One class per generator, aligned by index with ``births``.
     #[must_use]
-    fn generators(&self) -> Vec<PyHomologyClass> {
+    fn classes(&self) -> Vec<PyHomologyClass> {
         self.inner
             .generators()
             .iter()

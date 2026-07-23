@@ -10,7 +10,7 @@ def test_signature_of_square_loop(square_loop_points):
     embedded = cs.EmbeddedTrajectory(cs.Trajectory(square_loop_points), cs.Euclidean())
     signature = embedded.signature(range(0, square_loop_points.shape[0]), 1.0)
     assert signature.rank() == 1
-    generator_class = signature.generators()[0]
+    generator_class = signature.classes()[0]
     assert signature.span().contains(generator_class)
 
 
