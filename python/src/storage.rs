@@ -265,10 +265,12 @@ impl PyCycleStorage {
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if the segment indices are out
     ///     of bounds, if ``max_length`` is less than ``2``, if ``threshold`` is
-    ///     below the embedded trajectory's ``bound``, if no threshold admits a
-    ///     recurrence in ``segment`` (only possible when ``threshold`` is
-    ///     omitted), or if a detected cycle's consecutive or endpoint points
-    ///     fall in non-adjacent cubes.
+    ///     below the embedded trajectory's ``bound``, if ``threshold`` admits
+    ///     an endpoint pair in non-adjacent cubes (at or above the segment's
+    ///     empirical adjacency bound), if no threshold admits a recurrence in
+    ///     ``segment`` (only possible when ``threshold`` is omitted), or if a
+    ///     detected cycle's consecutive or endpoint points fall in
+    ///     non-adjacent cubes.
     #[staticmethod]
     #[pyo3(signature = (embedded, segment, max_length, threshold=None))]
     fn build(

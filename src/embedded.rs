@@ -6,7 +6,7 @@
 
 mod walker;
 
-use std::ops::RangeBounds;
+use std::ops::{Range, RangeBounds};
 #[cfg(feature = "serde")]
 use std::path::Path;
 
@@ -148,6 +148,47 @@ impl EmbeddedTrajectory {
             });
         }
         Ok(())
+    }
+
+    /// The effective detection threshold for a threshold-free query over an
+    /// already-normalized `range`: the largest threshold that keeps every
+    /// candidate endpoint pair within `max_length` in adjacent cubes.
+    ///
+    /// Runs `range`'s empirical adjacency-bound sweep over candidate pairs
+    /// within `max_length`, then returns the largest threshold strictly below
+    /// that bound (its [`next_down`](f64::next_down)). Both
+    /// [`signature`](Self::signature) and
+    /// [`CycleStorage::build`](crate::CycleStorage::build) share this policy;
+    /// this is their common implementation.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::EmptyThresholdBand`] if `range`'s empirical adjacency bound
+    ///   does not exceed [`bound`](Self::bound): no threshold admits a
+    ///   recurrence there.
+    /// - Any error from the underlying adjacency-bound sweep.
+    pub(crate) fn threshold_free_detection_threshold(
+        &self,
+        range: Range<usize>,
+        max_length: usize,
+        backend: &ExecutionBackend,
+    ) -> Result<f64> {
+        let tile_width = detection_tile_width(range.len(), max_length);
+        let empirical_bound = adjacency_bound_streaming(
+            &self.trajectory,
+            self.metric,
+            range,
+            max_length,
+            tile_width,
+            backend,
+        )?;
+        if empirical_bound <= self.bound {
+            return Err(Error::EmptyThresholdBand {
+                trajectory_bound: self.bound,
+                adjacency_bound: empirical_bound,
+            });
+        }
+        Ok(empirical_bound.next_down())
     }
 
     /// The wrapped cover.
@@ -477,15 +518,12 @@ impl EmbeddedTrajectory {
     ///   cubes differ by more than 1 in some axis.
     pub fn signature(&self, segment: impl RangeBounds<usize>) -> Result<CyclingSignature> {
         let range = normalize_segment(segment, self.trajectory.original_count())?;
-        let adjacency_bound =
-            self.adjacency_bound(range.clone(), range.len(), &ExecutionBackend::Sequential)?;
-        if adjacency_bound <= self.bound {
-            return Err(Error::EmptyThresholdBand {
-                trajectory_bound: self.bound,
-                adjacency_bound,
-            });
-        }
-        self.signature_with_threshold(range, adjacency_bound.next_down())
+        let threshold = self.threshold_free_detection_threshold(
+            range.clone(),
+            range.len(),
+            &ExecutionBackend::Sequential,
+        )?;
+        self.signature_with_threshold(range, threshold)
     }
 }
 

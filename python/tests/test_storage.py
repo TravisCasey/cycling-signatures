@@ -43,3 +43,16 @@ def test_build_with_omitted_threshold_reports_adjacency_bound(square_loop_points
     storage = cs.CycleStorage.build(embedded, range(0, count), count, threshold=None)
     assert storage.threshold() < storage.adjacency_bound()
     assert storage.signature((0, count)).rank() == 1
+
+
+def test_span_at_matches_rank_at_and_rejects_above_threshold_max(square_loop_storage):
+    signature = square_loop_storage.signature(square_loop_storage.extent())
+    interior_threshold = signature.births()[0]
+
+    assert signature.span_at(interior_threshold).rank() == signature.rank_at(interior_threshold)
+
+    threshold_max = signature.threshold_max()
+    with pytest.raises(ValueError):
+        signature.rank_at(threshold_max + 1.0)
+    with pytest.raises(ValueError):
+        signature.span_at(threshold_max + 1.0)

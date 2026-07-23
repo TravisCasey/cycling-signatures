@@ -7,7 +7,7 @@
 use std::path::Path;
 use std::{
     cmp::Reverse,
-    ops::{Range, RangeBounds},
+    ops::{Bound, Range, RangeBounds},
 };
 
 use chomp3rs::ExecutionBackend;
@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::serialization::{load_from_path, save_to_path};
 use crate::{
     CyclingSignature, EmbeddedTrajectory, F2Vector,
-    distance::{adjacency_bound_streaming, detect_components_streaming, detection_tile_width},
+    distance::{detect_components_streaming, detection_tile_width},
     error::{Error, Result},
     storage::interval_subsumption::IntervalSubsumptionIndex,
     util::range::normalize_segment,
@@ -172,36 +172,21 @@ impl CycleStorage {
             return Err(Error::InvalidMaxLength { max_length });
         }
 
-        let tile_width = detection_tile_width(range.len(), max_length);
-        let empirical_bound = adjacency_bound_streaming(
-            embedded.trajectory(),
-            embedded.metric(),
-            range.clone(),
-            max_length,
-            tile_width,
-            backend,
-        )?;
-        if empirical_bound <= embedded.bound() {
-            return Err(Error::EmptyThresholdBand {
-                trajectory_bound: embedded.bound(),
-                adjacency_bound: empirical_bound,
-            });
-        }
+        let threshold =
+            embedded.threshold_free_detection_threshold(range.clone(), max_length, backend)?;
 
-        Self::assemble(
-            embedded,
-            range,
-            empirical_bound.next_down(),
-            max_length,
-            backend,
-        )
+        Self::assemble(embedded, range, threshold, max_length, backend)
     }
 
     /// Builds the storage by running cycle detection over `segment` at an
-    /// explicit adjacency threshold, walking one representative cycle per
-    /// surviving component to obtain its homology class, computing per-cycle
-    /// birth distance, applying class deduplication, and assembling the
-    /// segment-containment index.
+    /// explicit adjacency `threshold`, storing each surviving component's
+    /// homology class and per-cycle birth.
+    ///
+    /// The returned storage's [`threshold`](Self::threshold) is `threshold`
+    /// itself, and [`adjacency_bound`](Self::adjacency_bound) records the
+    /// segment's empirical adjacency bound as provenance. For the largest
+    /// threshold that keeps every admitted candidate pair in adjacent cubes
+    /// instead of an explicit value, use [`build`](Self::build).
     ///
     /// # Errors
     ///
@@ -227,11 +212,11 @@ impl CycleStorage {
         max_length: usize,
         backend: &ExecutionBackend,
     ) -> Result<Self> {
-        embedded.check_threshold(threshold)?;
         let range = normalize_segment(segment, embedded.trajectory().original_count())?;
         if max_length < 2 {
             return Err(Error::InvalidMaxLength { max_length });
         }
+        embedded.check_threshold(threshold)?;
 
         Self::assemble(embedded, range, threshold, max_length, backend)
     }
@@ -432,7 +417,9 @@ impl CycleStorage {
     ///
     /// Each contributing component's birth is the minimum birth over its
     /// cycles contained in `segment`; the signature is complete up to
-    /// [`Self::threshold`].
+    /// [`Self::threshold`]. An unbounded start (`..end` or `..`) resolves to
+    /// [`Self::extent`]'s start rather than `0`; an explicit start below the
+    /// extent's start is out of bounds even at `0`.
     ///
     /// # Errors
     ///
@@ -440,7 +427,17 @@ impl CycleStorage {
     /// [`Self::extent`].
     #[allow(clippy::missing_panics_doc)]
     pub fn signature(&self, segment: impl RangeBounds<usize>) -> Result<CyclingSignature> {
-        let range = normalize_segment(segment, self.extent.end as usize)?;
+        let start_bound = match segment.start_bound() {
+            Bound::Unbounded => Bound::Included(self.extent.start as usize),
+            Bound::Included(&value) => Bound::Included(value),
+            Bound::Excluded(&value) => Bound::Excluded(value),
+        };
+        let end_bound = match segment.end_bound() {
+            Bound::Included(&value) => Bound::Included(value),
+            Bound::Excluded(&value) => Bound::Excluded(value),
+            Bound::Unbounded => Bound::Unbounded,
+        };
+        let range = normalize_segment((start_bound, end_bound), self.extent.end as usize)?;
         if (range.start as u32) < self.extent.start {
             return Err(Error::WindowOutOfBounds {
                 start: range.start,
@@ -982,6 +979,41 @@ mod tests {
     }
 
     #[test]
+    fn signature_unbounded_start_resolves_to_extent_start() {
+        // A storage built over a subsegment of the trajectory: `signature(..)`
+        // must resolve the unbounded start to the storage's own extent start,
+        // not to sample index 0, while an explicit `0..` still falls outside
+        // the extent and errors.
+        let embedded = loop_trajectory();
+        let sub_segment = 4_usize..9_usize;
+        let storage = CycleStorage::build(
+            &embedded,
+            sub_segment.clone(),
+            sub_segment.len(),
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        let unbounded_signature = storage.signature(..).unwrap();
+        let explicit_signature = storage.signature(sub_segment.clone()).unwrap();
+        assert_eq!(unbounded_signature.span(), explicit_signature.span());
+        let unbounded_births: Vec<f64> = unbounded_signature
+            .generators()
+            .iter()
+            .map(SignatureGenerator::birth)
+            .collect();
+        let explicit_births: Vec<f64> = explicit_signature
+            .generators()
+            .iter()
+            .map(SignatureGenerator::birth)
+            .collect();
+        assert_eq!(unbounded_births, explicit_births);
+
+        let error = storage.signature(0..sub_segment.end).unwrap_err();
+        assert!(matches!(error, Error::WindowOutOfBounds { start: 0, .. }));
+    }
+
+    #[test]
     fn window_signature_reports_per_component_minimum_birth() {
         // Component 0 has two cycles: the wide [10, 60) at birth 0.1 and the
         // narrow [40, 45) at birth 0.5. The container survives the
@@ -1014,6 +1046,47 @@ mod tests {
         let narrow = storage.signature(35..50).unwrap();
         assert_eq!(narrow.generators().len(), 1);
         assert!((narrow.generators()[0].birth() - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn signature_drops_non_finite_birth_component() {
+        // A non-finite birth only arises in a hand-assembled or deserialized
+        // storage (never one produced by `build`/`build_with_threshold`); the
+        // finiteness filter in `signature` must still exclude it from
+        // becoming a generator rather than folding infinity into a component
+        // minimum. A second, finite-birth component confirms only it survives.
+        let infinite_class = F2Vector::from_nonzero(2, [0]);
+        let finite_class = F2Vector::from_nonzero(2, [1]);
+        let infinite_component = Component {
+            class_id: 0,
+            coverage: 10..20,
+            cycles: vec![Cycle {
+                range: 10..20,
+                birth: f64::INFINITY,
+            }],
+        };
+        let finite_component = Component {
+            class_id: 1,
+            coverage: 30..40,
+            cycles: vec![Cycle {
+                range: 30..40,
+                birth: 0.5,
+            }],
+        };
+        let storage = CycleStorage::from_parts(
+            0,
+            0..100,
+            20,
+            1.5,
+            2.0,
+            2,
+            vec![infinite_class, finite_class.clone()],
+            vec![infinite_component, finite_component],
+        );
+
+        let signature = storage.signature(0..100).unwrap();
+        assert_eq!(signature.rank(), 1);
+        assert_eq!(signature.generators()[0].class(), &finite_class);
     }
 
     #[test]
@@ -1229,13 +1302,15 @@ mod tests {
         )
         .unwrap();
 
-        // Both paths derive from the same deterministic pipeline (the free
-        // path's threshold is exactly the capped path's input, and both report
-        // the same pass-2 piggybacked bound), so the comparison is exact.
+        // Both paths derive from the same deterministic pipeline, so the
+        // comparison is exact. Both also agree with the standalone
+        // `adjacency_bound` sweep computed above.
         #[allow(clippy::float_cmp)]
         {
             assert_eq!(free.threshold(), capped.threshold());
             assert_eq!(free.adjacency_bound(), capped.adjacency_bound());
+            assert_eq!(free.adjacency_bound(), empirical_bound);
+            assert_eq!(capped.adjacency_bound(), empirical_bound);
         }
         assert_eq!(free.classes(), capped.classes());
         assert_eq!(cycle_set(&free), cycle_set(&capped));
@@ -1289,35 +1364,6 @@ mod tests {
         {
             assert_eq!(loaded.adjacency_bound(), f64::INFINITY);
             assert_eq!(loaded.threshold(), f64::MAX);
-        }
-    }
-
-    #[test]
-    fn build_adjacency_bound_matches_standalone_computation() {
-        let embedded = loop_trajectory();
-        let max_length = embedded.trajectory().original_count();
-        let standalone_bound = embedded
-            .adjacency_bound(.., max_length, &ExecutionBackend::Sequential)
-            .unwrap();
-
-        let free =
-            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
-
-        let capped = CycleStorage::build_with_threshold(
-            &embedded,
-            ..,
-            standalone_bound.next_down(),
-            max_length,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
-
-        // Both builds' pass-2 piggybacked minimum equals the standalone
-        // pass-1 sweep exactly: same pair set, same pure minimum.
-        #[allow(clippy::float_cmp)]
-        {
-            assert_eq!(free.adjacency_bound(), standalone_bound);
-            assert_eq!(capped.adjacency_bound(), standalone_bound);
         }
     }
 }
