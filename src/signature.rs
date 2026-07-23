@@ -79,11 +79,10 @@ impl CyclingSignature {
     /// signature answers queries for.
     #[must_use]
     pub(crate) fn from_candidates(
-        candidates: Vec<(f64, F2Vector)>,
+        mut candidates: Vec<(f64, F2Vector)>,
         num_generators: usize,
         threshold_max: f64,
     ) -> Self {
-        let mut candidates = candidates;
         candidates.sort_by(|left, right| left.0.total_cmp(&right.0));
 
         let mut generators: Vec<SignatureGenerator> = Vec::new();

@@ -137,8 +137,9 @@ impl CycleStorage {
     /// largest threshold that keeps every admitted candidate pair in adjacent
     /// cubes.
     ///
-    /// Runs the segment's whole-band empirical adjacency bound sweep, then
-    /// detects cycles at the largest threshold strictly below that bound
+    /// Runs the segment's empirical adjacency-bound sweep over candidate
+    /// pairs within `max_length`, then detects cycles at the largest
+    /// threshold strictly below that bound
     /// (its [`next_down`](f64::next_down)). The returned storage's
     /// [`threshold`](Self::threshold) is that effective threshold, and
     /// [`adjacency_bound`](Self::adjacency_bound) records the bound itself.
@@ -373,8 +374,9 @@ impl CycleStorage {
     /// samples in the build's segment whose cubes are not adjacent, or
     /// positive infinity if every candidate pair was adjacent.
     ///
-    /// [`threshold`](Self::threshold) is always strictly below this value
-    /// (or, for an infinite bound, equal to [`f64::MAX`]).
+    /// [`threshold`](Self::threshold) is always strictly below this value;
+    /// the threshold-free [`build`](Self::build) records [`f64::MAX`] as the
+    /// threshold when the bound is infinite.
     #[must_use]
     pub fn adjacency_bound(&self) -> f64 {
         self.adjacency_bound
@@ -453,7 +455,10 @@ impl CycleStorage {
         // candidate order deterministic and independent of the index's
         // (begin, end) iteration order, and the finiteness filter drops
         // components with no finite birth before the fold (a lone non-finite
-        // birth must not survive as a candidate).
+        // birth must not survive as a candidate). Non-finite births only
+        // arise from deserialized or hand-assembled storages; a storage
+        // built by `build`/`build_with_threshold` always records finite
+        // metric distances.
         let mut admitted: Vec<(u32, f64)> = self
             .index
             .contained_in(query)
@@ -646,9 +651,11 @@ mod tests {
     use ndarray::{Array2, array};
 
     use super::{Component, Cycle, CycleStorage};
-    use crate::{EmbeddedTrajectory, F2Vector, Trajectory, error::Error, metric::Metric};
     #[cfg(feature = "serde")]
-    use crate::{SignatureGenerator, serialization::save_to_writer};
+    use crate::serialization::save_to_writer;
+    use crate::{
+        EmbeddedTrajectory, F2Vector, SignatureGenerator, Trajectory, error::Error, metric::Metric,
+    };
 
     /// Builds an embedded 2D trajectory that traces a recurrent loop around a
     /// missing center cube, then returns near its starting point. The cubical
@@ -801,6 +808,136 @@ mod tests {
         for &(start, end) in &small_cycles {
             assert!(end - start <= 4);
         }
+    }
+
+    /// Two square-annulus holes (missing centers at cube `(1, 1)` and cube
+    /// `(7, 1)`), each an 8-cube ring, joined by a detour of fresh cubes far
+    /// enough from both rings that it introduces no third recurrence. The
+    /// cover has `H^1` of rank two. Ring A's cut-corner closing (samples 0
+    /// and 7) births at distance `1.0`; ring B's closing point is offset
+    /// within its cube so its closing (samples 18 and 25) births at distance
+    /// `1.2`, distinct from ring A's.
+    fn two_hole_trajectory() -> EmbeddedTrajectory {
+        let positions = [
+            // Ring A: 8-cube ring around missing center (1, 1). Indices 0..8.
+            [0.5_f64, 0.5],
+            [1.5, 0.5],
+            [2.5, 0.5],
+            [2.5, 1.5],
+            [2.5, 2.5],
+            [1.5, 2.5],
+            [0.5, 2.5],
+            [0.5, 1.5],
+            // Detour through fresh cubes, bridging ring A to ring B far
+            // enough apart that the two rings never share or approach a
+            // cube. Indices 8..18.
+            [-0.5, 1.5],
+            [-0.5, 0.5],
+            [-0.5, -0.5],
+            [0.5, -0.5],
+            [1.5, -0.5],
+            [2.5, -0.5],
+            [3.5, -0.5],
+            [4.5, -0.5],
+            [5.5, -0.5],
+            [6.5, -0.5],
+            // Ring B: 8-cube ring around missing center (7, 1), offset
+            // closing point. Indices 18..26.
+            [6.5, 0.5],
+            [7.5, 0.5],
+            [8.5, 0.5],
+            [8.5, 1.5],
+            [8.5, 2.5],
+            [7.5, 2.5],
+            [6.5, 2.5],
+            [6.5, 1.7],
+        ];
+        let flat: Vec<f64> = positions.iter().flatten().copied().collect();
+        let points = Array2::from_shape_vec((positions.len(), 2), flat).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
+            .unwrap()
+    }
+
+    #[test]
+    fn signature_rank_and_span_agree_with_embedded_across_two_hole_band() {
+        // Rank-2 cross-path agreement: the two-hole cover carries two
+        // independent generators (num_generators() == 2), so this exercises
+        // filtered structure the single-hole `loop_trajectory` fixture never
+        // reaches (its cover has rank one). Ring A's cut-corner recurrence
+        // births at 1.0 (equal to the trajectory's own bound, since a
+        // minimal ring's cut-corner closing distance is exactly its unit
+        // step size); ring B's offset closing births at 1.2. Both are
+        // strictly below the empirical adjacency bound of 2.0.
+        let embedded = two_hole_trajectory();
+        let max_length = embedded.trajectory().original_count();
+        let storage =
+            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
+
+        let signature = storage.signature(..).unwrap();
+        assert_eq!(signature.rank(), 2);
+        let births: Vec<f64> = signature
+            .generators()
+            .iter()
+            .map(SignatureGenerator::birth)
+            .collect();
+        assert!(
+            births[0] < births[1],
+            "expected ascending births: {births:?}"
+        );
+        assert!((births[0] - 1.0).abs() < 1e-12);
+        assert!((births[1] - 1.2).abs() < 1e-12);
+
+        let birth_one = births[0];
+        let birth_two = births[1];
+
+        // Below the first birth, the trajectory's own resolution bound
+        // already excludes the threshold from the embedded path's valid
+        // domain (`threshold < bound()`): only the storage side can answer
+        // a query there.
+        assert_eq!(
+            storage
+                .signature(..)
+                .unwrap()
+                .rank_at(birth_one.next_down())
+                .unwrap(),
+            0
+        );
+
+        // From `birth_one` through the top of the band, every discontinuity
+        // threshold is inside the embedded path's valid domain, so both
+        // paths are compared directly.
+        for (threshold, expected_rank) in
+            [(birth_one, 1), (birth_two.next_down(), 1), (birth_two, 2)]
+        {
+            let storage_signature = storage.signature(..).unwrap();
+            let embedded_signature = embedded.signature_with_threshold(.., threshold).unwrap();
+            assert_eq!(
+                storage_signature.rank_at(threshold).unwrap(),
+                expected_rank,
+                "storage rank mismatch at threshold {threshold}"
+            );
+            assert_eq!(
+                embedded_signature.rank(),
+                expected_rank,
+                "embedded rank mismatch at threshold {threshold}"
+            );
+            assert_eq!(
+                storage_signature.span_at(threshold).unwrap(),
+                *embedded_signature.span(),
+                "span mismatch at threshold {threshold}"
+            );
+        }
+
+        // The theorem holds exactly for the threshold-free paths too: same
+        // birth sequence, both sides.
+        let embedded_signature = embedded.signature(..).unwrap();
+        let embedded_births: Vec<f64> = embedded_signature
+            .generators()
+            .iter()
+            .map(SignatureGenerator::birth)
+            .collect();
+        assert_eq!(births, embedded_births);
     }
 
     #[test]
@@ -1133,6 +1270,15 @@ mod tests {
         {
             assert_eq!(storage.adjacency_bound(), f64::INFINITY);
             assert_eq!(storage.threshold(), f64::MAX);
+        }
+
+        // The same holds for the threshold-free direct path: with no
+        // non-adjacent candidate pair anywhere in the window, detection runs
+        // unconstrained and the signature's band top is the sentinel value.
+        let signature = embedded.signature(..).unwrap();
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(signature.threshold_max(), f64::MAX);
         }
 
         let mut buffer: Vec<u8> = Vec::new();

@@ -342,8 +342,9 @@ impl PyCycleStorage {
     ///
     /// The bound is the smallest metric distance between two candidate
     /// endpoint samples in the build's segment whose cubes are not adjacent.
-    /// ``threshold`` is always strictly below this value, except when the
-    /// bound is infinite, where ``threshold`` is ``sys.float_info.max``.
+    /// ``threshold`` is always strictly below this value; the
+    /// threshold-free ``build`` records ``sys.float_info.max`` as the
+    /// threshold when the bound is infinite.
     ///
     /// Returns
     /// -------
