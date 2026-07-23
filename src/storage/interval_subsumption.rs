@@ -12,7 +12,7 @@
 //! query, since any window admitting it also admits the interval it contains,
 //! at an equal or better birth.
 
-use std::ops::Range;
+use std::{collections::BTreeMap, ops::Range};
 
 /// A stored interval with payload and birth, using half-open `[begin, end)`
 /// endpoints.
@@ -62,8 +62,8 @@ impl IntervalSubsumptionIndex {
         intervals.dedup();
 
         // Right-to-left sweep within each payload group, maintaining a
-        // Pareto frontier of already-seen survivors: pairs of (end, birth)
-        // sorted by ascending `end` with strictly descending `birth`.
+        // Pareto frontier of already-seen survivors as an ordered map from
+        // `end` to `birth`, with births strictly descending as ends ascend.
         //
         // Every seen entry has `begin >= current.begin` (processing runs in
         // descending `begin` order), so a seen entry additionally satisfying
@@ -74,41 +74,34 @@ impl IntervalSubsumptionIndex {
         // by something it contains.
         let mut result: Vec<StoredInterval> = Vec::with_capacity(intervals.len());
         let mut current_payload: Option<u32> = None;
-        let mut frontier: Vec<(u32, f64)> = Vec::new();
+        let mut frontier: BTreeMap<u32, f64> = BTreeMap::new();
         for interval in intervals.iter().rev() {
             if current_payload != Some(interval.payload) {
                 current_payload = Some(interval.payload);
                 frontier.clear();
             }
 
-            // Query: the last frontier pair with `end <= interval.end` has
-            // the smallest birth among all pairs satisfying that bound,
-            // since the frontier's birth strictly descends as its end
-            // ascends.
-            let contained_prefix_end = frontier.partition_point(|&(end, _)| end <= interval.end);
-            let smallest_contained_birth = contained_prefix_end
-                .checked_sub(1)
-                .map(|index| frontier[index].1);
+            let smallest_contained_birth = frontier
+                .range(..=interval.end)
+                .next_back()
+                .map(|(_, &birth)| birth);
             let dominated = smallest_contained_birth.is_some_and(|birth| birth <= interval.birth);
             if dominated {
                 continue;
             }
             result.push(*interval);
 
-            // Insert the survivor into the frontier, displacing the pairs it
-            // dominates: those with `end >= interval.end` (the suffix from
-            // `contained_prefix_end` on) whose birth is also at or above
-            // `interval.birth`.
-            let mut dominated_suffix_end = contained_prefix_end;
-            while dominated_suffix_end < frontier.len()
-                && frontier[dominated_suffix_end].1 >= interval.birth
-            {
-                dominated_suffix_end += 1;
+            // Insert the survivor, removing the run it dominates. Survival
+            // means every entry at or below `interval.end` has a strictly
+            // larger birth, so the descending-birth invariant holds after
+            // the insert.
+            while let Some((&end, &birth)) = frontier.range(interval.end..).next() {
+                if birth < interval.birth {
+                    break;
+                }
+                frontier.remove(&end);
             }
-            frontier.splice(
-                contained_prefix_end..dominated_suffix_end,
-                [(interval.end, interval.birth)],
-            );
+            frontier.insert(interval.end, interval.birth);
         }
 
         // Re-sort by (begin, end) for query-time binary search.
@@ -212,6 +205,25 @@ mod tests {
                 "dedup mismatch on input {raw:?}"
             );
         }
+
+        // Sliding-window chain whose births rise against the sweep's
+        // processing order, so the frontier grows to the full chain length,
+        // salted with containers that must drop or survive against it.
+        let mut sliding: Vec<(Range<u32>, u32, f64)> = (0..40)
+            .map(|start| (start..start + 5, 0, f64::from(40 - start) * 0.1))
+            .collect();
+        // Contains smaller-birth windows: dominated in both axes, drops.
+        sliding.push((5..20, 0, 10.0));
+        // Contains only larger-birth windows: survives.
+        sliding.push((25..33, 0, 0.6));
+        // Contains everything at the smallest birth of all: survives.
+        sliding.push((0..45, 0, 0.05));
+        let index = IntervalSubsumptionIndex::new(sliding.iter().cloned());
+        assert_eq!(
+            index_as_set(&index),
+            naive_dedup(&sliding),
+            "dedup mismatch on sliding-window chain"
+        );
     }
 
     fn naive_contained_in(
