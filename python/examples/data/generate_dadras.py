@@ -7,7 +7,8 @@ Reads the Dadras position trajectory, embeds it in full through the
 sphere-bundle pipeline, and writes ``dadras/data/dadras_storage.cyc``: the
 detected cycles the gallery queries. The trajectory is fetched from the Zenodo
 published dataset and cached under ``dadras/data`` on first use; a file already
-present there is used as-is.
+present there is used as-is, and running ``integrate_dadras.py`` regenerates
+the same file in place.
 """
 
 import sys
@@ -27,14 +28,16 @@ import _support
 # SPHERE_RADIUS_FLOOR, matching the interpolator's direction cubes. The resample
 # bound is the resolution chosen from below: the build sweeps the trajectory's
 # empirical adjacency bound and detects just under it, so the stored band runs
-# from the resample bound up to that top. Lowering the bound widens the band but
-# inserts more bisection points; the value below keeps the inserted fraction to
-# a few percent. Boxsize is large enough that recurrences are frequent while the
-# cover still resolves the attractor's holes.
+# from the resample bound up to that top. The bound is tuned against the raw
+# trajectory's sample spacing (integrate_dadras.py) so bisection inserts about
+# five percent of extra points. The raw samples are spaced by distance rather
+# than time, so MAX_LENGTH caps cycles by their length through state space.
+# Boxsize is large enough that recurrences are frequent while the cover still
+# resolves the attractor's holes.
 BOXSIZE = 12.0
 SPHERE_RADIUS_FLOOR = 3
 RESAMPLE_BOUND = 0.45
-MAX_LENGTH = 600
+MAX_LENGTH = 800
 
 
 def build() -> tuple[Path, float, float]:
