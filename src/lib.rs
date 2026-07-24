@@ -33,6 +33,6 @@ pub use crate::{
     },
     metric::Metric,
     signature::{CyclingSignature, SignatureGenerator},
-    storage::cycle_storage::{Component, Cycle, CycleStorage},
+    storage::{Component, Cycle, CycleStorage},
     trajectory::Trajectory,
 };

@@ -540,7 +540,7 @@ mod tests {
     #[cfg(feature = "serde")]
     use crate::{
         serialization::{load_from_reader, save_to_writer},
-        storage::cycle_storage::CycleStorage,
+        storage::CycleStorage,
     };
 
     #[test]
