@@ -4,11 +4,14 @@
 //! The [`Metric`] enum of distance modes over rows of an
 //! [`Array2<f64>`](ndarray::Array2).
 
-use ndarray::{ArrayView1, ArrayView2};
+use ndarray::{Array2, ArrayView1, ArrayView2};
 
 mod sphere_bundle;
 
-use sphere_bundle::{sphere_bundle_covers_triple, sphere_bundle_distance};
+use sphere_bundle::{
+    direction_weight, normalize_directions_in_place, sphere_bundle_covers_triple,
+    sphere_bundle_distance,
+};
 
 /// A distance mode over rows of a trajectory.
 ///
@@ -153,6 +156,87 @@ impl Metric {
             },
         }
     }
+
+    /// Prepares `points` for repeated [`PreparedPoints::distance`] queries
+    /// under this metric.
+    ///
+    /// The result holds a contiguous copy of `points`. Under
+    /// [`Metric::SphereBundle`], each row's direction half is replaced by its
+    /// L2-normalized unit vector (computed identically to how
+    /// [`Metric::distance`] normalizes it), so that later distance queries
+    /// need no further normalization or allocation. Under
+    /// [`Metric::Euclidean`], rows are copied unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Under [`Metric::SphereBundle`], panics if any row's length is odd or
+    /// if any row's direction half has zero L2 norm.
+    #[must_use]
+    pub(crate) fn prepare(self, points: ArrayView2<'_, f64>) -> PreparedPoints {
+        let mut rows = points.to_owned();
+        if let Metric::SphereBundle { .. } = self {
+            normalize_directions_in_place(&mut rows);
+        }
+        PreparedPoints { rows, metric: self }
+    }
+}
+
+/// Points prepared for repeated distance evaluation under a fixed
+/// [`Metric`], built by [`Metric::prepare`].
+///
+/// Preparation folds the per-pair normalization work that
+/// [`Metric::SphereBundle`] would otherwise repeat on every call into a
+/// single pass over the input, so that [`PreparedPoints::distance`]
+/// evaluates each pair by reading plain contiguous slices, without
+/// allocating.
+pub(crate) struct PreparedPoints {
+    rows: Array2<f64>,
+    metric: Metric,
+}
+
+impl PreparedPoints {
+    /// The distance between prepared rows `left_row` and `right_row`, equal
+    /// to [`Metric::distance`] evaluated on the corresponding original rows.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `left_row` or `right_row` is out of bounds for the prepared
+    /// points.
+    #[must_use]
+    pub(crate) fn distance(&self, left_row: usize, right_row: usize) -> f64 {
+        let left = self.rows.row(left_row);
+        let right = self.rows.row(right_row);
+        let left = left
+            .as_slice()
+            .expect("prepared points are stored contiguously");
+        let right = right
+            .as_slice()
+            .expect("prepared points are stored contiguously");
+
+        match self.metric {
+            Metric::Euclidean => euclidean_distance_slices(left, right),
+            Metric::SphereBundle { radius_floor } => {
+                let half = left.len() / 2;
+                let position_distance = euclidean_distance_slices(&left[..half], &right[..half]);
+                let direction_distance = euclidean_distance_slices(&left[half..], &right[half..]);
+                position_distance.max(direction_weight(radius_floor) * direction_distance)
+            },
+        }
+    }
+}
+
+/// Accumulates squared coordinate differences over `pairs` in index order
+/// and takes the square root last.
+fn euclidean_norm_of_differences(pairs: impl Iterator<Item = (f64, f64)>) -> f64 {
+    pairs
+        .map(|(left, right)| (left - right).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
+/// The Euclidean distance between two equal-length slices.
+fn euclidean_distance_slices(left: &[f64], right: &[f64]) -> f64 {
+    euclidean_norm_of_differences(left.iter().copied().zip(right.iter().copied()))
 }
 
 /// The Euclidean distance between two equal-length slices.
@@ -168,12 +252,7 @@ pub(crate) fn euclidean_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'
         point.len(),
         other.len()
     );
-    point
-        .iter()
-        .zip(other.iter())
-        .map(|(left, right)| (left - right).powi(2))
-        .sum::<f64>()
-        .sqrt()
+    euclidean_norm_of_differences(point.iter().copied().zip(other.iter().copied()))
 }
 
 /// Returns `true` if the smallest enclosing `l_2` ball of `first`, `second`,
@@ -255,6 +334,45 @@ mod tests {
         let short = array![0.0, 0.0];
         let longer = array![1.0, 2.0, 3.0];
         let _ = Metric::Euclidean.distance(short.view(), longer.view());
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn prepared_distance_matches_metric_distance_bit_for_bit() {
+        let euclidean_points = array![[0.0, 0.0], [3.0, 4.0], [1.0, 1.0]];
+        let euclidean_prepared = Metric::Euclidean.prepare(euclidean_points.view());
+        for left in 0..euclidean_points.nrows() {
+            for right in 0..euclidean_points.nrows() {
+                let expected = Metric::Euclidean
+                    .distance(euclidean_points.row(left), euclidean_points.row(right));
+                assert_eq!(euclidean_prepared.distance(left, right), expected);
+            }
+        }
+
+        // Direction halves scaled to different norms per row so
+        // normalization is exercised at more than one scale.
+        let sphere_points = array![
+            [0.0, 0.0, 1.0, 0.0],
+            [3.0, 4.0, 0.0, 2.0],
+            [1.0, 1.0, 3.0, 4.0],
+        ];
+        let metric = Metric::SphereBundle { radius_floor: 2 };
+        let sphere_prepared = metric.prepare(sphere_points.view());
+        for left in 0..sphere_points.nrows() {
+            for right in 0..sphere_points.nrows() {
+                let expected = metric.distance(sphere_points.row(left), sphere_points.row(right));
+                assert_eq!(sphere_prepared.distance(left, right), expected);
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "zero direction L2 norm")]
+    fn prepare_zero_direction_norm_panics() {
+        // The first row's direction half is the zero vector; L2
+        // normalization during preparation is undefined.
+        let points = array![[0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 0.0]];
+        let _ = Metric::SphereBundle { radius_floor: 1 }.prepare(points.view());
     }
 
     #[test]

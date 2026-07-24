@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, Result},
-    metric::Metric,
+    metric::{Metric, PreparedPoints},
     trajectory::Trajectory,
     util::{disjoint::DisjointSet, range::normalize_segment},
 };
@@ -246,6 +246,7 @@ pub(crate) fn detect_components_streaming(
     }
 
     let tile_column_ranges = enumerate_tile_column_ranges(range, tile_width, max_length);
+    let prepared = metric.prepare(trajectory.points());
 
     // `build_distance_tile`'s only failure mode is `WindowOutOfBounds`,
     // already validated above against `trajectory.original_count()` before
@@ -256,7 +257,7 @@ pub(crate) fn detect_components_streaming(
         tile_column_ranges.into_iter(),
         |column_range: Range<usize>| {
             let start = column_range.start;
-            let tile = build_distance_tile(trajectory, metric, column_range, max_length)
+            let tile = build_distance_tile(trajectory, &prepared, column_range, max_length)
                 .expect("tile column range fits inside the validated window");
             let outcome =
                 detect_components_in_tile(tile.view(), trajectory, metric, start, threshold);
@@ -330,12 +331,13 @@ pub(crate) fn adjacency_bound_streaming(
     let tile_column_ranges = enumerate_tile_column_ranges(range, tile_width, max_length);
     let points = trajectory.points();
     let original_indices = trajectory.original_indices();
+    let prepared = metric.prepare(points);
 
     let per_tile: Vec<f64> = ParallelMap::new(backend).run(
         tile_column_ranges.into_iter(),
         |column_range: Range<usize>| {
             let base = column_range.start;
-            let tile = build_distance_tile(trajectory, metric, column_range, max_length)
+            let tile = build_distance_tile(trajectory, &prepared, column_range, max_length)
                 .expect("tile column range fits inside the validated window");
             let mut non_adjacent_minimum = f64::INFINITY;
             for ((row, col), &distance) in tile.indexed_iter() {
@@ -517,7 +519,7 @@ fn detect_components_in_tile(
 ///   `0..trajectory.original_count()`.
 fn build_distance_tile(
     trajectory: &Trajectory,
-    metric: Metric,
+    prepared: &PreparedPoints,
     range: Range<usize>,
     max_length: usize,
 ) -> Result<Array2<f64>> {
@@ -534,11 +536,8 @@ fn build_distance_tile(
     let height = max_length;
     let base = range.start;
     let original_indices = trajectory.original_indices();
-    let points = trajectory.points();
 
     let mut tile = Array2::<f64>::from_elem((height, width), f64::INFINITY);
-    let mut pairs: Vec<(usize, usize)> = Vec::new();
-    let mut positions: Vec<(usize, usize)> = Vec::new();
     for col in 0..width {
         let start_index = original_indices[base + col];
         // Row 0: self-comparison.
@@ -550,15 +549,8 @@ fn build_distance_tile(
                 break;
             }
             let end_index = original_indices[original_offset];
-            pairs.push((start_index, end_index));
-            positions.push((row, col));
+            tile[(row, col)] = prepared.distance(start_index, end_index);
         }
-    }
-
-    let mut buffer = vec![0.0_f64; pairs.len()];
-    metric.fill_distances(points, &pairs, &mut buffer);
-    for (&(row, col), &distance) in positions.iter().zip(&buffer) {
-        tile[(row, col)] = distance;
     }
 
     Ok(tile)

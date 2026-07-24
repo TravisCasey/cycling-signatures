@@ -4,7 +4,7 @@
 //! Distance functions on the L2 sphere bundle, backing
 //! [`Metric::SphereBundle`](crate::metric::Metric::SphereBundle).
 
-use ndarray::{Array1, ArrayView1, s};
+use ndarray::{Array1, Array2, ArrayView1, s};
 
 use crate::metric::{euclidean_covers_triple, euclidean_distance};
 
@@ -24,20 +24,49 @@ pub(crate) fn direction_weight(radius_floor: u32) -> f64 {
 /// # Panics
 ///
 /// Panics if `point.len()` is odd or if the direction half has zero L2 norm.
-fn split_and_normalize(point: ArrayView1<'_, f64>) -> (Array1<f64>, Array1<f64>) {
+fn split_and_normalize(point: ArrayView1<'_, f64>) -> (ArrayView1<'_, f64>, Array1<f64>) {
     assert!(
         point.len().is_multiple_of(2),
         "sphere bundle metric requires even dimension, got {}",
         point.len(),
     );
     let half = point.len() / 2;
-    let position = point.slice(s![..half]).to_owned();
+    let position = point.slice_move(s![..half]);
 
     let direction = point.slice(s![half..]);
     let norm = direction.dot(&direction).sqrt();
     assert!(norm > 0.0, "zero direction L2 norm");
     let unit = &direction / norm;
     (position, unit)
+}
+
+/// Normalizes every row's direction half (the second half of each row) to a
+/// unit L2 vector, in place.
+///
+/// Every row is assumed to hold sphere-bundle coordinates of the same
+/// even length as `rows.ncols()` (the first half position, the second half
+/// direction), matching the layout [`sphere_bundle_distance`] expects.
+///
+/// # Panics
+///
+/// Panics if `rows.ncols()` is odd, or if any row's direction half has zero
+/// L2 norm.
+pub(crate) fn normalize_directions_in_place(rows: &mut Array2<f64>) {
+    let length = rows.ncols();
+    assert!(
+        length.is_multiple_of(2),
+        "sphere bundle metric requires even dimension, got {length}"
+    );
+    let half = length / 2;
+
+    for mut row in rows.rows_mut() {
+        let direction = row.slice(s![half..]);
+        let norm = direction.dot(&direction).sqrt();
+        assert!(norm > 0.0, "zero direction L2 norm");
+        row.slice_mut(s![half..])
+            .iter_mut()
+            .for_each(|coordinate| *coordinate /= norm);
+    }
 }
 
 /// The sphere-bundle distance between two even-length points: the maximum of
@@ -63,7 +92,7 @@ pub(crate) fn sphere_bundle_distance(
     );
     let (position_point, direction_point) = split_and_normalize(point);
     let (position_other, direction_other) = split_and_normalize(other);
-    let position_distance = euclidean_distance(position_point.view(), position_other.view());
+    let position_distance = euclidean_distance(position_point, position_other);
     let direction_distance = euclidean_distance(direction_point.view(), direction_other.view());
     position_distance.max(direction_weight(radius_floor) * direction_distance)
 }
@@ -96,17 +125,13 @@ pub(crate) fn sphere_bundle_covers_triple(
     let (position_second, direction_second) = split_and_normalize(second);
     let (position_third, direction_third) = split_and_normalize(third);
 
-    euclidean_covers_triple(
-        position_first.view(),
-        position_second.view(),
-        position_third.view(),
-        radius,
-    ) && euclidean_covers_triple(
-        direction_first.view(),
-        direction_second.view(),
-        direction_third.view(),
-        radius / direction_weight(radius_floor),
-    )
+    euclidean_covers_triple(position_first, position_second, position_third, radius)
+        && euclidean_covers_triple(
+            direction_first.view(),
+            direction_second.view(),
+            direction_third.view(),
+            radius / direction_weight(radius_floor),
+        )
 }
 
 #[cfg(test)]
