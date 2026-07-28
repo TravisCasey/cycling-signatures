@@ -29,8 +29,8 @@ STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 # ``signature(...).rank()`` call queries the number of independent cycles this
 # window contains.
 
-LENGTH_STEP = 5
-SCAN_STEP = 25
+LENGTH_STEP = 10
+SCAN_STEP = 125
 
 extent_start, extent_stop = STORAGE.extent()
 extent_length = extent_stop - extent_start
