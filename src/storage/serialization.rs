@@ -1,8 +1,8 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Wire format for [`CycleStorage`]: a versioned on-disk representation and
-//! the save/load round trip.
+//! Wire format for [`crate::CycleStorage`]: a versioned on-disk representation
+//! and the save/load round trip.
 
 #[cfg(any(test, feature = "serde"))]
 use std::ops::Range;

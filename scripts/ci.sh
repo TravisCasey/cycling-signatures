@@ -5,6 +5,7 @@ set -euo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
@@ -21,32 +22,52 @@ run_step() {
     fi
 }
 
+skip_step() {
+    step=$((step + 1))
+    echo -e "\n${BOLD}[$step] $1${RESET}"
+    echo -e "${YELLOW}  SKIPPED: $2${RESET}"
+}
+
 run_step "Format check" \
     cargo +nightly fmt --all --check
 
-run_step "Build (no features)" \
-    cargo build --no-default-features
+# The rayon and mpi features gate no source in this crate; they only select a
+# chomp3rs execution backend. Compile-time checking therefore has just two
+# configurations to cover: without serde and with it. There is no default
+# feature, so the first is what a plain `cargo build` compiles.
+for features in "--no-default-features" "--features serde"; do
+    run_step "Build ($features)" \
+        cargo build $features
 
-run_step "Build (serde)" \
-    cargo build --features serde
+    run_step "Tests ($features)" \
+        cargo test $features
 
-run_step "Build (rayon)" \
+    run_step "Clippy ($features)" \
+        cargo clippy --workspace --all-targets $features -- -D warnings
+
+    RUSTDOCFLAGS="-Dwarnings --cfg docsrs" run_step "Documentation ($features)" \
+        cargo doc --no-deps --document-private-items $features
+done
+
+# The backend features build and run the same source against a different
+# chomp3rs backend, so they are worth linking and exercising once each.
+run_step "Build (rayon backend)" \
     cargo build --features rayon
 
-run_step "Build (mpi)" \
-    cargo build --features mpi
+run_step "Tests (rayon backend)" \
+    cargo test --features rayon
 
-run_step "Tests (no features)" \
-    cargo test --no-default-features
+# An MPI build needs a system MPI implementation.
+if command -v mpicc >/dev/null 2>&1; then
+    run_step "Build (mpi backend)" \
+        cargo build --features mpi
 
-run_step "Tests (serde)" \
-    cargo test --features serde
-
-run_step "Clippy (workspace)" \
-    cargo clippy --workspace --all-targets -- -D warnings
-
-RUSTDOCFLAGS="-Dwarnings" run_step "Documentation" \
-    cargo doc --no-deps --document-private-items --features serde
+    run_step "Tests (mpi backend)" \
+        cargo test --features mpi
+else
+    skip_step "MPI backend checks" \
+        "no mpicc on PATH; install an MPI implementation to run them"
+fi
 
 run_step "Cargo deny" \
     cargo deny check
