@@ -61,10 +61,10 @@ for component in STORAGE.components():
 # **Bin and composite the population.** One image row per integer cycle
 # length and a fixed grid of birth bins, so the banded length structure
 # renders exactly. Each cell's color is the count-weighted mix of the class
-# colors present, its intensity grows with the logarithm of the cell's
-# weighted count, and empty cells stay white; a blended hue therefore means
-# several classes genuinely share that cell. Trivial cycles enter at half
-# weight, so they read as background where classes overlap them.
+# colors present, its intensity grows with the logarithm of the cell's weighted
+# count, and empty cells stay white; a blended hue therefore means several
+# classes genuinely share that cell. Trivial cycles enter at reduced weight, so
+# they read as background where classes overlap them.
 
 BIRTH_BIN_COUNT = 500
 LENGTH_BIN_SIZE = 1

@@ -47,9 +47,13 @@ assert math.isfinite(BAND_TOP)
 TOP_CLASSES = 5
 
 class_objects = STORAGE.classes()
-class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in class_objects]
+class_keys = [
+    tuple(int(value) for value in homology_class.to_array()) for homology_class in class_objects
+]
 nonzero_classes = [
-    (key, hclass) for key, hclass in zip(class_keys, class_objects, strict=True) if any(key)
+    (key, homology_class)
+    for key, homology_class in zip(class_keys, class_objects, strict=True)
+    if any(key)
 ]
 
 class_cycle_counts: Counter[int] = Counter()
@@ -121,7 +125,9 @@ def library_colors_and_labels(
     for subspace in subspaces:
         key = None
         if subspace.rank() == 1:
-            key = next(key for key, hclass in nonzero_classes if subspace.contains(hclass))
+            key = next(
+                key for key, homology_class in nonzero_classes if subspace.contains(homology_class)
+            )
             if key not in CLASS_COLORS:
                 key = None
         frequent_keys.append(key)

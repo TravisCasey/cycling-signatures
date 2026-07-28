@@ -47,7 +47,9 @@ COMPONENTS = STORAGE.components()
 TOP_CLASSES = 3
 
 classes = STORAGE.classes()
-class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in classes]
+class_keys = [
+    tuple(int(value) for value in homology_class.to_array()) for homology_class in classes
+]
 
 class_cycle_counts: Counter[int] = Counter()
 for component in COMPONENTS:
@@ -65,68 +67,87 @@ CLASS_LABELS = {key: f"class {position}" for position, key in enumerate(frequent
 # representative. Each ``Cycle`` reports its sample ``range()``, so a
 # representative is just a sample interval.
 
-WINDOW_LENGTH = 660
+WINDOW_LENGTH = 1000
 WINDOW_SCAN_STEP = 200
 
 representative_class = []
-representative_start = []
-representative_stop = []
+start_values: list[int] = []
+stop_values: list[int] = []
 for component in COMPONENTS:
     class_key = class_keys[component.class_id()]
     if class_key not in CLASS_LABELS:
         continue
     cycle_start, cycle_stop = component.shortest_cycle().range()
     representative_class.append(class_key)
-    representative_start.append(cycle_start)
-    representative_stop.append(cycle_stop)
+    start_values.append(cycle_start)
+    stop_values.append(cycle_stop)
 
-representative_start = np.array(representative_start)
-representative_stop = np.array(representative_stop)
+representative_start = np.array(start_values)
+representative_stop = np.array(stop_values)
 representative_length = representative_stop - representative_start
 class_mask = {
     key: np.array([candidate == key for candidate in representative_class]) for key in frequent_keys
 }
 
 # %%
-# Scan window starts and choose the one whose longest per-class representative
-# is as short as possible, so every class shows a tight single loop. A window
-# qualifies only if it contains a representative of every class.
+# Scan window starts and pick, class by class, the shortest in-window loop
+# that does not overlap the loops already picked; the chosen window minimizes
+# the longest picked loop. Disjoint loops keep the classes visually separate
+# in both figures. If no window admits a fully disjoint pick, the scan repeats
+# without the disjointness requirement.
 
 extent_start, extent_stop = STORAGE.extent()
 
-best_start = extent_start
-best_score = None
-for window_start in range(extent_start, extent_stop - WINDOW_LENGTH + 1, WINDOW_SCAN_STEP):
+
+def pick_representatives(
+    window_start: int, disjoint: bool
+) -> dict[tuple[int, ...], tuple[int, int]] | None:
+    """Return one loop per class in the window, or None if a class has none."""
     inside = (representative_start >= window_start) & (
         representative_stop <= window_start + WINDOW_LENGTH
     )
-    per_class_shortest = []
+    picked: dict[tuple[int, ...], tuple[int, int]] = {}
     for key in frequent_keys:
-        lengths = representative_length[inside & class_mask[key]]
-        if lengths.size == 0:
-            per_class_shortest = None
+        candidates = np.flatnonzero(inside & class_mask[key])
+        candidates = candidates[np.argsort(representative_length[candidates])]
+        chosen = None
+        for candidate in candidates:
+            start = int(representative_start[candidate])
+            stop = int(representative_stop[candidate])
+            overlapping = any(
+                start < other_stop and other_start < stop
+                for other_start, other_stop in picked.values()
+            )
+            if disjoint and overlapping:
+                continue
+            chosen = (start, stop)
             break
-        per_class_shortest.append(int(lengths.min()))
-    if per_class_shortest is not None:
-        score = max(per_class_shortest)
+        if chosen is None:
+            return None
+        picked[key] = chosen
+    return picked
+
+
+best_representatives: dict[tuple[int, ...], tuple[int, int]] | None = None
+best_start = extent_start
+best_score = None
+for require_disjoint in (True, False):
+    for window_start in range(extent_start, extent_stop - WINDOW_LENGTH + 1, WINDOW_SCAN_STEP):
+        picked = pick_representatives(window_start, require_disjoint)
+        if picked is None:
+            continue
+        score = max(stop - start for start, stop in picked.values())
         if best_score is None or score < best_score:
             best_score = score
             best_start = window_start
+            best_representatives = picked
+    if best_representatives is not None:
+        break
 
+assert best_representatives is not None
+representatives: dict[tuple[int, ...], tuple[int, int]] = best_representatives
 window_start = best_start
 window_stop = window_start + WINDOW_LENGTH
-
-# %%
-# **Select one representative cycle per class** inside the chosen window: the
-# shortest in-window loop of each class.
-
-representatives: dict[tuple[int, ...], tuple[int, int]] = {}
-inside_window = (representative_start >= window_start) & (representative_stop <= window_stop)
-for key in frequent_keys:
-    candidate = inside_window & class_mask[key]
-    masked_length = np.where(candidate, representative_length, representative_length.max() + 1)
-    chosen = int(np.argmin(masked_length))
-    representatives[key] = (int(representative_start[chosen]), int(representative_stop[chosen]))
 
 # %%
 # **Overlay the loops on the trajectory.** A longer stretch of the trajectory is
@@ -155,7 +176,12 @@ def build_overlay_figure() -> plt.Figure:
         linewidth=0.5,
         alpha=0.7,
     )
-    for key in frequent_keys:
+    draw_keys = sorted(
+        frequent_keys,
+        key=lambda key: representatives[key][1] - representatives[key][0],
+        reverse=True,
+    )
+    for key in draw_keys:
         cycle_start, cycle_stop = representatives[key]
         loop = RAW[cycle_start:cycle_stop]
         axes.plot(

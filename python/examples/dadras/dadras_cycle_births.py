@@ -81,8 +81,8 @@ for component in STORAGE.components():
 # count-weighted mix of the class colors present, its intensity grows with
 # the logarithm of the cell's weighted count, and empty cells stay white; a
 # blended hue therefore means several classes genuinely share that cell.
-# Cycles outside the frequent classes enter at half weight, so they read as
-# background where the frequent classes overlap them.
+# Cycles outside the frequent classes enter at reduced weight, so they read
+# as background where the frequent classes overlap them.
 
 BIRTH_BIN_COUNT = 300
 LENGTH_BIN_SIZE = 2

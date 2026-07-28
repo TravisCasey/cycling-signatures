@@ -47,7 +47,7 @@ STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 # for a legible figure. ``LIBRARY_SIZE`` caps the number of distinct
 # signatures shown.
 
-WINDOW_LENGTH = 230
+WINDOW_LENGTH = 330
 EPSILON = 3.0
 MIN_NEIGHBORS = 20
 QUERY_STEP = 1
@@ -62,10 +62,14 @@ LIBRARY_SCAN_STEP = 25
 # colors beyond the class colors.
 
 class_objects = STORAGE.classes()
-class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in class_objects]
+class_keys = [
+    tuple(int(value) for value in homology_class.to_array()) for homology_class in class_objects
+]
 CLASS_COLORS = _support.class_color_map(class_keys)
 nonzero_classes = [
-    (key, hclass) for key, hclass in zip(class_keys, class_objects, strict=True) if any(key)
+    (key, homology_class)
+    for key, homology_class in zip(class_keys, class_objects, strict=True)
+    if any(key)
 ]
 
 
@@ -75,7 +79,9 @@ def signature_color_and_label(
 ) -> tuple[tuple[float, float, float], str]:
     """Return the color and legend label for one non-trivial signature."""
     if subspace.rank() == 1:
-        key = next(key for key, hclass in nonzero_classes if subspace.contains(hclass))
+        key = next(
+            key for key, homology_class in nonzero_classes if subspace.contains(homology_class)
+        )
         return CLASS_COLORS[key], f"[{' '.join(map(str, key))}] (rank 1)"
     return higher_rank_colors.pop(0), f"rank {subspace.rank()}"
 

@@ -37,10 +37,14 @@ STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 # palette colors beyond the class colors.
 
 class_objects = STORAGE.classes()
-class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in class_objects]
+class_keys = [
+    tuple(int(value) for value in homology_class.to_array()) for homology_class in class_objects
+]
 CLASS_COLORS = _support.class_color_map(class_keys)
 nonzero_classes = [
-    (key, hclass) for key, hclass in zip(class_keys, class_objects, strict=True) if any(key)
+    (key, homology_class)
+    for key, homology_class in zip(class_keys, class_objects, strict=True)
+    if any(key)
 ]
 
 # %%
@@ -51,8 +55,8 @@ nonzero_classes = [
 # so the legend lists the rank-1 signatures first and the rank-2 signature
 # last.
 
-LIBRARY_LENGTH = 230
-LIBRARY_STEP = 250
+LIBRARY_LENGTH = 330
+LIBRARY_STEP = 360
 LIBRARY_SIZE = 6
 
 extent_start, extent_stop = STORAGE.extent()
@@ -71,10 +75,10 @@ library = [subspace for subspace, _ in ordered[:LIBRARY_SIZE]]
 # outside the library (trivial or uncommon) and 0..len(library)-1 for library
 # members.
 
-WINDOW_LENGTHS = (160, 230, 300)
+WINDOW_LENGTHS = (230, 330, 430)
 TIME_WINDOW_START = 0
-TIME_WINDOW_STOP = 6000
-COLUMN_STEP = 5
+TIME_WINDOW_STOP = 8600
+COLUMN_STEP = 7
 
 column_times = list(range(TIME_WINDOW_START, TIME_WINDOW_STOP, COLUMN_STEP))
 num_rows = len(WINDOW_LENGTHS)
@@ -103,7 +107,9 @@ def signature_color_and_label(
 ) -> tuple[tuple[float, float, float], str]:
     """Return the color and legend label for one non-trivial signature."""
     if subspace.rank() == 1:
-        key = next(key for key, hclass in nonzero_classes if subspace.contains(hclass))
+        key = next(
+            key for key, homology_class in nonzero_classes if subspace.contains(homology_class)
+        )
         return CLASS_COLORS[key], f"[{' '.join(map(str, key))}] (rank 1)"
     return higher_rank_colors.pop(0), f"rank {subspace.rank()}"
 

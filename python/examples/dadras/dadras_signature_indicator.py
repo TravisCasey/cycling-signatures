@@ -43,9 +43,13 @@ STORAGE = cs.CycleStorage.load(_support.dadras_storage())
 TOP_CLASSES = 5
 
 class_objects = STORAGE.classes()
-class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in class_objects]
+class_keys = [
+    tuple(int(value) for value in homology_class.to_array()) for homology_class in class_objects
+]
 nonzero_classes = [
-    (key, hclass) for key, hclass in zip(class_keys, class_objects, strict=True) if any(key)
+    (key, homology_class)
+    for key, homology_class in zip(class_keys, class_objects, strict=True)
+    if any(key)
 ]
 
 class_cycle_counts: Counter[int] = Counter()
@@ -67,8 +71,8 @@ CLASS_POSITIONS = {
 # by descending frequency within a rank, so the legend lists the rank-1
 # signatures first and the higher ranks after.
 
-LIBRARY_LENGTH = 320
-LIBRARY_STEP = 1000
+LIBRARY_LENGTH = 600
+LIBRARY_STEP = 500
 LIBRARY_SIZE = 6
 
 extent_start, extent_stop = STORAGE.extent()
@@ -88,7 +92,7 @@ library = [subspace for subspace, _ in ordered]
 # outside the library (trivial or uncommon) and 0..len(library)-1 for library
 # members.
 
-WINDOW_LENGTHS = (220, 320, 450)
+WINDOW_LENGTHS = (450, 600, 900)
 TIME_WINDOW_START = 0
 TIME_WINDOW_STOP = 20000
 COLUMN_STEP = 25
@@ -123,7 +127,9 @@ def library_colors_and_labels(
     for subspace in subspaces:
         key = None
         if subspace.rank() == 1:
-            key = next(key for key, hclass in nonzero_classes if subspace.contains(hclass))
+            key = next(
+                key for key, homology_class in nonzero_classes if subspace.contains(homology_class)
+            )
             if key not in CLASS_COLORS:
                 key = None
         frequent_keys.append(key)
