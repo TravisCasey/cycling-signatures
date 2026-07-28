@@ -4,19 +4,24 @@
 """Coverage barcode
 ==================
 
-Three barcodes stacked by the longest cycle each panel admits. Every row tracks
-one nonzero homology class of the Lorenz attractor over time, colored where some
-near-recurrent cycle of that class, no longer than the panel's length cap, has a
-sample range covering the time. Shorter caps admit only the tightest returns;
-raising the cap fills the rows in.
+Three barcodes stacked by the birth cap each panel admits. Every row tracks
+one nonzero homology class of the Lorenz attractor over time, colored where
+some cycle of that class born by the panel's threshold has a sample range
+covering the time. A cycle's birth is the metric distance between its
+endpoint samples, so low caps admit only the tightest recurrences; raising
+the cap toward the top of the stored detection band fills the rows in. All
+panels admit only cycles up to one fixed length, so coverage always means
+participation in a recurrence at that declared time scale.
 """
 
 # %%
 # Load the prebuilt ``CycleStorage`` from the published example data, fetched
 # and cached on first use.
 # ``extent()`` gives the half-open sample range covered by all stored
-# components, and ``max_length()`` is the longest cycle the storage was built to
-# detect; the per-panel caps below stay under it.
+# components, and ``threshold()`` is the top of the stored detection band;
+# the per-panel birth caps below sit at or under it.
+
+import math
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -26,6 +31,8 @@ import _support
 import cycling_signatures as cs
 
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
+BAND_TOP = STORAGE.threshold()
+assert math.isfinite(BAND_TOP)
 EXTENT_START, EXTENT_STOP = STORAGE.extent()
 COMPONENTS = STORAGE.components()
 
@@ -57,18 +64,20 @@ row_by_class_id = {class_id: row_index for row_index, class_id in enumerate(orde
 # %%
 # **Collect the cycles in the time window.** Each ``Component`` exposes its
 # cycles through ``cycles()``, and every ``Cycle`` carries its sample
-# ``range()`` and ``length()``. Filtering cycles by length closely approximates
-# the figure a storage built at a smaller cap would produce. The window
-# restricts the figure to a legible slice of the full extent.
+# ``range()`` and ``birth()``. Filtering cycles by birth matches the cycles a
+# detection capped at that threshold would admit. Cycles longer than
+# ``LENGTH_CAP`` are excluded. The window restricts the figure to a legible
+# slice of the full extent.
 
+LENGTH_CAP = 430
 COLUMN_STEP = 5
 TIME_WINDOW_START = EXTENT_START
-TIME_WINDOW_STOP = min(EXTENT_START + 10000, EXTENT_STOP)
+TIME_WINDOW_STOP = min(EXTENT_START + 30000, EXTENT_STOP)
 
 column_times = np.arange(TIME_WINDOW_START, TIME_WINDOW_STOP, COLUMN_STEP)
 num_cols = len(column_times)
 
-windowed_cycles: list[tuple[int, int, int, int]] = []
+windowed_cycles: list[tuple[int, int, int, float]] = []
 for component in COMPONENTS:
     class_id = component.class_id()
     if class_id not in row_by_class_id:
@@ -78,24 +87,34 @@ for component in COMPONENTS:
         continue
     row_index = row_by_class_id[class_id]
     for cycle in component.cycles():
+        if cycle.length() > LENGTH_CAP:
+            continue
         cycle_start, cycle_stop = cycle.range()
         if cycle_stop <= TIME_WINDOW_START or cycle_start >= TIME_WINDOW_STOP:
             continue
-        windowed_cycles.append((row_index, cycle_start, cycle_stop, cycle.length()))
+        windowed_cycles.append((row_index, cycle_start, cycle_stop, cycle.birth()))
 
 # %%
-# **Build one label array per cap.** A cell is its class row index plus one
-# where any cycle no longer than the cap covers it, and zero (white) otherwise.
-# The columns a cycle covers are the sample times that fall inside its range.
+# **Build one label array per birth cap.** A cell is its class row index plus
+# one where any cycle born by the cap covers it, and zero (white) otherwise.
+# The lower caps are quantiles of the windowed cycles' births and the last cap
+# is the band top, so the panels sweep the stored band from the tightest
+# recurrences up to everything the storage detected.
 
-LENGTHS = (160, 230, 300)
+BIRTH_QUANTILE_LEVELS = (0.25, 0.50)
+
+all_births = np.array([birth for _, _, _, birth in windowed_cycles])
+BIRTH_CAPS = (
+    *(float(np.quantile(all_births, level)) for level in BIRTH_QUANTILE_LEVELS),
+    BAND_TOP,
+)
 
 
-def coverage_labels(max_cycle_length: int) -> np.ndarray:
-    """Return the label array for cycles no longer than ``max_cycle_length``."""
+def coverage_labels(max_birth: float) -> np.ndarray:
+    """Return the label array for cycles born by ``max_birth``."""
     labels = np.zeros((num_rows, num_cols), dtype=np.int8)
-    for row_index, cycle_start, cycle_stop, cycle_length in windowed_cycles:
-        if cycle_length > max_cycle_length:
+    for row_index, cycle_start, cycle_stop, cycle_birth in windowed_cycles:
+        if cycle_birth > max_birth:
             continue
         # Columns inside the half-open range [cycle_start, cycle_stop).
         first_column = int(np.searchsorted(column_times, cycle_start))
@@ -108,7 +127,7 @@ def coverage_labels(max_cycle_length: int) -> np.ndarray:
 # **Render the stacked barcodes.** The colormap starts with white (uncovered)
 # and assigns each ranked class its canonical color. The y-axis tick labels show
 # the class vector so the reader can relate rows to homology classes, and each
-# panel is labeled with its cycle-length cap.
+# panel is labeled with its birth cap.
 
 row_colors = [CLASS_COLORS[class_keys[class_id]] for class_id in ordered_class_ids]
 
@@ -117,10 +136,10 @@ def build_figure() -> plt.Figure:
     """Return the stacked coverage barcode figure."""
     colormap = ListedColormap([(1.0, 1.0, 1.0), *row_colors])
 
-    figure, panels = plt.subplots(len(LENGTHS), 1, sharex=True, figsize=(14, 8))
-    for panel, length in zip(panels, LENGTHS, strict=True):
+    figure, panels = plt.subplots(len(BIRTH_CAPS), 1, sharex=True, figsize=(14, 8))
+    for panel, cap in zip(panels, BIRTH_CAPS, strict=True):
         panel.imshow(
-            coverage_labels(length),
+            coverage_labels(cap),
             aspect="auto",
             interpolation="nearest",
             cmap=colormap,
@@ -132,11 +151,11 @@ def build_figure() -> plt.Figure:
         panel.set_yticklabels(
             [f"[{' '.join(map(str, class_keys[class_id]))}]" for class_id in ordered_class_ids]
         )
-        panel.set_title(f"cycles up to length {length}", loc="left")
+        panel.set_title(f"cycles born by t <= {cap:.3f}", loc="left")
 
     panels[-1].set_xlabel("Time (sample index)")
     figure.supylabel("Homology class")
-    figure.suptitle("Coverage barcode: Lorenz attractor")
+    figure.suptitle(f"Coverage barcode: Lorenz attractor (cycles up to length {LENGTH_CAP})")
     figure.tight_layout()
     return figure
 
