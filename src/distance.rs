@@ -90,8 +90,11 @@ fn enumerate_tile_column_ranges(
 /// When a tile-component contains cycles previously assigned to different
 /// global ids, those ids are merged via the global union-find; the final
 /// compaction renumbers representatives to a contiguous range.
+///
+/// Components whose merged cycle list contains a length-1 cycle (a
+/// self-comparison, carrying the trivial cycle) are dropped from the result.
 fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Range<usize>>> {
-    let mut global_id_of_cycle: FxHashMap<(usize, usize), u32> = FxHashMap::default();
+    let mut global_id_of_cycle: FxHashMap<(u32, u32), u32> = FxHashMap::default();
     let mut union_find = DisjointSet::new();
     // Per-global-id cycle accumulator. Outer index is the global id;
     // inner is the cycles registered under that id (before union compaction).
@@ -103,7 +106,11 @@ fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Ran
             // tile-component (from earlier overlapping tiles).
             let mut existing_ids: Vec<u32> = tile_component
                 .iter()
-                .filter_map(|cycle| global_id_of_cycle.get(&(cycle.start, cycle.end)).copied())
+                .filter_map(|cycle| {
+                    global_id_of_cycle
+                        .get(&(cycle.start as u32, cycle.end as u32))
+                        .copied()
+                })
                 .collect();
             existing_ids.sort_unstable();
             existing_ids.dedup();
@@ -125,7 +132,7 @@ fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Ran
 
             // Register every previously-unseen cycle under chosen_id.
             for cycle in tile_component {
-                let key = (cycle.start, cycle.end);
+                let key = (cycle.start as u32, cycle.end as u32);
                 if let Entry::Vacant(entry) = global_id_of_cycle.entry(key) {
                     tile_cycle_lists[chosen_id as usize].push(cycle.clone());
                     entry.insert(chosen_id);
@@ -151,6 +158,11 @@ fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Ran
             result[compact_id].push(cycle);
         }
     }
+
+    // Placed after compaction so the predicate sees each component's complete
+    // cycle list. `retain` preserves the survivors' relative order, which the
+    // class table built from this partition depends on.
+    result.retain(|cycles| !cycles.iter().any(|cycle| cycle.end <= cycle.start + 1));
 
     result
 }
@@ -214,9 +226,17 @@ pub(crate) fn detect_components(
 /// is dispatched through `backend`. The stitching pass that merges per-tile
 /// partitions into a global partition runs on the dispatching process.
 ///
+/// Components that contain a length-1 cycle (a self-comparison, carrying the
+/// trivial cycle) are dropped after the per-tile partitions have been merged.
+/// The returned partition does not depend on how `range` is divided into tiles.
+///
 /// Alongside the components, returns the smallest distance over non-adjacent
 /// candidate pairs in the band, positive infinity if every candidate pair is
 /// adjacent.
+///
+/// # Panics
+///
+/// Panics if the trajectory holds more than `u32::MAX` samples.
 ///
 /// # Errors
 ///
@@ -244,6 +264,10 @@ pub(crate) fn detect_components_streaming(
     if max_length > tile_width {
         return Err(Error::InvalidMaxLength { max_length });
     }
+    assert!(
+        u32::try_from(trajectory.original_count()).is_ok(),
+        "trajectory sample count exceeds the supported maximum"
+    );
 
     let tile_column_ranges = enumerate_tile_column_ranges(range, tile_width, max_length);
     let prepared = metric.prepare(trajectory.points());
@@ -382,8 +406,7 @@ fn cubes_adjacent(points: ArrayView2<'_, f64>, left_point: usize, right_point: u
 /// Two adjacent entries are merged into the same component if and only if their
 /// three involved trajectory points satisfy `metric.covers_triple` at radius
 /// `threshold / 2`. Each emitted component is a list of cycle segments in
-/// original-index space. Any component that has merged with a length-1 entry
-/// (a self-comparison at `row = 0`) is filtered before return.
+/// original-index space.
 ///
 /// Returns [`TileOutcome::ThresholdExceeded`] if any non-adjacent candidate
 /// pair lies at or below `threshold`, reporting the first such pair in
@@ -491,10 +514,6 @@ fn detect_components_in_tile(
         components[component_id].push(start..end);
     }
 
-    // Trivial filter: drop components that contain a length-1 cycle (a
-    // self-comparison at row 0). Such entries chain into a single trivial
-    // component under the connectivity relation.
-    components.retain(|cycles| !cycles.iter().any(|cycle| cycle.end <= cycle.start + 1));
     TileOutcome::Components {
         components,
         non_adjacent_minimum,
@@ -639,6 +658,64 @@ mod tests {
                     .collect()
             })
             .collect()
+    }
+
+    #[test]
+    fn globally_trivial_component_dropped_across_tiles() {
+        // Cycle 6..9 closes at exactly the threshold and, inside a tile that
+        // ends at column 9, has no admitted merge partner: it looks like an
+        // isolated non-trivial component there. A tile reaching past column 9
+        // sees it merge into the component carrying the self-comparisons, so
+        // the cycle is trivial globally. Deciding triviality per tile would
+        // therefore make the partition depend on the tiling.
+        let points = array![
+            [0.75, 1.5],
+            [1.5, 1.0],
+            [1.25, 1.5],
+            [0.75, 1.0],
+            [1.25, 1.25],
+            [0.5, 0.0],
+            [0.25, 0.25],
+            [0.0, 0.5],
+            [1.0, 1.25],
+            [0.75, 0.75],
+        ];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let max_length = 6;
+        let threshold = 1.25;
+        let range = 0..points.nrows();
+
+        let (single_tile, _) = super::detect_components_streaming(
+            &trajectory,
+            Metric::Euclidean,
+            range.clone(),
+            threshold,
+            max_length,
+            points.nrows(),
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        let (multi_tile, _) = super::detect_components_streaming(
+            &trajectory,
+            Metric::Euclidean,
+            range,
+            threshold,
+            max_length,
+            6,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        assert_eq!(canonicalize(single_tile.clone()), canonicalize(multi_tile));
+        for component in &single_tile {
+            for cycle in component {
+                assert!(
+                    !(cycle.start == 6 && cycle.end == 9),
+                    "globally trivial cycle 6..9 survived into {single_tile:?}",
+                );
+            }
+        }
     }
 
     #[test]
