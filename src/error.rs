@@ -214,8 +214,7 @@ pub enum Error {
         delta: i64,
     },
 
-    /// A `max_length` value below the structure's minimum, or above the
-    /// streaming tile width.
+    /// A `max_length` value below the structure's minimum.
     #[error("cycle length cap {max_length} is invalid")]
     InvalidMaxLength {
         /// The rejected length cap.

@@ -16,13 +16,24 @@ use walker::{for_each_cycle_edge, walk_and_canonicalize};
 use crate::{
     F2Vector,
     cover::{CubicalCover, floor_to_cube},
-    distance::{adjacency_bound_streaming, detect_components, detection_tile_width},
+    distance::{self, detect_components},
     error::{Error, Result},
     metric::Metric,
     signature::CyclingSignature,
     trajectory::{Trajectory, max_consecutive_distance},
     util::{fingerprint::Fingerprint, range::normalize_segment},
 };
+
+/// Columns each tile owns in the banded-distance passes that back cycle
+/// detection.
+///
+/// The count bounds per-tile memory at `8 * max_length * owned_columns` bytes
+/// without affecting the result. Lowering it is close to free: a tile computes
+/// one column beyond the ones it owns, so the redundant work is a fraction
+/// `1 / owned_columns` of the total. It does set the granularity of parallel
+/// dispatch, though, so a value approaching the segment length leaves nothing
+/// to distribute.
+pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 1024;
 
 /// Pairs a [`Trajectory`] with a [`CubicalCover`], the metric used for queries,
 /// and the per-point cube-index map.
@@ -112,9 +123,9 @@ impl EmbeddedTrajectory {
     ///
     /// This is not a cheap accessor: it streams the segment's full candidate
     /// band in bounded-width tiles, evaluating the metric over every
-    /// candidate pair. Time scales with the band size; memory is
-    /// proportional to a single tile (`max_length` rows by the tile width),
-    /// not to the band.
+    /// candidate pair. Time scales with the band size; memory is proportional
+    /// to a single tile, `max_length` rows by a fixed column count, not to the
+    /// band.
     ///
     /// # Errors
     ///
@@ -127,13 +138,12 @@ impl EmbeddedTrajectory {
         backend: &ExecutionBackend,
     ) -> Result<f64> {
         let range = normalize_segment(segment, self.trajectory.original_count())?;
-        let tile_width = detection_tile_width(range.len(), max_length);
-        adjacency_bound_streaming(
+        distance::adjacency_bound(
             &self.trajectory,
             self.metric,
             range,
             max_length,
-            tile_width,
+            DEFAULT_OWNED_COLUMNS,
             backend,
         )
     }
@@ -173,13 +183,12 @@ impl EmbeddedTrajectory {
         max_length: usize,
         backend: &ExecutionBackend,
     ) -> Result<f64> {
-        let tile_width = detection_tile_width(range.len(), max_length);
-        let empirical_bound = adjacency_bound_streaming(
+        let empirical_bound = distance::adjacency_bound(
             &self.trajectory,
             self.metric,
             range,
             max_length,
-            tile_width,
+            DEFAULT_OWNED_COLUMNS,
             backend,
         )?;
         if empirical_bound <= self.bound {
@@ -456,12 +465,17 @@ impl EmbeddedTrajectory {
         threshold: f64,
     ) -> Result<CyclingSignature> {
         self.check_threshold(threshold)?;
-        let components = detect_components(
+        let range = normalize_segment(segment, self.trajectory.original_count())?;
+        // A signature has no length cap, so every pair inside the segment is a
+        // candidate. Detection clamps the cap to the segment's own length.
+        let (components, _adjacency_bound) = detect_components(
             &self.trajectory,
             self.metric,
-            segment,
+            range,
             threshold,
             self.trajectory.original_count(),
+            DEFAULT_OWNED_COLUMNS,
+            &ExecutionBackend::Sequential,
         )?;
 
         let points = self.trajectory.points();

@@ -4,10 +4,7 @@
 //! Connected components of below-threshold pair-edges over a trajectory
 //! segment.
 
-use std::{
-    collections::hash_map::Entry,
-    ops::{Range, RangeBounds},
-};
+use std::{collections::hash_map::Entry, ops::Range};
 
 use chomp3rs::{ExecutionBackend, parallel::map::ParallelMap};
 use ndarray::{Array2, ArrayView2};
@@ -19,7 +16,7 @@ use crate::{
     error::{Error, Result},
     metric::{Metric, PreparedPoints},
     trajectory::Trajectory,
-    util::{disjoint::DisjointSet, range::normalize_segment},
+    util::disjoint::DisjointSet,
 };
 
 /// A single tile's detection outcome.
@@ -38,46 +35,22 @@ enum TileOutcome {
     ThresholdExceeded { distance: f64 },
 }
 
-/// Default tile width for streaming banded-distance passes.
-pub(crate) const DEFAULT_TILE_WIDTH: usize = 1024;
-
-/// The tile width for a streaming banded-distance pass over a segment of
-/// `range_length` samples with cycle-length cap `max_length`.
+/// Partitions `range` into tiles of `owned_columns` consecutive columns, each
+/// extended by one read-ahead column where the window allows.
 ///
-/// Never wider than the segment and never narrower than `max_length`, so the
-/// streaming requirement `max_length <= tile_width` holds. Every streaming
-/// pass over the same segment and cap must use this exact width: two passes
-/// (an adjacency-bound sweep and a detection pass, or two detection passes)
-/// tile identically only when they agree on this value, which is what makes
-/// their results (in particular, an adjacency bound computed in one pass and
-/// reproduced as the piggybacked minimum of another) comparable.
-pub(crate) fn detection_tile_width(range_length: usize, max_length: usize) -> usize {
-    DEFAULT_TILE_WIDTH.min(range_length).max(max_length)
-}
-
-/// Lays out tile column ranges across `range` with stride `tile_width -
-/// (max_length - 1)`. The last tile is right-clipped to the extent; all
-/// preceding tiles have full width.
-fn enumerate_tile_column_ranges(
-    range: Range<usize>,
-    tile_width: usize,
-    max_length: usize,
-) -> Vec<Range<usize>> {
-    if max_length == 0 {
-        return Vec::new();
-    }
-
-    let overlap = max_length - 1;
-    let stride = tile_width - overlap;
+/// The read-ahead column is owned by the following tile, so cycles starting
+/// there are emitted twice. That duplication is deliberate: the merge relation
+/// joins a cycle to the one starting one step later, an edge that would
+/// otherwise straddle a tile boundary, and the shared cycles give the stitching
+/// pass the join key it needs to reunite the two sides.
+fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Vec<Range<usize>> {
     let mut column_ranges = Vec::new();
     let mut base = range.start;
     while base < range.end {
-        let column_end = (base + tile_width).min(range.end);
-        column_ranges.push(base..column_end);
-        if column_end >= range.end {
-            break;
-        }
-        base += stride;
+        let owned_end = (base + owned_columns).min(range.end);
+        let tile_end = (owned_end + 1).min(range.end);
+        column_ranges.push(base..tile_end);
+        base = owned_end;
     }
     column_ranges
 }
@@ -167,60 +140,8 @@ fn stitch_per_tile_results(per_tile: Vec<Vec<Vec<Range<usize>>>>) -> Vec<Vec<Ran
     result
 }
 
-/// Connected components of below-threshold pair-edges over a trajectory
-/// segment, with a cycle-length cap.
-///
-/// Each pair of original-index positions `(start, end)` with
-/// `end - start <= max_length` and metric distance at or below `threshold`
-/// represents a candidate cycle: the trajectory walks from `start` to `end - 1`
-/// and closes directly. Two candidate cycles merge into the same component
-/// when:
-///
-/// - they share exactly one endpoint, with the other two endpoint positions
-///   adjacent in original-index space, and
-/// - the three trajectory points involved satisfy [`Metric::covers_triple`]
-///   with `radius = threshold / 2`.
-///
-/// The transitive closure of this relation partitions the below-threshold
-/// candidates. Components that contain a length 1 entry (a self-comparison,
-/// carrying the trivial cycle) are filtered before return; all remaining
-/// components group cycles by signature equivalence.
-///
-/// Segments and returned cycle ranges are in original-index space
-/// (`0..trajectory.original_count()`).
-///
-/// # Errors
-///
-/// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a valid
-///   sub-range of `0..trajectory.original_count()`.
-/// - [`Error::ThresholdExceedsAdjacencyBound`] if the threshold admits a
-///   candidate endpoint pair in non-adjacent cubes.
-pub(crate) fn detect_components(
-    trajectory: &Trajectory,
-    metric: Metric,
-    segment: impl RangeBounds<usize>,
-    threshold: f64,
-    max_length: usize,
-) -> Result<Vec<Vec<Range<usize>>>> {
-    let range = normalize_segment(segment, trajectory.original_count())?;
-    // A tile at least as wide as the segment holds the whole segment in one
-    // tile, so this routes through the streaming path without splitting into
-    // multiple tiles.
-    let tile_width = range.len().max(max_length);
-    let (components, _adjacency_bound) = detect_components_streaming(
-        trajectory,
-        metric,
-        range,
-        threshold,
-        max_length,
-        tile_width,
-        &ExecutionBackend::Sequential,
-    )?;
-    Ok(components)
-}
-
-/// Connected components of below-threshold pair-edges over `range`, streamed
-/// across tiles of width `tile_width`.
+/// Connected components of below-threshold pair-edges over `range`, computed
+/// across tiles that each own `owned_columns` of it.
 ///
 /// Per-tile work (distance-tile construction plus `detect_components_in_tile`)
 /// is dispatched through `backend`. The stitching pass that merges per-tile
@@ -242,16 +163,15 @@ pub(crate) fn detect_components(
 ///
 /// - [`Error::WindowOutOfBounds`] if `range` is outside the trajectory's
 ///   original-index space.
-/// - [`Error::InvalidMaxLength`] if `max_length > tile_width`.
 /// - [`Error::ThresholdExceedsAdjacencyBound`] if the threshold admits a
 ///   candidate endpoint pair in non-adjacent cubes.
-pub(crate) fn detect_components_streaming(
+pub(crate) fn detect_components(
     trajectory: &Trajectory,
     metric: Metric,
     range: Range<usize>,
     threshold: f64,
     max_length: usize,
-    tile_width: usize,
+    owned_columns: usize,
     backend: &ExecutionBackend,
 ) -> Result<(Vec<Vec<Range<usize>>>, f64)> {
     if range.start > range.end || range.end > trajectory.original_count() {
@@ -261,15 +181,20 @@ pub(crate) fn detect_components_streaming(
             trajectory_length: trajectory.original_count(),
         });
     }
-    if max_length > tile_width {
-        return Err(Error::InvalidMaxLength { max_length });
-    }
     assert!(
         u32::try_from(trajectory.original_count()).is_ok(),
         "trajectory sample count exceeds the supported maximum"
     );
 
-    let tile_column_ranges = enumerate_tile_column_ranges(range, tile_width, max_length);
+    // A cycle inside the window cannot outrun the window, so rows above its
+    // length are infinite throughout and cost only allocation.
+    let capped_length = max_length.min(range.len());
+    if capped_length == 0 {
+        return Ok((Vec::new(), f64::INFINITY));
+    }
+
+    let window_end = range.end;
+    let tile_column_ranges = enumerate_tile_column_ranges(range, owned_columns);
     let prepared = metric.prepare(trajectory.points());
 
     // `build_distance_tile`'s only failure mode is `WindowOutOfBounds`,
@@ -281,8 +206,14 @@ pub(crate) fn detect_components_streaming(
         tile_column_ranges.into_iter(),
         |column_range: Range<usize>| {
             let start = column_range.start;
-            let tile = build_distance_tile(trajectory, &prepared, column_range, max_length)
-                .expect("tile column range fits inside the validated window");
+            let tile = build_distance_tile(
+                trajectory,
+                &prepared,
+                column_range,
+                window_end,
+                capped_length,
+            )
+            .expect("tile column range fits inside the validated window");
             let outcome =
                 detect_components_in_tile(tile.view(), trajectory, metric, start, threshold);
             vec![(start, outcome)]
@@ -325,20 +256,19 @@ pub(crate) fn detect_components_streaming(
 /// infinity if every candidate pair is adjacent.
 ///
 /// This is the distance-only counterpart of
-/// [`detect_components_streaming`]: it streams the same tiles but performs no
+/// [`detect_components`]: it streams the same tiles but performs no
 /// admission, merging, or component assembly.
 ///
 /// # Errors
 ///
 /// - [`Error::WindowOutOfBounds`] if `range` is outside the trajectory's
 ///   original-index space.
-/// - [`Error::InvalidMaxLength`] if `max_length > tile_width`.
-pub(crate) fn adjacency_bound_streaming(
+pub(crate) fn adjacency_bound(
     trajectory: &Trajectory,
     metric: Metric,
     range: Range<usize>,
     max_length: usize,
-    tile_width: usize,
+    owned_columns: usize,
     backend: &ExecutionBackend,
 ) -> Result<f64> {
     if range.start > range.end || range.end > trajectory.original_count() {
@@ -348,11 +278,15 @@ pub(crate) fn adjacency_bound_streaming(
             trajectory_length: trajectory.original_count(),
         });
     }
-    if max_length > tile_width {
-        return Err(Error::InvalidMaxLength { max_length });
+    // A cycle inside the window cannot outrun the window, so rows above its
+    // length are infinite throughout and cost only allocation.
+    let capped_length = max_length.min(range.len());
+    if capped_length == 0 {
+        return Ok(f64::INFINITY);
     }
 
-    let tile_column_ranges = enumerate_tile_column_ranges(range, tile_width, max_length);
+    let window_end = range.end;
+    let tile_column_ranges = enumerate_tile_column_ranges(range, owned_columns);
     let points = trajectory.points();
     let original_indices = trajectory.original_indices();
     let prepared = metric.prepare(points);
@@ -361,8 +295,14 @@ pub(crate) fn adjacency_bound_streaming(
         tile_column_ranges.into_iter(),
         |column_range: Range<usize>| {
             let base = column_range.start;
-            let tile = build_distance_tile(trajectory, &prepared, column_range, max_length)
-                .expect("tile column range fits inside the validated window");
+            let tile = build_distance_tile(
+                trajectory,
+                &prepared,
+                column_range,
+                window_end,
+                capped_length,
+            )
+            .expect("tile column range fits inside the validated window");
             let mut non_adjacent_minimum = f64::INFINITY;
             for ((row, col), &distance) in tile.indexed_iter() {
                 // Row 0 is the self-comparison; padded entries hold infinity.
@@ -477,7 +417,17 @@ fn detect_components_in_tile(
 
         // Later-start-same-end neighbor at (row - 1, col + 1): same
         // right endpoint original_indices[base + col + row], start
-        // shifts one later. Triple:
+        // shifts one later.
+        //
+        // The `col + 1 < width` guard decides tile ownership of this edge. A
+        // tile carries one column past the ones it owns, so for an owned
+        // column the partner is present and the edge is found here. On that
+        // final read-ahead column the guard fails, which is correct: the same
+        // column is owned by the next tile, where the partner is present and
+        // the edge is found instead. Every edge is therefore discovered
+        // exactly once, and neither side is dropped at a boundary.
+        //
+        // Triple:
         //   shared right:       original_indices[base + col + row]
         //   left of later:      original_indices[base + col + 1]
         //   left of current:    original_indices[base + col]
@@ -520,40 +470,50 @@ fn detect_components_in_tile(
     }
 }
 
-/// Builds a rectangular distance tile of shape `(max_length, width)` for the
-/// segment of original indices `range`. Entry `tile[(row, col)]` holds the
-/// metric distance between `points[original_indices[base + col]]` and
-/// `points[original_indices[base + col + row]]`, where `base = range.start`
-/// and `width = range.end - range.start`. Entries that would refer to past-end
-/// original indices are populated with `f64::INFINITY`. Row 0 is the
-/// self-comparison (`0.0` for valid columns).
+/// Builds a rectangular distance tile of shape `(max_length, width)` over the
+/// original indices `columns`. Entry `tile[(row, col)]` holds the metric
+/// distance between `points[original_indices[base + col]]` and
+/// `points[original_indices[base + col + row]]`, where `base = columns.start`
+/// and `width = columns.end - columns.start`.
+///
+/// Rows reach past the tile's own columns and stop at `window_end`, the end of
+/// the analysis window: a cycle starting in this tile may finish outside it.
+/// Entries that would refer to indices at or past `window_end` are populated
+/// with `f64::INFINITY`. Row 0 is the self-comparison (`0.0` for every column).
 ///
 /// A cycle of length `L` registers at `row = L - 1` of the returned tile.
-/// `max_length = 0` produces an empty tile; `max_length = 1` produces a tile of
+/// `max_length` must be at least 1; `max_length = 1` produces a tile of
 /// self-comparisons that detection treats as trivial.
+///
+/// # Panics
+///
+/// Panics if `max_length` is 0, which would leave row 0 with nowhere to write
+/// its self-comparisons.
 ///
 /// # Errors
 ///
-/// - [`Error::WindowOutOfBounds`] if `range` is not a valid sub-range of
-///   `0..trajectory.original_count()`.
+/// - [`Error::WindowOutOfBounds`] if `columns` and `window_end` are not a valid
+///   nested pair of sub-ranges of `0..trajectory.original_count()`.
 fn build_distance_tile(
     trajectory: &Trajectory,
     prepared: &PreparedPoints,
-    range: Range<usize>,
+    columns: Range<usize>,
+    window_end: usize,
     max_length: usize,
 ) -> Result<Array2<f64>> {
     let original_count = trajectory.original_count();
-    if range.start > range.end || range.end > original_count {
+    if columns.start > columns.end || columns.end > window_end || window_end > original_count {
         return Err(Error::WindowOutOfBounds {
-            start: range.start,
-            end: range.end,
+            start: columns.start,
+            end: columns.end,
             trajectory_length: original_count,
         });
     }
+    assert!(max_length > 0, "distance tile needs at least one row");
 
-    let width = range.end - range.start;
+    let width = columns.end - columns.start;
     let height = max_length;
-    let base = range.start;
+    let base = columns.start;
     let original_indices = trajectory.original_indices();
 
     let mut tile = Array2::<f64>::from_elem((height, width), f64::INFINITY);
@@ -561,10 +521,10 @@ fn build_distance_tile(
         let start_index = original_indices[base + col];
         // Row 0: self-comparison.
         tile[(0, col)] = 0.0;
-        // Rows 1..height: valid only while base + col + row < range.end.
+        // Rows 1..height: valid only while base + col + row < window_end.
         for row in 1..height {
             let original_offset = base + col + row;
-            if original_offset >= range.end {
+            if original_offset >= window_end {
                 break;
             }
             let end_index = original_indices[original_offset];
@@ -583,7 +543,10 @@ mod tests {
     use ndarray::{Array2, array};
 
     use super::detect_components;
-    use crate::{Trajectory, error::Error, metric::Metric, trajectory::max_consecutive_distance};
+    use crate::{
+        Trajectory, embedded::DEFAULT_OWNED_COLUMNS, error::Error, metric::Metric,
+        trajectory::max_consecutive_distance,
+    };
 
     fn small_trajectory() -> Trajectory {
         let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0], [2.0, 0.0]];
@@ -593,14 +556,32 @@ mod tests {
     #[test]
     fn rejects_segment_out_of_bounds() {
         let trajectory = small_trajectory();
-        let err = detect_components(&trajectory, Metric::Euclidean, 0..10, 0.5, 5).unwrap_err();
+        let err = detect_components(
+            &trajectory,
+            Metric::Euclidean,
+            0..10,
+            0.5,
+            5,
+            5,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap_err();
         assert!(matches!(err, Error::WindowOutOfBounds { .. }));
     }
 
     #[test]
     fn straight_line_trajectory_emits_no_real_recurrence() {
         let trajectory = small_trajectory();
-        let components = detect_components(&trajectory, Metric::Euclidean, 0..5, 0.5, 5).unwrap();
+        let (components, _) = detect_components(
+            &trajectory,
+            Metric::Euclidean,
+            0..5,
+            0.5,
+            5,
+            5,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
         assert!(
             components.is_empty(),
             "expected no non-trivial components for a straight-line trajectory, got {components:?}",
@@ -609,10 +590,12 @@ mod tests {
 
     #[test]
     fn padded_tile_entries_do_not_leak_into_components() {
-        // 9-point square-trace fixture. With max_length=15 (> original_count=9),
-        // the underlying tile has padding both above the diagonal of valid rows
-        // and along its right edge. The non-trivial cycle 0..9 should still be
-        // detected; padded entries must not produce any emitted segment.
+        // 9-point square-trace fixture. A cap larger than the segment is
+        // clamped to its length, so the underlying tile is square and every
+        // entry whose row would reach past the window end stays infinite: the
+        // padding fills the triangle above the anti-diagonal. The non-trivial
+        // cycle 0..9 should still be detected; padded entries must not produce
+        // any emitted segment.
         let points = ndarray::array![
             [0.0, 0.0],
             [0.5, 0.0],
@@ -625,7 +608,16 @@ mod tests {
             [0.0, 0.0],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let components = detect_components(&trajectory, Metric::Euclidean, .., 0.6, 15).unwrap();
+        let (components, _) = detect_components(
+            &trajectory,
+            Metric::Euclidean,
+            0..9,
+            0.6,
+            15,
+            9,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
 
         let found = components.iter().any(|component| {
             component
@@ -661,6 +653,107 @@ mod tests {
     }
 
     #[test]
+    fn boundary_same_end_merge_survives_partition() {
+        // Cycles 7..12 and 8..12 share an endpoint and merge, but their starts
+        // straddle the boundary between the tile owning columns 0..8 and the
+        // one owning 8..14. The read-ahead column ensures they merge.
+        let points = array![
+            [1.0, 0.5],
+            [0.25, 0.75],
+            [0.5, 0.0],
+            [1.5, 1.25],
+            [0.25, 0.5],
+            [1.0, 0.75],
+            [1.25, 0.75],
+            [1.0, 0.75],
+            [0.25, 1.25],
+            [0.5, 0.0],
+            [1.5, 0.5],
+            [0.75, 1.5],
+            [0.25, 0.0],
+            [0.0, 0.5],
+        ];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let max_length = 5;
+        let threshold = 1.0;
+        let range = 0..points.nrows();
+
+        let (single_tile, _) = super::detect_components(
+            &trajectory,
+            Metric::Euclidean,
+            range.clone(),
+            threshold,
+            max_length,
+            points.nrows(),
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        let (multi_tile, _) = super::detect_components(
+            &trajectory,
+            Metric::Euclidean,
+            range,
+            threshold,
+            max_length,
+            8,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        assert_eq!(canonicalize(single_tile), canonicalize(multi_tile.clone()));
+
+        let boundary_pair_shares_a_component = multi_tile.iter().any(|component| {
+            let holds = |start: usize, end: usize| {
+                component
+                    .iter()
+                    .any(|cycle| cycle.start == start && cycle.end == end)
+            };
+            holds(7, 12) && holds(8, 12)
+        });
+        assert!(
+            boundary_pair_shares_a_component,
+            "expected 7..12 and 8..12 in one component; got {multi_tile:?}",
+        );
+    }
+
+    #[test]
+    fn default_owned_columns_splits_and_matches_single_tile() {
+        // Only a segment longer than `DEFAULT_OWNED_COLUMNS` splits.
+        let count = DEFAULT_OWNED_COLUMNS + 200;
+        let positions: Vec<f64> = (0..count)
+            .map(|index| (index as f64 * 0.4).sin() * 2.0)
+            .collect();
+        let points = Array2::from_shape_vec((count, 1), positions).unwrap();
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let bound = max_consecutive_distance(trajectory.points(), Metric::Euclidean);
+        let threshold = bound.max(0.5);
+        let max_length = 5;
+
+        let (split, _) = detect_components(
+            &trajectory,
+            Metric::Euclidean,
+            0..count,
+            threshold,
+            max_length,
+            DEFAULT_OWNED_COLUMNS,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+        let (whole, _) = detect_components(
+            &trajectory,
+            Metric::Euclidean,
+            0..count,
+            threshold,
+            max_length,
+            count,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        assert_eq!(canonicalize(split), canonicalize(whole));
+    }
+
+    #[test]
     fn globally_trivial_component_dropped_across_tiles() {
         // Cycle 6..9 closes at exactly the threshold and, inside a tile that
         // ends at column 9, has no admitted merge partner: it looks like an
@@ -685,7 +778,7 @@ mod tests {
         let threshold = 1.25;
         let range = 0..points.nrows();
 
-        let (single_tile, _) = super::detect_components_streaming(
+        let (single_tile, _) = super::detect_components(
             &trajectory,
             Metric::Euclidean,
             range.clone(),
@@ -696,7 +789,7 @@ mod tests {
         )
         .unwrap();
 
-        let (multi_tile, _) = super::detect_components_streaming(
+        let (multi_tile, _) = super::detect_components(
             &trajectory,
             Metric::Euclidean,
             range,
@@ -719,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn streaming_single_tile_matches_multi_tile() {
+    fn single_tile_matches_multi_tile() {
         // Build a small 1D trajectory that forms a known recurrent loop and
         // exercises multiple tiles when tile_width is small.
         let positions: Vec<f64> = (0..30)
@@ -732,7 +825,7 @@ mod tests {
         let max_length = 5;
         let range = 0..30;
 
-        let (single_tile, _) = super::detect_components_streaming(
+        let (single_tile, _) = super::detect_components(
             &trajectory,
             Metric::Euclidean,
             range.clone(),
@@ -743,7 +836,7 @@ mod tests {
         )
         .unwrap();
 
-        let (multi_tile, _) = super::detect_components_streaming(
+        let (multi_tile, _) = super::detect_components(
             &trajectory,
             Metric::Euclidean,
             range.clone(),
@@ -771,7 +864,16 @@ mod tests {
             [0.0, 0.0],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let components = detect_components(&trajectory, Metric::Euclidean, .., 0.6, 9).unwrap();
+        let (components, _) = detect_components(
+            &trajectory,
+            Metric::Euclidean,
+            0..9,
+            0.6,
+            9,
+            9,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
 
         let found = components.iter().any(|component| {
             component
@@ -807,10 +909,10 @@ mod tests {
             }
         }
 
-        // Multi-tile streaming agrees with the brute force, and the
+        // The multi-tile pass agrees with the brute force, and the
         // piggybacked minimum from component detection agrees with the
         // standalone sweep.
-        let standalone = super::adjacency_bound_streaming(
+        let standalone = super::adjacency_bound(
             &trajectory,
             Metric::Euclidean,
             0..30,
@@ -822,7 +924,7 @@ mod tests {
         assert!((standalone - expected).abs() < 1e-12);
 
         let bound = max_consecutive_distance(trajectory.points(), Metric::Euclidean);
-        let (_, piggybacked) = super::detect_components_streaming(
+        let (_, piggybacked) = super::detect_components(
             &trajectory,
             Metric::Euclidean,
             0..30,

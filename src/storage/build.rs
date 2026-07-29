@@ -12,7 +12,8 @@ use chomp3rs::ExecutionBackend;
 use super::{Component, Cycle, CycleStorage};
 use crate::{
     EmbeddedTrajectory, F2Vector,
-    distance::{detect_components_streaming, detection_tile_width},
+    distance::detect_components,
+    embedded::DEFAULT_OWNED_COLUMNS,
     error::{Error, Result},
     storage::interval_subsumption::IntervalSubsumptionIndex,
     util::range::normalize_segment,
@@ -129,14 +130,13 @@ impl CycleStorage {
         let metric = embedded.metric();
         let fingerprint = embedded.fingerprint();
 
-        let tile_width = detection_tile_width(range.len(), max_length);
-        let (raw_components, adjacency_bound) = detect_components_streaming(
+        let (raw_components, adjacency_bound) = detect_components(
             trajectory,
             metric,
             range.clone(),
             threshold,
             max_length,
-            tile_width,
+            DEFAULT_OWNED_COLUMNS,
             backend,
         )?;
 
