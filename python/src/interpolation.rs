@@ -4,6 +4,8 @@
 //! Python wrappers for the interpolation types used when constructing
 //! sphere-bundle trajectories.
 
+use std::sync::Arc;
+
 use cycling_signatures::{ChebyshevSphereBundleInterpolator, CubicSpline};
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
@@ -45,7 +47,7 @@ use crate::errors::to_pyerr;
 ///     spline = cs.CubicSpline(knots, values)
 #[pyclass(name = "CubicSpline")]
 pub(crate) struct PyCubicSpline {
-    pub(crate) inner: CubicSpline,
+    pub(crate) inner: Arc<CubicSpline>,
 }
 
 #[pymethods]
@@ -56,7 +58,9 @@ impl PyCubicSpline {
     fn new(knots: PyReadonlyArray1<'_, f64>, values: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
         let inner =
             CubicSpline::new(knots.as_array().to_owned(), values.as_array()).map_err(to_pyerr)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 }
 
@@ -94,7 +98,7 @@ impl PyCubicSpline {
 ///     assert bundle.radius() == 1.5
 #[pyclass(name = "ChebyshevSphereBundleInterpolator")]
 pub(crate) struct PyChebyshevSphereBundleInterpolator {
-    pub(crate) inner: ChebyshevSphereBundleInterpolator<CubicSpline>,
+    pub(crate) inner: ChebyshevSphereBundleInterpolator<Arc<CubicSpline>>,
 }
 
 #[pymethods]
@@ -102,7 +106,7 @@ impl PyChebyshevSphereBundleInterpolator {
     /// Wraps a ``CubicSpline`` with the given radius floor.
     #[new]
     fn new(inner: &Bound<'_, PyCubicSpline>, radius_floor: u32) -> Self {
-        let spline = inner.borrow().inner.clone();
+        let spline = Arc::clone(&inner.borrow().inner);
         let bundle = ChebyshevSphereBundleInterpolator::new(spline, radius_floor);
         Self { inner: bundle }
     }
