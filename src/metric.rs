@@ -195,6 +195,14 @@ pub(crate) struct PreparedPoints {
 }
 
 impl PreparedPoints {
+    /// The contiguous coordinates of prepared row `index`.
+    fn row(&self, index: usize) -> &[f64] {
+        self.rows
+            .row(index)
+            .to_slice()
+            .expect("prepared points are stored contiguously")
+    }
+
     /// The distance between prepared rows `left_row` and `right_row`, equal
     /// to [`Metric::distance`] evaluated on the corresponding original rows.
     ///
@@ -204,14 +212,8 @@ impl PreparedPoints {
     /// points.
     #[must_use]
     pub(crate) fn distance(&self, left_row: usize, right_row: usize) -> f64 {
-        let left = self.rows.row(left_row);
-        let right = self.rows.row(right_row);
-        let left = left
-            .as_slice()
-            .expect("prepared points are stored contiguously");
-        let right = right
-            .as_slice()
-            .expect("prepared points are stored contiguously");
+        let left = self.row(left_row);
+        let right = self.row(right_row);
 
         match self.metric {
             Metric::Euclidean => euclidean_distance_slices(left, right),
@@ -220,6 +222,53 @@ impl PreparedPoints {
                 let position_distance = euclidean_distance_slices(&left[..half], &right[..half]);
                 let direction_distance = euclidean_distance_slices(&left[half..], &right[half..]);
                 position_distance.max(direction_weight(radius_floor) * direction_distance)
+            },
+        }
+    }
+
+    /// Returns `true` if balls of `radius` around the three prepared rows
+    /// share a common point, equal to [`Metric::covers_triple`] evaluated on
+    /// the corresponding original rows.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any row index is out of bounds for the prepared points.
+    #[must_use]
+    pub(crate) fn covers_triple(
+        &self,
+        first_row: usize,
+        second_row: usize,
+        third_row: usize,
+        radius: f64,
+    ) -> bool {
+        let first = self.row(first_row);
+        let second = self.row(second_row);
+        let third = self.row(third_row);
+
+        match self.metric {
+            Metric::Euclidean => sides_cover_triple(
+                [
+                    euclidean_distance_slices(first, second),
+                    euclidean_distance_slices(first, third),
+                    euclidean_distance_slices(second, third),
+                ],
+                radius,
+            ),
+            Metric::SphereBundle { radius_floor } => {
+                let half = first.len() / 2;
+                let weight = direction_weight(radius_floor);
+                let position_sides = [
+                    euclidean_distance_slices(&first[..half], &second[..half]),
+                    euclidean_distance_slices(&first[..half], &third[..half]),
+                    euclidean_distance_slices(&second[..half], &third[..half]),
+                ];
+                let direction_sides = [
+                    weight * euclidean_distance_slices(&first[half..], &second[half..]),
+                    weight * euclidean_distance_slices(&first[half..], &third[half..]),
+                    weight * euclidean_distance_slices(&second[half..], &third[half..]),
+                ];
+                sides_cover_triple(position_sides, radius)
+                    && sides_cover_triple(direction_sides, radius)
             },
         }
     }
@@ -255,28 +304,23 @@ pub(crate) fn euclidean_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'
     euclidean_norm_of_differences(point.iter().copied().zip(other.iter().copied()))
 }
 
-/// Returns `true` if the smallest enclosing `l_2` ball of `first`, `second`,
-/// `third` has radius at most `radius`. Closed form in terms of pairwise
-/// distances:
+/// Returns `true` if the smallest enclosing `l_2` ball of a point triple with
+/// the given pairwise side lengths has radius at most `radius`. Closed form:
 ///
-/// - If the longest pairwise distance `c` satisfies `c^2 >= a^2 + b^2` (obtuse
-///   or right triangle at the vertex opposite `c`, or collinear), the smallest
-///   enclosing ball has `c` as diameter.
+/// - If the longest side `c` satisfies `c^2 >= a^2 + b^2` (obtuse or right
+///   triangle at the vertex opposite `c`, or collinear), the smallest enclosing
+///   ball has `c` as diameter.
 /// - Otherwise the smallest enclosing ball is the circumscribed circle, with
 ///   radius `(a * b * c) / (4 * area)` and `area` from Heron's formula.
-pub(crate) fn euclidean_covers_triple(
-    first: ArrayView1<'_, f64>,
-    second: ArrayView1<'_, f64>,
-    third: ArrayView1<'_, f64>,
-    radius: f64,
-) -> bool {
-    let first_second = euclidean_distance(first, second);
-    let first_third = euclidean_distance(first, third);
-    let second_third = euclidean_distance(second, third);
-
-    let mut sides = [first_second, first_third, second_third];
-    sides.sort_by(f64::total_cmp);
-    let [shorter, mid, longest] = sides;
+///
+/// Sides are ordered `[first-second, first-third, second-third]`. The order is
+/// part of the contract: the circumscribed-circle branch sums and multiplies
+/// the sides in the order given, so a permuted array is mathematically equal
+/// and numerically different.
+fn sides_cover_triple(sides: [f64; 3], radius: f64) -> bool {
+    let mut sorted = sides;
+    sorted.sort_by(f64::total_cmp);
+    let [shorter, mid, longest] = sorted;
 
     if longest > 2.0 * radius {
         return false;
@@ -289,10 +333,29 @@ pub(crate) fn euclidean_covers_triple(
     }
 
     // Acute triangle: circumscribed circle. Heron's formula for area.
+    let [first_second, first_third, second_third] = sides;
     let semi = (first_second + first_third + second_third) / 2.0;
     let area = (semi * (semi - first_second) * (semi - first_third) * (semi - second_third)).sqrt();
     let circumradius = (first_second * first_third * second_third) / (4.0 * area);
     circumradius <= radius
+}
+
+/// Returns `true` if the smallest enclosing `l_2` ball of `first`, `second`,
+/// `third` has radius at most `radius`.
+fn euclidean_covers_triple(
+    first: ArrayView1<'_, f64>,
+    second: ArrayView1<'_, f64>,
+    third: ArrayView1<'_, f64>,
+    radius: f64,
+) -> bool {
+    sides_cover_triple(
+        [
+            euclidean_distance(first, second),
+            euclidean_distance(first, third),
+            euclidean_distance(second, third),
+        ],
+        radius,
+    )
 }
 
 #[cfg(test)]

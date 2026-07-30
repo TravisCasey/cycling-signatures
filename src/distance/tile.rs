@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use super::tile_components::TileComponents;
 use crate::{
     error::{Error, Result},
-    metric::{Metric, PreparedPoints},
+    metric::PreparedPoints,
     trajectory::Trajectory,
     util::disjoint::DisjointSet,
 };
@@ -43,9 +43,9 @@ pub(super) enum TileOutcome {
 /// `columns`, alongside the tile's smallest non-adjacent-pair distance.
 ///
 /// Rows reach past the tile's own columns and stop at `window_end`. Two
-/// adjacent entries are merged into the same component if and only if their
-/// three involved trajectory points satisfy `metric.covers_triple` at radius
-/// `threshold / 2`. Each emitted component is a list of cycle segments in
+/// adjacent entries are merged into the same component if and only if balls of
+/// radius `threshold / 2` around their three involved trajectory points share
+/// a common point. Each emitted component is a list of cycle segments in
 /// original-index space.
 ///
 /// Returns [`TileOutcome::ThresholdExceeded`] if any non-adjacent candidate
@@ -60,7 +60,6 @@ pub(super) enum TileOutcome {
 pub(super) fn detect_tile_components(
     trajectory: &Trajectory,
     prepared: &PreparedPoints,
-    metric: Metric,
     columns: Range<usize>,
     window_end: usize,
     max_length: usize,
@@ -69,7 +68,7 @@ pub(super) fn detect_tile_components(
     let base = columns.start;
     let tile = build_distance_tile(trajectory, prepared, columns, window_end, max_length)
         .expect("tile column range fits inside the validated window");
-    partition_tile(tile.view(), trajectory, metric, base, threshold)
+    partition_tile(tile.view(), trajectory, prepared, base, threshold)
 }
 
 /// The smallest metric distance between two candidate endpoint samples of the
@@ -134,7 +133,7 @@ fn cubes_adjacent(points: ArrayView2<'_, f64>, left_point: usize, right_point: u
 fn partition_tile(
     tile: ArrayView2<'_, f64>,
     trajectory: &Trajectory,
-    metric: Metric,
+    prepared: &PreparedPoints,
     base: usize,
     threshold: f64,
 ) -> TileOutcome {
@@ -184,10 +183,10 @@ fn partition_tile(
         //   right of current:   original_indices[base + col + row]
         if row > 0
             && let Some(&shorter_id) = entry_ids.get(&(row - 1, col))
-            && metric.covers_triple(
-                points.row(original_indices[base + col]),
-                points.row(original_indices[base + col + row - 1]),
-                points.row(original_indices[base + col + row]),
+            && prepared.covers_triple(
+                original_indices[base + col],
+                original_indices[base + col + row - 1],
+                original_indices[base + col + row],
                 ball_radius,
             )
         {
@@ -213,10 +212,10 @@ fn partition_tile(
         if row > 0
             && col + 1 < width
             && let Some(&later_id) = entry_ids.get(&(row - 1, col + 1))
-            && metric.covers_triple(
-                points.row(original_indices[base + col + row]),
-                points.row(original_indices[base + col + 1]),
-                points.row(original_indices[base + col]),
+            && prepared.covers_triple(
+                original_indices[base + col + row],
+                original_indices[base + col + 1],
+                original_indices[base + col],
                 ball_radius,
             )
         {

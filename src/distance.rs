@@ -112,7 +112,6 @@ pub(crate) fn detect_components(
             let outcome = detect_tile_components(
                 trajectory,
                 &prepared,
-                metric,
                 column_range,
                 window_end,
                 capped_length,

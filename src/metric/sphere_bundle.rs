@@ -6,7 +6,7 @@
 
 use ndarray::{Array1, Array2, ArrayView1, s};
 
-use crate::metric::{euclidean_covers_triple, euclidean_distance};
+use crate::metric::{euclidean_distance, sides_cover_triple};
 
 /// The direction weight derived from a radius floor: the cover radius
 /// `radius_floor + 0.5`.
@@ -98,9 +98,7 @@ pub(crate) fn sphere_bundle_distance(
 }
 
 /// Returns `true` if sphere-bundle balls with `radius` around the three
-/// points share a common point: their position halves must admit a common
-/// `l_2` ball of radius `radius`, and their L2-normalized direction halves a
-/// common ball of the weight-rescaled radius.
+/// points share a common point.
 ///
 /// # Panics
 ///
@@ -124,14 +122,20 @@ pub(crate) fn sphere_bundle_covers_triple(
     let (position_first, direction_first) = split_and_normalize(first);
     let (position_second, direction_second) = split_and_normalize(second);
     let (position_third, direction_third) = split_and_normalize(third);
+    let weight = direction_weight(radius_floor);
 
-    euclidean_covers_triple(position_first, position_second, position_third, radius)
-        && euclidean_covers_triple(
-            direction_first.view(),
-            direction_second.view(),
-            direction_third.view(),
-            radius / direction_weight(radius_floor),
-        )
+    let position_sides = [
+        euclidean_distance(position_first, position_second),
+        euclidean_distance(position_first, position_third),
+        euclidean_distance(position_second, position_third),
+    ];
+    let direction_sides = [
+        weight * euclidean_distance(direction_first.view(), direction_second.view()),
+        weight * euclidean_distance(direction_first.view(), direction_third.view()),
+        weight * euclidean_distance(direction_second.view(), direction_third.view()),
+    ];
+
+    sides_cover_triple(position_sides, radius) && sides_cover_triple(direction_sides, radius)
 }
 
 #[cfg(test)]
