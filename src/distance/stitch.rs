@@ -163,6 +163,12 @@ impl OpenComponents {
 /// Components are returned ordered by their least cycle under `(start, end)`,
 /// with each component's cycles in that order. The order is determined by the
 /// partition alone, so the result does not depend on how the window was tiled.
+///
+/// # Panics
+///
+/// Panics if the input does not satisfy that geometry, as a cycle on a shared
+/// column would then have no counterpart to join and a component can be closed
+/// before it has been given any cycle.
 pub(super) fn stitch_per_tile_results(
     per_tile: Vec<(usize, TileComponents)>,
 ) -> Vec<Vec<Range<usize>>> {

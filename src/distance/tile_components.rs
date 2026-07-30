@@ -25,8 +25,17 @@ pub(super) struct TileComponents {
 impl TileComponents {
     /// Flattens per-component cycle lists into one buffer with a component
     /// offset table.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless there is one triviality flag per component.
     #[must_use]
     pub(super) fn from_grouped(grouped: &[Vec<(u32, u32)>], contains_trivial: Vec<bool>) -> Self {
+        assert_eq!(
+            grouped.len(),
+            contains_trivial.len(),
+            "every component reports whether it carries the trivial cycle"
+        );
         let mut cycles = Vec::with_capacity(grouped.iter().map(Vec::len).sum());
         let mut offsets = Vec::with_capacity(grouped.len() + 1);
         offsets.push(0);
@@ -44,7 +53,7 @@ impl TileComponents {
     /// The number of components.
     #[must_use]
     pub(super) fn len(&self) -> usize {
-        self.contains_trivial.len()
+        self.offsets.len() - 1
     }
 
     /// The cycles of the component at `index`, as `(start, end)` pairs in

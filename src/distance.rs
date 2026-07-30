@@ -62,7 +62,8 @@ fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Ve
 ///
 /// # Panics
 ///
-/// Panics if `owned_columns` is 0.
+/// Panics if `owned_columns` is 0, or if the trajectory holds more than
+/// `u32::MAX` samples.
 ///
 /// # Errors
 ///
@@ -503,12 +504,13 @@ mod tests {
 
     #[test]
     fn globally_trivial_component_dropped_across_tiles() {
-        // Cycle 6..9 closes at exactly the threshold and, inside a tile that
-        // ends at column 9, has no admitted merge partner: it looks like an
-        // isolated non-trivial component there. A tile reaching past column 9
-        // sees it merge into the component carrying the self-comparisons, so
-        // the cycle is trivial globally. Deciding triviality per tile would
-        // therefore make the partition depend on the tiling.
+        // The two tiles are 0..7 and 6..10, sharing column 6, and cycle 6..9
+        // is reported by both. In the first it joins 6..10 and 5..10 into a
+        // component carrying no self-comparison, so it looks non-trivial there.
+        // The second tile is decisive: 6..9 reaches the self-comparisons
+        // through 6..10, 7..10 and 7..9, so the cycle is trivial globally.
+        // Deciding triviality per tile would therefore make the partition
+        // depend on the tiling.
         let points = array![
             [0.75, 1.5],
             [1.5, 1.0],
