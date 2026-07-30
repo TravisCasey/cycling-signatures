@@ -3,7 +3,7 @@
 
 //! Python wrapper for the `EmbeddedTrajectory` type.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use cycling_signatures::{EmbeddedTrajectory, ExecutionBackend};
 use pyo3::{exceptions::PyValueError, prelude::*};
@@ -57,7 +57,7 @@ impl PyEmbeddedTrajectory {
         metric: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let metric = metric_from_py(metric)?;
-        let trajectory = trajectory.borrow().inner.clone();
+        let trajectory = Arc::clone(&trajectory.borrow().inner);
         let inner = py
             .detach(move || EmbeddedTrajectory::new(trajectory, metric, &ExecutionBackend::Rayon))
             .map_err(to_pyerr)?;

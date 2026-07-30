@@ -3,7 +3,7 @@
 
 //! Python wrapper for the core `Trajectory` type.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use cycling_signatures::Trajectory;
 use numpy::{PyArray2, PyReadonlyArray2, ToPyArray};
@@ -33,7 +33,7 @@ use crate::{
 ///     If ``points`` has zero rows or if any coordinate is not finite.
 #[pyclass(name = "Trajectory")]
 pub(crate) struct PyTrajectory {
-    pub(crate) inner: Trajectory,
+    pub(crate) inner: Arc<Trajectory>,
 }
 
 #[pymethods]
@@ -43,7 +43,9 @@ impl PyTrajectory {
     #[allow(clippy::needless_pass_by_value)]
     fn new(points: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
         let inner = Trajectory::new(points.as_array()).map_err(to_pyerr)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
     /// Constructs a trajectory by sampling an interpolator and inserting fill
@@ -85,12 +87,16 @@ impl PyTrajectory {
         if let Ok(spline) = interpolator.cast::<PyCubicSpline>() {
             let inner =
                 Trajectory::resample(&spline.borrow().inner, metric, bound).map_err(to_pyerr)?;
-            return Ok(Self { inner });
+            return Ok(Self {
+                inner: Arc::new(inner),
+            });
         }
         if let Ok(bundle) = interpolator.cast::<PyChebyshevSphereBundleInterpolator>() {
             let inner =
                 Trajectory::resample(&bundle.borrow().inner, metric, bound).map_err(to_pyerr)?;
-            return Ok(Self { inner });
+            return Ok(Self {
+                inner: Arc::new(inner),
+            });
         }
         Err(PyTypeError::new_err(format!(
             "expected a CubicSpline or ChebyshevSphereBundleInterpolator, got {}",
@@ -177,7 +183,9 @@ impl PyTrajectory {
     #[staticmethod]
     fn load(path: PathBuf) -> PyResult<Self> {
         let inner = Trajectory::load(path).map_err(to_pyerr)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 }
 

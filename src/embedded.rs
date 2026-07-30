@@ -6,9 +6,12 @@
 
 mod walker;
 
-use std::ops::{Range, RangeBounds};
 #[cfg(feature = "serde")]
 use std::path::Path;
+use std::{
+    ops::{Range, RangeBounds},
+    sync::Arc,
+};
 
 use chomp3rs::{Cube, ExecutionBackend};
 use walker::{for_each_cycle_edge, walk_and_canonicalize};
@@ -42,7 +45,7 @@ pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 256;
 /// and the per-point cube-index map.
 #[derive(Debug)]
 pub struct EmbeddedTrajectory {
-    trajectory: Trajectory,
+    trajectory: Arc<Trajectory>,
     cover: CubicalCover,
     metric: Metric,
     point_to_cube: Vec<usize>,
@@ -54,12 +57,20 @@ impl EmbeddedTrajectory {
     /// records each point's cube index in `trajectory.points()` order, and
     /// caches the consecutive-distance bound under `metric`.
     ///
+    /// Accepts an owned trajectory or one already shared with another holder;
+    /// the trajectory is shared rather than copied.
+    ///
     /// # Errors
     ///
     /// - [`Error::ConsecutiveCubesNonAdjacent`] if consecutive trajectory
     ///   points land in cubes differing by more than 1 in some axis.
     /// - Any error from [`CubicalCover::from_cubes`].
-    pub fn new(trajectory: Trajectory, metric: Metric, backend: &ExecutionBackend) -> Result<Self> {
+    pub fn new(
+        trajectory: impl Into<Arc<Trajectory>>,
+        metric: Metric,
+        backend: &ExecutionBackend,
+    ) -> Result<Self> {
+        let trajectory = trajectory.into();
         let points = trajectory.points();
         let dimension = points.ncols();
         let mut current_cube: Vec<i64> = Vec::with_capacity(dimension);
@@ -224,7 +235,9 @@ impl EmbeddedTrajectory {
     /// Attaches a pre-built cover to a trajectory.
     ///
     /// Validates that the cover's dimension matches the trajectory's and that
-    /// every point's cube is present in the cover.
+    /// every point's cube is present in the cover. Accepts an owned trajectory
+    /// or one already shared with another holder; the trajectory is shared
+    /// rather than copied.
     ///
     /// Unlike [`new`](Self::new), this constructor does **not** validate the
     /// consecutive-cube-adjacency invariant: it accepts trajectories where
@@ -238,7 +251,12 @@ impl EmbeddedTrajectory {
     /// - [`Error::EmbeddedDimensionMismatch`] if dimensions disagree.
     /// - [`Error::EmbeddedCubeNotInCover`] if any point maps to a cube absent
     ///   from the cover.
-    pub fn from_parts(trajectory: Trajectory, cover: CubicalCover, metric: Metric) -> Result<Self> {
+    pub fn from_parts(
+        trajectory: impl Into<Arc<Trajectory>>,
+        cover: CubicalCover,
+        metric: Metric,
+    ) -> Result<Self> {
+        let trajectory = trajectory.into();
         if trajectory.dimension() != cover.dimension() {
             return Err(Error::EmbeddedDimensionMismatch {
                 trajectory: trajectory.dimension(),
