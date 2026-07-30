@@ -28,12 +28,15 @@ use crate::{
 /// detection.
 ///
 /// The count bounds per-tile memory at `8 * max_length * owned_columns` bytes
-/// without affecting the result. Lowering it is close to free: a tile computes
-/// one column beyond the ones it owns, so the redundant work is a fraction
-/// `1 / owned_columns` of the total. It does set the granularity of parallel
-/// dispatch, though, so a value approaching the segment length leaves nothing
-/// to distribute.
-pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 1024;
+/// per worker without affecting the result, and it is the largest lever on the
+/// memory a detection pass needs.
+///
+/// Lowering tends to improve results to a certain point due to cache residence
+/// and locality. There is a redundant `1 / owned_columns` portion that grows
+/// as the column count is reduced, but it is outweighted in this regime. It
+/// also sets parallel dispatch granularity, which is another positive of small
+/// tiles.
+pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 256;
 
 /// Pairs a [`Trajectory`] with a [`CubicalCover`], the metric used for queries,
 /// and the per-point cube-index map.
