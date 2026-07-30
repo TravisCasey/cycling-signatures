@@ -186,7 +186,11 @@ impl CycleStorage {
         &self.classes
     }
 
-    /// All components, in implementation-defined order.
+    /// All components, ordered by their least cycle under `(start, end)`, with
+    /// each component's cycles in that order.
+    ///
+    /// No two components share a cycle, so the order is determined by the
+    /// partition alone.
     #[must_use]
     pub fn components(&self) -> &[Component] {
         &self.components

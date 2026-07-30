@@ -48,7 +48,12 @@ fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Ve
 ///
 /// Components that contain a length-1 cycle (a self-comparison, carrying the
 /// trivial cycle) are dropped after the per-tile partitions have been merged.
-/// The returned partition does not depend on how `range` is divided into tiles.
+///
+/// Components are returned ordered by their least cycle under `(start, end)`,
+/// with each component's cycles in that order. Since no two components share a
+/// cycle, that order is total, which makes the whole returned partition a
+/// function of the trajectory, metric, range, threshold and cap alone: it
+/// depends neither on `owned_columns` nor on `backend`.
 ///
 /// Alongside the components, returns the smallest distance over non-adjacent
 /// candidate pairs in the band, positive infinity if every candidate pair is
@@ -56,7 +61,7 @@ fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Ve
 ///
 /// # Panics
 ///
-/// Panics if the trajectory holds more than `u32::MAX` samples.
+/// Panics if `owned_columns` is 0.
 ///
 /// # Errors
 ///
@@ -80,10 +85,7 @@ pub(crate) fn detect_components(
             trajectory_length: trajectory.original_count(),
         });
     }
-    assert!(
-        u32::try_from(trajectory.original_count()).is_ok(),
-        "trajectory sample count exceeds the supported maximum"
-    );
+    assert!(owned_columns > 0, "a tile must own at least one column");
 
     // A cycle inside the window cannot outrun the window, so rows above its
     // length are infinite throughout and cost only allocation.
@@ -120,7 +122,7 @@ pub(crate) fn detect_components(
     per_tile.sort_by_key(|&(start, _)| start);
     let mut non_adjacent_minimum = f64::INFINITY;
     let mut tile_components = Vec::new();
-    for (_, outcome) in per_tile {
+    for (start, outcome) in per_tile {
         match outcome {
             TileOutcome::ThresholdExceeded { distance } => {
                 return Err(Error::ThresholdExceedsAdjacencyBound {
@@ -133,7 +135,7 @@ pub(crate) fn detect_components(
                 non_adjacent_minimum: tile_minimum,
             } => {
                 non_adjacent_minimum = non_adjacent_minimum.min(tile_minimum);
-                tile_components.push(components);
+                tile_components.push((start, components));
             },
         }
     }
@@ -151,6 +153,10 @@ pub(crate) fn detect_components(
 /// This is the distance-only counterpart of
 /// [`detect_components`]: it streams the same tiles but performs no
 /// admission, merging, or component assembly.
+///
+/// # Panics
+///
+/// Panics if `owned_columns` is 0.
 ///
 /// # Errors
 ///
@@ -171,6 +177,8 @@ pub(crate) fn adjacency_bound(
             trajectory_length: trajectory.original_count(),
         });
     }
+    assert!(owned_columns > 0, "a tile must own at least one column");
+
     // A cycle inside the window cannot outrun the window, so rows above its
     // length are infinite throughout and cost only allocation.
     let capped_length = max_length.min(range.len());
@@ -200,7 +208,7 @@ pub(crate) fn adjacency_bound(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, ops::Range};
+    use std::ops::Range;
 
     use chomp3rs::ExecutionBackend;
     use ndarray::{Array2, array};
@@ -302,17 +310,87 @@ mod tests {
         }
     }
 
-    /// Renders a component partition as sets-of-sets for equality testing
-    fn canonicalize(components: Vec<Vec<Range<usize>>>) -> BTreeSet<BTreeSet<(usize, usize)>> {
-        components
-            .into_iter()
-            .map(|cycles| {
-                cycles
-                    .into_iter()
-                    .map(|cycle_range| (cycle_range.start, cycle_range.end))
-                    .collect()
-            })
-            .collect()
+    const SAMPLES_PER_REVOLUTION: usize = 40;
+    /// Consecutive samples of [`circling_trajectory`] sit this far apart, so
+    /// any threshold above it clears the trajectory's own resolution.
+    const CIRCLING_THRESHOLD: f64 = 0.5;
+
+    /// A radius-3 circle traversed `revolutions` times at 40 samples each.
+    ///
+    /// A cycle spanning whole revolutions closes on itself while its
+    /// mid-revolution points stay far apart, so its merge chain does not reach
+    /// down to a self-comparison and the component stays non-trivial. That is
+    /// what a fixture needs here: recurrences that fold back through nearby
+    /// intermediate points instead collapse the whole admitted set into the
+    /// trivial component and leave nothing to compare.
+    fn circling_trajectory(revolutions: usize) -> Trajectory {
+        let count = revolutions * SAMPLES_PER_REVOLUTION;
+        let mut coordinates = Vec::with_capacity(count * 2);
+        for index in 0..count {
+            let angle = index as f64 * std::f64::consts::TAU / SAMPLES_PER_REVOLUTION as f64;
+            coordinates.push(3.0 * angle.cos());
+            coordinates.push(3.0 * angle.sin());
+        }
+        let points = Array2::from_shape_vec((count, 2), coordinates).unwrap();
+        Trajectory::new(points.view()).unwrap()
+    }
+
+    #[test]
+    fn partition_is_identical_across_tilings() {
+        // The emitted partition, ordering included, is a function of the
+        // trajectory and the detection parameters alone: every tiling of the same
+        // window produces the same vector, not merely the same set.
+        let trajectory = circling_trajectory(5);
+        let count = trajectory.original_count();
+        let threshold = CIRCLING_THRESHOLD;
+        // Reaches four revolutions, so four recurrence families are detected.
+        let max_length = 170;
+
+        let detect = |owned_columns: usize| {
+            detect_components(
+                &trajectory,
+                Metric::Euclidean,
+                0..count,
+                threshold,
+                max_length,
+                owned_columns,
+                &ExecutionBackend::Sequential,
+            )
+            .unwrap()
+            .0
+        };
+
+        let reference = detect(count);
+        assert!(
+            reference.len() >= 2,
+            "fixture detects {} components; every assertion below is vacuous under 2",
+            reference.len(),
+        );
+        for owned_columns in [3, 7, 64, 199] {
+            assert_eq!(
+                detect(owned_columns),
+                reference,
+                "partition differs at owned_columns {owned_columns}",
+            );
+        }
+
+        // The documented order: components by their least cycle, and each
+        // component's cycles by the same key.
+        let key = |cycle: &Range<usize>| (cycle.start, cycle.end);
+        for component in &reference {
+            assert!(
+                component
+                    .windows(2)
+                    .all(|pair| key(&pair[0]) < key(&pair[1])),
+                "cycles are not ordered within {component:?}",
+            );
+        }
+        assert!(
+            reference
+                .windows(2)
+                .all(|pair| key(&pair[0][0]) < key(&pair[1][0])),
+            "components are not ordered by their least cycle",
+        );
     }
 
     #[test]
@@ -337,7 +415,7 @@ mod tests {
             [0.0, 0.5],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let max_length = 5;
+        let max_length = 34;
         let threshold = 1.0;
         let range = 0..points.nrows();
 
@@ -363,7 +441,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(canonicalize(single_tile), canonicalize(multi_tile.clone()));
+        assert_eq!(single_tile, multi_tile);
 
         let boundary_pair_shares_a_component = multi_tile.iter().any(|component| {
             let holds = |start: usize, end: usize| {
@@ -381,22 +459,20 @@ mod tests {
 
     #[test]
     fn default_owned_columns_splits_and_matches_single_tile() {
-        // Only a segment longer than `DEFAULT_OWNED_COLUMNS` splits.
-        let count = DEFAULT_OWNED_COLUMNS + 200;
-        let positions: Vec<f64> = (0..count)
-            .map(|index| (index as f64 * 0.4).sin() * 2.0)
-            .collect();
-        let points = Array2::from_shape_vec((count, 1), positions).unwrap();
-        let trajectory = Trajectory::new(points.view()).unwrap();
-        let bound = max_consecutive_distance(trajectory.points(), Metric::Euclidean);
-        let threshold = bound.max(0.5);
-        let max_length = 5;
+        // Only a segment longer than `DEFAULT_OWNED_COLUMNS` splits, so the
+        // fixture is sized past it to exercise the shipped value.
+        let trajectory = circling_trajectory(31);
+        let count = trajectory.original_count();
+        assert!(count > DEFAULT_OWNED_COLUMNS, "fixture does not split");
+        // One revolution plus slack, enough to admit the once-per-revolution
+        // recurrence without making the tile expensive.
+        let max_length = 45;
 
         let (split, _) = detect_components(
             &trajectory,
             Metric::Euclidean,
             0..count,
-            threshold,
+            CIRCLING_THRESHOLD,
             max_length,
             DEFAULT_OWNED_COLUMNS,
             &ExecutionBackend::Sequential,
@@ -406,14 +482,17 @@ mod tests {
             &trajectory,
             Metric::Euclidean,
             0..count,
-            threshold,
+            CIRCLING_THRESHOLD,
             max_length,
             count,
             &ExecutionBackend::Sequential,
         )
         .unwrap();
 
-        assert_eq!(canonicalize(split), canonicalize(whole));
+        // Without this the comparison can hold vacuously on two empty
+        // partitions, which is what a fold-back fixture silently produced here.
+        assert!(!whole.is_empty(), "fixture detects no components");
+        assert_eq!(split, whole);
     }
 
     #[test]
@@ -437,7 +516,7 @@ mod tests {
             [0.75, 0.75],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let max_length = 6;
+        let max_length = 34;
         let threshold = 1.25;
         let range = 0..points.nrows();
 
@@ -463,7 +542,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(canonicalize(single_tile.clone()), canonicalize(multi_tile));
+        assert_eq!(single_tile, multi_tile);
         for component in &single_tile {
             for cycle in component {
                 assert!(
@@ -472,45 +551,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn single_tile_matches_multi_tile() {
-        // Build a small 1D trajectory that forms a known recurrent loop and
-        // exercises multiple tiles when tile_width is small.
-        let positions: Vec<f64> = (0..30)
-            .map(|index| (index as f64 * 0.4).sin() * 2.0)
-            .collect();
-        let points = Array2::from_shape_vec((30, 1), positions).unwrap();
-        let trajectory = Trajectory::new(points.view()).unwrap();
-        let bound = max_consecutive_distance(trajectory.points(), Metric::Euclidean);
-        let threshold = bound.max(0.5);
-        let max_length = 5;
-        let range = 0..30;
-
-        let (single_tile, _) = super::detect_components(
-            &trajectory,
-            Metric::Euclidean,
-            range.clone(),
-            threshold,
-            max_length,
-            range.len(),
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
-
-        let (multi_tile, _) = super::detect_components(
-            &trajectory,
-            Metric::Euclidean,
-            range.clone(),
-            threshold,
-            max_length,
-            8,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
-
-        assert_eq!(canonicalize(single_tile), canonicalize(multi_tile));
     }
 
     #[test]
@@ -556,7 +596,7 @@ mod tests {
             .collect();
         let points = Array2::from_shape_vec((30, 1), positions).unwrap();
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let max_length = 5;
+        let max_length = 34;
 
         let mut expected = f64::INFINITY;
         let trajectory_points = trajectory.points();

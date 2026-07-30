@@ -140,10 +140,15 @@ impl CycleStorage {
             backend,
         )?;
 
-        // Walk one representative per component for its class.
+        // Walk one representative per component for its class. Every cycle in a
+        // component carries the same class, so the shortest is chosen:
+        // walk cost grows with cycle length.
         let mut component_classes: Vec<F2Vector> = Vec::with_capacity(raw_components.len());
         for cycles in &raw_components {
-            let representative = &cycles[0];
+            let representative = cycles
+                .iter()
+                .min_by_key(|cycle| cycle.end - cycle.start)
+                .expect("connected components are nonempty by construction");
             component_classes.push(embedded.cycle_class(representative.clone())?);
         }
 

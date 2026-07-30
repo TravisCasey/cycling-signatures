@@ -406,8 +406,8 @@ impl PyCycleStorage {
     ///
     /// A component's position in this list is its component id: the value that
     /// ``components_covering`` returns and that ``component`` and indexing
-    /// accept. The order in which components are assigned ids is not otherwise
-    /// specified, but it is fixed for a given storage.
+    /// accept. Components are ordered by their least cycle under
+    /// ``(start, stop)``, with each component's cycles in that order.
     ///
     /// Returns
     /// -------

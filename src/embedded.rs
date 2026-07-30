@@ -482,8 +482,11 @@ impl EmbeddedTrajectory {
         let original_indices = self.trajectory.original_indices();
         let mut candidates: Vec<(f64, F2Vector)> = Vec::with_capacity(components.len());
         for cycles in components {
+            // Every cycle in a component carries the same class, so the
+            // shortest is chosen: walk cost grows with cycle length.
             let representative = cycles
-                .first()
+                .iter()
+                .min_by_key(|cycle| cycle.end - cycle.start)
                 .expect("connected components are nonempty by construction");
             let class = self.cycle_class(representative.clone())?;
             let birth = cycles
