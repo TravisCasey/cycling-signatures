@@ -33,7 +33,7 @@ use crate::{
 ///
 /// Lowering tends to improve results to a certain point due to cache residence
 /// and locality. There is a redundant `1 / owned_columns` portion that grows
-/// as the column count is reduced, but it is outweighted in this regime. It
+/// as the column count is reduced, but it is outweighed in this regime. It
 /// also sets parallel dispatch granularity, which is another positive of small
 /// tiles.
 pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 256;
