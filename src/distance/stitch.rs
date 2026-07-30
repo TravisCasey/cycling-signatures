@@ -15,6 +15,7 @@ use std::{
 
 use rustc_hash::FxHashMap;
 
+use super::tile_components::TileComponents;
 use crate::util::disjoint::DisjointSet;
 
 /// The components under construction, addressed by slot.
@@ -163,7 +164,7 @@ impl OpenComponents {
 /// with each component's cycles in that order. The order is determined by the
 /// partition alone, so the result does not depend on how the window was tiled.
 pub(super) fn stitch_per_tile_results(
-    per_tile: Vec<(usize, Vec<Vec<Range<usize>>>)>,
+    per_tile: Vec<(usize, TileComponents)>,
 ) -> Vec<Vec<Range<usize>>> {
     if per_tile.is_empty() {
         return Vec::new();
@@ -186,20 +187,22 @@ pub(super) fn stitch_per_tile_results(
         let mut next_frontier: FxHashMap<usize, usize> = FxHashMap::default();
         let mut touched: Vec<usize> = Vec::new();
 
-        for tile_component in tile_components {
+        for index in 0..tile_components.len() {
             // The cycles on the column shared with the previous tile name the
             // components this one continues, so they are looked up rather than
-            // added: the preceding tile already holds them. Every such cycle was
-            // reported there too, since the two tiles compute that column from
-            // the same points over the same row range and so admit the same
-            // entries, which is why the lookup is total rather than filtered.
+            // added: the preceding tile already holds them. Every such cycle
+            // was reported there too, since the two tiles compute that column
+            // from the same points over the same row range and so admit the
+            // same entries, and a tile keeps its first and last columns even
+            // when it reports nothing else of a component.
             let continued = components.distinct_roots(
-                tile_component
+                tile_components
+                    .cycles(index)
                     .iter()
-                    .filter(|cycle| Some(cycle.start) == shared_before)
-                    .map(|cycle| {
+                    .filter(|&&(start, _)| Some(start as usize) == shared_before)
+                    .map(|&(_, end)| {
                         *frontier
-                            .get(&cycle.end)
+                            .get(&(end as usize))
                             .expect("a shared-column cycle was registered by the preceding tile")
                     })
                     .collect::<Vec<usize>>(),
@@ -212,21 +215,23 @@ pub(super) fn stitch_per_tile_results(
             for &other in continued.iter().skip(1) {
                 root = components.merge(root, other);
             }
-            if tile_component
-                .iter()
-                .any(|cycle| cycle.end <= cycle.start + 1)
-            {
+            // Reported by the tile rather than re-derived from the cycles: a
+            // component carrying the trivial cycle reports only its
+            // shared-column cycles, so the self-comparison that made it trivial
+            // is not among them.
+            if tile_components.contains_trivial(index) {
                 components.record_trivial(root);
             }
 
-            for cycle in tile_component {
-                if Some(cycle.start) == shared_before {
+            for &(start, end) in tile_components.cycles(index) {
+                let start = start as usize;
+                if Some(start) == shared_before {
                     continue;
                 }
-                if Some(cycle.start) == shared_after {
-                    next_frontier.insert(cycle.end, root);
+                if Some(start) == shared_after {
+                    next_frontier.insert(end as usize, root);
                 }
-                components.push_cycle(root, cycle);
+                components.push_cycle(root, start..end as usize);
             }
             touched.push(root);
         }
@@ -262,23 +267,33 @@ pub(super) fn stitch_per_tile_results(
 
 #[cfg(test)]
 mod tests {
-    use super::stitch_per_tile_results;
+    use super::{TileComponents, stitch_per_tile_results};
 
     /// Builds one tile's input: its first column and its components, each given
-    /// as `(start, end)` pairs.
+    /// as its `(start, end)` cycles paired with the triviality it reports.
+    ///
+    /// The flag is given rather than derived from the cycles, because a tile
+    /// reports it separately: a component carrying the trivial cycle lists only
+    /// its shared-column cycles, so the self-comparison need not be among them.
     ///
     /// Every cycle starting on the tile's own first column must also appear in
     /// the preceding tile, which is what the real tiling guarantees and what
     /// the sweep relies on.
-    fn tile(
-        base: usize,
-        components: &[&[(usize, usize)]],
-    ) -> (usize, Vec<Vec<std::ops::Range<usize>>>) {
-        let components = components
+    fn tile(base: usize, components: &[(&[(usize, usize)], bool)]) -> (usize, TileComponents) {
+        let grouped: Vec<Vec<(u32, u32)>> = components
             .iter()
-            .map(|component| component.iter().map(|&(start, end)| start..end).collect())
+            .map(|(cycles, _)| {
+                cycles
+                    .iter()
+                    .map(|&(start, end)| (start as u32, end as u32))
+                    .collect()
+            })
             .collect();
-        (base, components)
+        let contains_trivial = components.iter().map(|&(_, trivial)| trivial).collect();
+        (
+            base,
+            TileComponents::from_grouped(&grouped, contains_trivial),
+        )
     }
 
     #[test]
@@ -286,9 +301,9 @@ mod tests {
         // Tiles 0 and 2 share no column, so their halves can only be joined
         // through the tile between them.
         let joined = stitch_per_tile_results(vec![
-            tile(0, &[&[(0, 3), (4, 7)]]),
-            tile(4, &[&[(4, 7), (8, 11)]]),
-            tile(8, &[&[(8, 11), (10, 13)]]),
+            tile(0, &[(&[(0, 3), (4, 7)], false)]),
+            tile(4, &[(&[(4, 7), (8, 11)], false)]),
+            tile(8, &[(&[(8, 11), (10, 13)], false)]),
         ]);
         assert_eq!(joined, vec![vec![0..3, 4..7, 8..11, 10..13]]);
     }
@@ -298,8 +313,8 @@ mod tests {
         // One tile-component reaches back to two separate components of the
         // preceding tile, which merges them.
         let joined = stitch_per_tile_results(vec![
-            tile(0, &[&[(0, 2), (4, 6)], &[(1, 3), (4, 9)]]),
-            tile(4, &[&[(4, 6), (4, 9)]]),
+            tile(0, &[(&[(0, 2), (4, 6)], false), (&[(1, 3), (4, 9)], false)]),
+            tile(4, &[(&[(4, 6), (4, 9)], false)]),
         ]);
         assert_eq!(joined, vec![vec![0..2, 1..3, 4..6, 4..9]]);
     }
@@ -308,13 +323,27 @@ mod tests {
     fn trivial_component_is_dropped_after_crossing_tiles() {
         // The self-comparison enters in the first tile, and the component it
         // belongs to is only completed two tiles later. It must still be
-        // dropped, while its non-trivial neighbour survives.
+        // dropped, while its non-trivial neighbor survives.
         let joined = stitch_per_tile_results(vec![
-            tile(0, &[&[(0, 1), (4, 6)], &[(0, 3)]]),
-            tile(4, &[&[(4, 6), (8, 10)]]),
-            tile(8, &[&[(8, 10), (9, 12)]]),
+            tile(0, &[(&[(0, 1), (4, 6)], true), (&[(0, 3)], false)]),
+            tile(4, &[(&[(4, 6), (8, 10)], true)]),
+            tile(8, &[(&[(8, 10), (9, 12)], true)]),
         ]);
         assert_eq!(joined, vec![vec![0..3]]);
+    }
+
+    #[test]
+    fn reported_triviality_is_used_rather_than_rederived() {
+        // What a pruned tile reports: a component that carries the trivial
+        // cycle, but whose retained cycles are all longer than one point
+        // because the self-comparison sat on an interior column and was
+        // dropped. Re-deriving triviality from the cycles would read this as an
+        // ordinary component and emit it.
+        let joined = stitch_per_tile_results(vec![
+            tile(0, &[(&[(0, 3), (4, 7)], true), (&[(1, 4)], false)]),
+            tile(4, &[(&[(4, 7)], true)]),
+        ]);
+        assert_eq!(joined, vec![vec![1..4]]);
     }
 
     #[test]
@@ -323,9 +352,9 @@ mod tests {
         // soon as its own tile is read. Nothing drains them afterwards, so a
         // component closed at the wrong moment is lost rather than reordered.
         let joined = stitch_per_tile_results(vec![
-            tile(0, &[&[(0, 3)]]),
-            tile(4, &[&[(5, 8)]]),
-            tile(8, &[&[(9, 12)]]),
+            tile(0, &[(&[(0, 3)], false)]),
+            tile(4, &[(&[(5, 8)], false)]),
+            tile(8, &[(&[(9, 12)], false)]),
         ]);
         assert_eq!(joined, vec![vec![0..3], vec![5..8], vec![9..12]]);
     }

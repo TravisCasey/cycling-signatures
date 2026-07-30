@@ -11,10 +11,11 @@
 use std::ops::Range;
 
 use ndarray::{Array2, ArrayView2};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use super::tile_components::TileComponents;
 use crate::{
     error::{Error, Result},
     metric::{Metric, PreparedPoints},
@@ -29,7 +30,7 @@ pub(super) enum TileOutcome {
     /// non-adjacent candidate pairs (positive infinity if every candidate
     /// pair is adjacent).
     Components {
-        components: Vec<Vec<Range<usize>>>,
+        components: TileComponents,
         non_adjacent_minimum: f64,
     },
     /// Detection aborted: a candidate pair at or below the threshold landed
@@ -223,27 +224,45 @@ fn partition_tile(
         }
     }
 
+    // Row 0 is the self-comparison at every column and is always admitted, so
+    // the components carrying the trivial cycle are exactly those holding a
+    // row-0 entry.
+    let mut trivial_roots: FxHashSet<usize> = FxHashSet::default();
+    for col in 0..width {
+        let id = entry_ids[&(0, col)];
+        trivial_roots.insert(disjoint.find(id));
+    }
+
     // Bucketing pass: iterate the tile again to preserve row-major ordering of
     // cycles within each component (short cycles first, ties broken by start
     // position).
     let mut component_index: FxHashMap<usize, usize> = FxHashMap::default();
-    let mut components: Vec<Vec<Range<usize>>> = Vec::new();
+    let mut grouped: Vec<Vec<(u32, u32)>> = Vec::new();
+    let mut contains_trivial: Vec<bool> = Vec::new();
     for ((row, col), _) in tile.indexed_iter() {
         let Some(&id) = entry_ids.get(&(row, col)) else {
             continue;
         };
-        let component_id = *component_index.entry(disjoint.find(id)).or_insert_with(|| {
-            components.push(Vec::new());
-            components.len() - 1
+        let root = disjoint.find(id);
+        let trivial = trivial_roots.contains(&root);
+        // Only the columns a neighboring tile shares are kept for a component
+        // carrying the trivial cycle; see [`TileComponents`].
+        if trivial && col != 0 && col + 1 != width {
+            continue;
+        }
+        let component_id = *component_index.entry(root).or_insert_with(|| {
+            grouped.push(Vec::new());
+            contains_trivial.push(trivial);
+            grouped.len() - 1
         });
         // Cycle segment in original-index space: length = row + 1.
         let start = base + col;
         let end = base + col + row + 1;
-        components[component_id].push(start..end);
+        grouped[component_id].push((start as u32, end as u32));
     }
 
     TileOutcome::Components {
-        components,
+        components: TileComponents::from_grouped(&grouped, contains_trivial),
         non_adjacent_minimum,
     }
 }

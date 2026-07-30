@@ -6,6 +6,7 @@
 
 mod stitch;
 mod tile;
+mod tile_components;
 
 use std::ops::Range;
 
@@ -86,6 +87,11 @@ pub(crate) fn detect_components(
         });
     }
     assert!(owned_columns > 0, "a tile must own at least one column");
+    // Tiles report cycle endpoints as sample indices narrowed to `u32`.
+    assert!(
+        u32::try_from(trajectory.original_count()).is_ok(),
+        "trajectory sample count exceeds the supported maximum"
+    );
 
     // A cycle inside the window cannot outrun the window, so rows above its
     // length are infinite throughout and cost only allocation.
