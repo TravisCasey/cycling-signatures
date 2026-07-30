@@ -9,6 +9,17 @@ YELLOW='\033[0;33m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
+skip_gallery=0
+for argument in "$@"; do
+    case "$argument" in
+        --skip-gallery) skip_gallery=1 ;;
+        *)
+            echo "usage: ${0##*/} [--skip-gallery]" >&2
+            exit 2
+            ;;
+    esac
+done
+
 step=0
 run_step() {
     step=$((step + 1))
@@ -99,7 +110,47 @@ run_step "Python spellcheck" \
 run_step "Python tests" \
     uv run pytest
 
-run_step "Gallery build" \
-    uv run --group docs --group examples sphinx-build -E -W -b html docs docs/_build/html
+# sphinx-gallery keys its execution cache on each example's own source, so a
+# change to the data, the shared helper, or the extension leaves stale figures
+# behind a passing step. Stamp those inputs and clear the cache when they move.
+gallery_stamp_path="docs/auto_examples/.gallery-data-stamp"
+
+gallery_input_stamp() {
+    for data_file in examples/lorenz/data/lorenz_storage.cyc \
+                     examples/lorenz/data/lorenz_raw.npy \
+                     examples/dadras/data/dadras_storage.cyc \
+                     examples/dadras/data/dadras_raw.npy; do
+        if [ -f "$data_file" ]; then
+            stat -c '%n %s %Y' "$data_file"
+        else
+            echo "$data_file absent"
+        fi
+    done
+    # The extension is rewritten on every build, so its mtime says nothing; the
+    # helper is small. Both contribute a digest instead.
+    sha256sum examples/_support.py cycling_signatures/_core*.so
+}
+
+if [ "$skip_gallery" -eq 1 ]; then
+    skip_step "Gallery build" "--skip-gallery requested"
+else
+    if ! current_stamp=$(gallery_input_stamp); then
+        echo -e "${RED}  could not stamp the gallery inputs${RESET}" >&2
+        exit 1
+    fi
+    if [ ! -f "$gallery_stamp_path" ] || [ "$current_stamp" != "$(cat "$gallery_stamp_path")" ]; then
+        echo -e "\n${YELLOW}Gallery inputs changed; clearing sphinx-gallery cache${RESET}"
+        if [ -d docs/auto_examples ]; then
+            find docs/auto_examples -name '*.py.md5' -delete
+        fi
+        rm -f "$gallery_stamp_path"
+    fi
+
+    run_step "Gallery build" \
+        uv run --group docs --group examples sphinx-build -E -W -b html docs docs/_build/html
+
+    mkdir -p "$(dirname "$gallery_stamp_path")"
+    printf '%s\n' "$current_stamp" > "$gallery_stamp_path"
+fi
 
 echo -e "\n${GREEN}${BOLD}All checks passed.${RESET}"
