@@ -57,6 +57,8 @@ def build() -> tuple[Path, float, float]:
     inserted_fraction = (len(trajectory.points()) - sample_count) / sample_count
 
     embedded = cs.EmbeddedTrajectory(trajectory, metric)
+    del points, spline, interpolator, trajectory
+
     storage = cs.CycleStorage.build(embedded, range(0, sample_count), MAX_LENGTH)
     target = raw_path.parent / "lorenz_storage.cyc"
     storage.save(target)

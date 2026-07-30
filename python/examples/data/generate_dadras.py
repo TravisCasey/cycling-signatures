@@ -37,7 +37,7 @@ import _support
 BOXSIZE = 12.0
 SPHERE_RADIUS_FLOOR = 3
 RESAMPLE_BOUND = 0.45
-MAX_LENGTH = 800
+MAX_LENGTH = 1600
 
 
 def build() -> tuple[Path, float, float]:
@@ -58,6 +58,8 @@ def build() -> tuple[Path, float, float]:
     inserted_fraction = (len(trajectory.points()) - sample_count) / sample_count
 
     embedded = cs.EmbeddedTrajectory(trajectory, metric)
+    del points, spline, interpolator, trajectory
+
     storage = cs.CycleStorage.build(embedded, range(0, sample_count), MAX_LENGTH)
     target = raw_path.parent / "dadras_storage.cyc"
     storage.save(target)
