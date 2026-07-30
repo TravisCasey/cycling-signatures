@@ -80,6 +80,11 @@ impl PyEmbeddedTrajectory {
     /// call ``adjacency_bound`` themselves and pass an explicit ``threshold``
     /// strictly below the returned bound.
     ///
+    /// This is not a cheap query. A signature has no cycle-length cap, so it
+    /// evaluates the metric over every pair of samples in the segment, a cost
+    /// growing with the square of the segment length. For a large window,
+    /// prefer ``CycleStorage.build`` with an explicit ``max_length``.
+    ///
     /// Parameters
     /// ----------
     /// segment : range or tuple of int

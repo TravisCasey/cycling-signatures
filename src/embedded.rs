@@ -464,6 +464,12 @@ impl EmbeddedTrajectory {
     /// valid band instead of an explicit value, prefer
     /// [`signature`](Self::signature).
     ///
+    /// This is not a cheap query. A signature has no cycle-length cap, so it
+    /// evaluates the metric over every pair of samples in the segment, a cost
+    /// growing with the square of the segment length. For a large window,
+    /// prefer [`CycleStorage::build`](crate::CycleStorage::build) with an
+    /// explicit `max_length`.
+    ///
     /// # Errors
     ///
     /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
@@ -541,6 +547,12 @@ impl EmbeddedTrajectory {
     /// control can run [`adjacency_bound`](Self::adjacency_bound) themselves
     /// with a backend of their choice and pass an explicit threshold to
     /// [`signature_with_threshold`](Self::signature_with_threshold) instead.
+    ///
+    /// This is not a cheap query. A signature has no cycle-length cap, so it
+    /// evaluates the metric over every pair of samples in the segment, a cost
+    /// growing with the square of the segment length. For a large window,
+    /// prefer [`CycleStorage::build`](crate::CycleStorage::build) with an
+    /// explicit `max_length`.
     ///
     /// # Errors
     ///
