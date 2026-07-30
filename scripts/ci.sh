@@ -82,7 +82,7 @@ run_step "Spellcheck" \
 cd python
 
 run_step "Python build" \
-    uv run maturin develop
+    uv run maturin develop --release
 
 run_step "Python format check" \
     uv run ruff format --check
