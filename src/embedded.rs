@@ -377,8 +377,7 @@ impl EmbeddedTrajectory {
     /// A stable 64-bit fingerprint combining the trajectory, the cover, and the
     /// metric identity.
     ///
-    /// The metric contributes a stable binary encoding: the tag byte `0` for
-    /// the Euclidean mode, or the tag byte `1` for the sphere-bundle mode. The
+    /// The metric contributes its discriminant as a single byte. The
     /// per-point cube map is not hashed: it is fully determined by the
     /// trajectory points and the cover cubes, both already covered.
     #[must_use]
@@ -386,10 +385,7 @@ impl EmbeddedTrajectory {
         let mut hasher = Fingerprint::new();
         hasher.write(&self.trajectory.fingerprint().to_le_bytes());
         hasher.write(&self.cover.fingerprint().to_le_bytes());
-        match self.metric {
-            Metric::Euclidean => hasher.write(&[0]),
-            Metric::SphereBundle => hasher.write(&[1]),
-        }
+        hasher.write(&[self.metric as u8]);
         hasher.finish()
     }
 

@@ -6,11 +6,11 @@ import pytest
 import cycling_signatures as cs
 
 
-def test_bundle_radius_from_radius_floor():
+def test_bundle_direction_radius_from_construction():
     spline = cs.CubicSpline(
         np.array([0.0, 1.0, 2.0]), np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]])
     )
-    assert cs.SphereBundleInterpolator(spline, 1).radius() == 1.5
+    assert cs.SphereBundleInterpolator(spline, 1.5).direction_radius() == 1.5
 
 
 def test_cubic_spline_rejects_shape_mismatch():

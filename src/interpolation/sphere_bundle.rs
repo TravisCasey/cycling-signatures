@@ -11,32 +11,28 @@ use crate::interpolation::{DerivativeInterpolator, Interpolator};
 /// the inner position with a scaled direction.
 ///
 /// At each parameter, the scaled direction is the inner derivative
-/// normalized to unit L2 length, then multiplied by the configured radius,
-/// placing it on the L2 sphere of that radius. Each sample has length twice
-/// that of the inner interpolator: the first half is the position, the
-/// second half is the scaled direction.
+/// normalized to unit L2 length, then multiplied by the configured
+/// `direction_radius`, placing it on the L2 sphere of that radius. Each
+/// sample has length twice that of the inner interpolator: the first half is
+/// the position, the second half is the scaled direction.
 ///
-/// The radius is set indirectly through a `radius_floor: u32` and is fixed at
-/// `radius_floor + 0.5`. That radius matches how the cubical cover counts
-/// direction cubes: it is both the direction shell's cube resolution and,
-/// via [`Metric::SphereBundle`](crate::metric::Metric::SphereBundle), the
-/// distance scale a recurrence threshold is measured against, so the same
-/// radius must govern both. The half-integer offset also keeps every
-/// extremal direction coordinate at `+-(radius_floor + 0.5)`, never an
-/// integer, so a direction coordinate at its largest magnitude never lands
-/// exactly on a cube boundary.
+/// `direction_radius` is the L2 norm of every stored direction; it sets the
+/// angular resolution scale `1 / direction_radius`. A half-integer radius
+/// gives every extremal, axis-aligned direction coordinate maximal clearance
+/// from a cube boundary, but no particular value is required. The parameter
+/// is only meaningful when it exceeds half the detection threshold.
 #[derive(Debug, Clone)]
 pub struct SphereBundleInterpolator<Inner> {
     inner: Inner,
-    radius: f64,
+    direction_radius: f64,
 }
 
 impl<Inner: DerivativeInterpolator> SphereBundleInterpolator<Inner> {
-    /// Wraps `inner` with the given radius floor.
+    /// Wraps `inner` with the given direction radius.
     ///
-    /// The actual normalization radius is `radius_floor + 0.5`; see the
-    /// type-level documentation for the cubical-embedding reason. The radius
-    /// is recoverable via [`radius`](Self::radius).
+    /// # Panics
+    ///
+    /// Panics if `direction_radius` is not positive and finite.
     ///
     /// # Examples
     ///
@@ -51,23 +47,29 @@ impl<Inner: DerivativeInterpolator> SphereBundleInterpolator<Inner> {
     ///     array![[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]].view(),
     /// )
     /// .unwrap();
-    /// let bundle = SphereBundleInterpolator::new(inner, 1);
-    /// assert_eq!(bundle.radius(), 1.5);
+    /// let bundle = SphereBundleInterpolator::new(inner, 1.5);
+    /// assert_eq!(bundle.direction_radius(), 1.5);
     ///
     /// let sample = bundle.sample(0.5);
     /// // Output is the inner sample concatenated with the scaled direction.
     /// assert_eq!(sample.len(), 4);
     /// ```
     #[must_use]
-    pub fn new(inner: Inner, radius_floor: u32) -> Self {
-        let radius = f64::from(radius_floor) + 0.5;
-        Self { inner, radius }
+    pub fn new(inner: Inner, direction_radius: f64) -> Self {
+        assert!(
+            direction_radius.is_finite() && direction_radius > 0.0,
+            "direction radius must be positive and finite, got {direction_radius}"
+        );
+        Self {
+            inner,
+            direction_radius,
+        }
     }
 
-    /// The normalization radius (`radius_floor + 0.5` from construction).
+    /// The direction normalization radius given at construction.
     #[must_use]
-    pub fn radius(&self) -> f64 {
-        self.radius
+    pub fn direction_radius(&self) -> f64 {
+        self.direction_radius
     }
 }
 
@@ -83,7 +85,8 @@ impl<Inner: DerivativeInterpolator> Interpolator for SphereBundleInterpolator<In
         let l2_norm = derivative.dot(&derivative).sqrt();
         assert!(l2_norm > 0.0, "zero derivative at parameter {parameter}");
 
-        let scaled: Array1<f64> = derivative.mapv(|component| component / l2_norm * self.radius);
+        let scaled: Array1<f64> =
+            derivative.mapv(|component| component / l2_norm * self.direction_radius);
 
         let dimension = position.len();
         let mut result = Array1::<f64>::zeros(2 * dimension);
@@ -114,8 +117,8 @@ mod tests {
         let knots = array![0.0, 1.0, 2.0, 3.0];
         let values = array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]];
         let inner = CubicSpline::new(knots.clone(), values.view()).unwrap();
-        let bundle = SphereBundleInterpolator::new(inner.clone(), 2);
-        let radius = bundle.radius();
+        let bundle = SphereBundleInterpolator::new(inner.clone(), 2.5);
+        let radius = bundle.direction_radius();
 
         for parameter in [0.5, 1.0, 1.5, 2.0, 2.5] {
             let sample = bundle.sample(parameter);
@@ -140,6 +143,17 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "direction radius must be positive and finite")]
+    fn new_rejects_non_positive_radius() {
+        let inner = CubicSpline::new(
+            array![0.0, 1.0, 2.0],
+            array![[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]].view(),
+        )
+        .unwrap();
+        let _ = SphereBundleInterpolator::new(inner, 0.0);
+    }
+
+    #[test]
     #[should_panic(expected = "zero derivative at parameter 0.5")]
     fn sample_zero_inner_derivative_panics() {
         // Constant trajectory: derivative is zero everywhere.
@@ -148,7 +162,7 @@ mod tests {
             array![[5.0, 5.0], [5.0, 5.0], [5.0, 5.0]].view(),
         )
         .unwrap();
-        let bundle = SphereBundleInterpolator::new(inner, 0);
+        let bundle = SphereBundleInterpolator::new(inner, 0.5);
         let _ = bundle.sample(0.5);
     }
 }

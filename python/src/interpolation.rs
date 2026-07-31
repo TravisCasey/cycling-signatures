@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use cycling_signatures::{CubicSpline, SphereBundleInterpolator};
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::errors::to_pyerr;
 
@@ -68,23 +68,29 @@ impl PyCubicSpline {
 ///
 /// At each parameter value the output concatenates the position from the
 /// inner spline with a direction vector: the inner derivative, normalized to
-/// unit L2 length, then scaled to the configured radius. Each sample has
+/// unit L2 length, then scaled to ``direction_radius``. Each sample has
 /// length twice that of the inner spline.
 ///
-/// The radius is ``radius_floor + 0.5``, where ``radius_floor`` is given at
-/// construction. That radius matches how the cubical cover counts direction
-/// cubes; pair this interpolator with the ``SphereBundle`` metric to measure
-/// distances on the resulting embedding. The half-integer offset also keeps
-/// every extremal direction coordinate at plus-or-minus ``radius_floor +
-/// 0.5``, never an integer, so a direction coordinate at its largest
-/// magnitude never lands exactly on a cube boundary.
+/// ``direction_radius`` is the L2 norm of every stored direction; it sets
+/// the angular resolution scale ``1 / direction_radius``. Pair this
+/// interpolator with the ``SphereBundle`` metric to measure distances on the
+/// resulting embedding, since a recurrence threshold under that metric is
+/// measured on the same scale as this radius. A half-integer radius gives
+/// every extremal, axis-aligned direction coordinate maximal clearance from
+/// a cube boundary, but no particular value is required. The parameter is
+/// only meaningful when it exceeds half the detection threshold.
 ///
 /// Parameters
 /// ----------
 /// inner : ``CubicSpline``
 ///     The spline supplying positions and derivatives.
-/// radius_floor : int
-///     Sets the normalization radius to ``radius_floor + 0.5``.
+/// direction_radius : float
+///     The direction normalization radius. Must be positive and finite.
+///
+/// Raises
+/// ------
+/// ``ValueError``
+///     If ``direction_radius`` is not positive and finite.
 ///
 /// Examples
 /// --------
@@ -97,8 +103,8 @@ impl PyCubicSpline {
 ///         np.array([0.0, 1.0, 2.0]),
 ///         np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]]),
 ///     )
-///     bundle = cs.SphereBundleInterpolator(spline, 1)
-///     assert bundle.radius() == 1.5
+///     bundle = cs.SphereBundleInterpolator(spline, 1.5)
+///     assert bundle.direction_radius() == 1.5
 #[pyclass(name = "SphereBundleInterpolator")]
 pub(crate) struct PySphereBundleInterpolator {
     pub(crate) inner: SphereBundleInterpolator<Arc<CubicSpline>>,
@@ -106,24 +112,28 @@ pub(crate) struct PySphereBundleInterpolator {
 
 #[pymethods]
 impl PySphereBundleInterpolator {
-    /// Wraps a ``CubicSpline`` with the given radius floor.
+    /// Wraps a ``CubicSpline`` with the given direction radius.
     #[new]
-    fn new(inner: &Bound<'_, PyCubicSpline>, radius_floor: u32) -> Self {
+    fn new(inner: &Bound<'_, PyCubicSpline>, direction_radius: f64) -> PyResult<Self> {
+        if !(direction_radius.is_finite() && direction_radius > 0.0) {
+            return Err(PyValueError::new_err(format!(
+                "direction radius must be positive and finite, got {direction_radius}"
+            )));
+        }
         let spline = Arc::clone(&inner.borrow().inner);
-        let bundle = SphereBundleInterpolator::new(spline, radius_floor);
-        Self { inner: bundle }
+        let bundle = SphereBundleInterpolator::new(spline, direction_radius);
+        Ok(Self { inner: bundle })
     }
 
-    /// Returns the normalization radius, ``radius_floor + 0.5`` from
-    /// construction.
+    /// Returns the direction normalization radius given at construction.
     ///
     /// Returns
     /// -------
     /// float
     ///     The direction normalization radius.
     #[must_use]
-    fn radius(&self) -> f64 {
-        self.inner.radius()
+    fn direction_radius(&self) -> f64 {
+        self.inner.direction_radius()
     }
 }
 

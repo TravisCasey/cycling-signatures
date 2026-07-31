@@ -18,12 +18,13 @@ use sphere_bundle::{sphere_bundle_covers_triple, sphere_bundle_distance};
 /// half is a direction vector; see the variant documentation for the distance
 /// formula and its calibration with the cubical cover.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum Metric {
     /// The standard Euclidean metric.
     ///
     /// Distance is the square root of the sum of squared coordinate
     /// differences.
-    Euclidean,
+    Euclidean = 0, // fingerprint, do not renumber.
 
     /// A distance on the L2 sphere bundle.
     ///
@@ -41,10 +42,10 @@ pub enum Metric {
     ///
     /// This metric is calibrated against
     /// [`SphereBundleInterpolator`](crate::interpolation::SphereBundleInterpolator),
-    /// which stores each direction half as the unit tangent scaled to the L2
-    /// sphere of radius `radius_floor + 0.5`. That radius plays two roles at
-    /// once: it is the direction cover's cube resolution and the
-    /// position/direction exchange rate.
+    /// which stores each direction half as the unit tangent scaled to its
+    /// configured direction radius. That radius plays two roles: it is the
+    /// direction cover's cube resolution and the position/direction exchange
+    /// rate.
     ///
     /// ```
     /// use cycling_signatures::{
@@ -58,8 +59,8 @@ pub enum Metric {
     ///     array![[0.0, 0.0], [1.0, 0.0], [2.0, 1.0]].view(),
     /// )
     /// .unwrap();
-    /// let interpolator = SphereBundleInterpolator::new(spline, 3);
-    /// assert_eq!(interpolator.radius(), 3.5);
+    /// let interpolator = SphereBundleInterpolator::new(spline, 3.5);
+    /// assert_eq!(interpolator.direction_radius(), 3.5);
     ///
     /// let metric = Metric::SphereBundle;
     ///
@@ -79,7 +80,7 @@ pub enum Metric {
     ///     (metric.distance(left.view(), right.view()) - expected).abs() < 1e-12
     /// );
     /// ```
-    SphereBundle,
+    SphereBundle = 1, // fingerprint, do not renumber.
 }
 
 impl Metric {

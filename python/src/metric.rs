@@ -131,8 +131,8 @@ impl PyEuclidean {
 /// half is normalized: the distance is the maximum of the two halves'
 /// Euclidean distances, measured directly on the given coordinates. This
 /// metric is calibrated against ``SphereBundleInterpolator``, which stores
-/// each direction half as the unit tangent scaled to the L2 sphere of radius
-/// ``radius_floor + 0.5``.
+/// each direction half as the unit tangent scaled to its configured direction
+/// radius.
 #[pyclass(name = "SphereBundle", frozen)]
 pub(crate) struct PySphereBundle;
 

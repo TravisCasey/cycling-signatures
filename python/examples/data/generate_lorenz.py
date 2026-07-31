@@ -24,8 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _support
 
 # Sphere-bundle parameters are interdependent; see the SphereBundle metric
-# docs for the rationale. SPHERE_RADIUS_FLOOR sets the interpolator's
-# direction-cube resolution, which the metric measures against directly. The
+# docs for the rationale. SPHERE_RADIUS sets the interpolator's direction
+# normalization radius, which the metric measures against directly. The
 # resample bound is the resolution chosen from below: the build sweeps the
 # trajectory's empirical adjacency bound and detects just under it, so the
 # stored band runs from the resample bound up to that top. The bound is tuned
@@ -34,7 +34,7 @@ import _support
 # cycles at several time units of samples. Boxsize is large enough that
 # recurrences are frequent while the cover still resolves both holes.
 BOXSIZE = 5.0
-SPHERE_RADIUS_FLOOR = 3
+SPHERE_RADIUS = 3.5
 RESAMPLE_BOUND = 0.45
 MAX_LENGTH = 800
 
@@ -51,7 +51,7 @@ def build() -> tuple[Path, float, float]:
     sample_count = len(points)
 
     spline = cs.CubicSpline(np.arange(sample_count, dtype=np.float64), points / BOXSIZE)
-    interpolator = cs.SphereBundleInterpolator(spline, SPHERE_RADIUS_FLOOR)
+    interpolator = cs.SphereBundleInterpolator(spline, SPHERE_RADIUS)
     metric = cs.SphereBundle()
     trajectory = cs.Trajectory.resample(interpolator, metric, RESAMPLE_BOUND)
     inserted_fraction = (trajectory.point_count() - sample_count) / sample_count
