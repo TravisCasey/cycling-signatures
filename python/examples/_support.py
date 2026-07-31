@@ -44,8 +44,12 @@ def _download_verified(remote: _RemoteFile, target: Path) -> None:
             while chunk := response.read(1 << 20):
                 sink.write(chunk)
                 digest.update(chunk)
-        if digest.hexdigest() != remote.sha256:
-            raise ValueError(f"downloaded data for {target.name} failed its integrity check")
+        actual = digest.hexdigest()
+        if actual != remote.sha256:
+            raise ValueError(
+                f"downloaded data for {target} failed its integrity check: "
+                f"expected {remote.sha256}, got {actual}"
+            )
         os.replace(temporary, target)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
@@ -65,13 +69,26 @@ _LORENZ_RAW = _RemoteFile(
 )
 
 
-def _cached(remote: _RemoteFile, target: Path) -> Path:
-    """Return the local path to a data file, downloading it if absent.
+def _file_digest(path: Path) -> str:
+    """Return the SHA-256 hex digest of `path`'s contents."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        while chunk := source.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()
 
-    A present cache entry is returned without touching the network, so a build
-    is offline after the first fetch or if the file is placed there manually.
+
+def _cached(remote: _RemoteFile, target: Path) -> Path:
+    """Return the local path to a data file, re-fetching a stale cache entry.
+
+    A present cache entry is re-hashed against the known digest before being
+    returned, so a cached file left over from a rebuilt pipeline cannot
+    silently shadow regenerated data. A mismatch triggers a re-download rather
+    than an error, since the cache may simply be a stale artifact. A build stays
+    offline after the first fetch (or if the file is placed there manually) as
+    long as its digest still matches.
     """
-    if not target.exists():
+    if not target.exists() or _file_digest(target) != remote.sha256:
         _download_verified(remote, target)
     return target
 
