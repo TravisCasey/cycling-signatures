@@ -13,7 +13,7 @@ def test_storage_repr_reports_construction_parameters(square_loop_storage, squar
     # Threshold renders as a float, and the extent and counts are reported.
     assert repr(square_loop_storage) == (
         f"CycleStorage(extent=(0, {count}), components=1, classes=1, "
-        f"threshold=1.0, max_length={count})"
+        f"threshold=0.5, max_length={count})"
     )
 
 
@@ -49,7 +49,7 @@ def test_homology_class_indexing_matches_dense_array(square_loop_storage):
 def test_value_type_reprs(square_loop_storage, square_loop_embedded, square_loop_points):
     storage = square_loop_storage
     count = square_loop_points.shape[0]
-    signature = square_loop_embedded.signature(range(count), 1.0)
+    signature = square_loop_embedded.signature(range(count), 0.5)
 
     cycle = storage[0][0]
     cycle_start, cycle_stop = cycle.range()
@@ -58,12 +58,12 @@ def test_value_type_reprs(square_loop_storage, square_loop_embedded, square_loop
         f"birth={cycle.birth()!r}, length={cycle.length()})"
     )
     assert repr(storage.classes()[0]) == "HomologyClass(generators=1, set={0})"
-    assert repr(storage.signature((0, count))) == "CyclingSignature(rank=1, threshold_max=1.0)"
+    assert repr(storage.signature((0, count))) == "CyclingSignature(rank=1, threshold_max=0.5)"
     assert (
         repr(storage[0])
         == f"Component(class_id=0, coverage=(0, {count}), cycles={len(storage[0])})"
     )
-    assert repr(signature) == "CyclingSignature(rank=1, threshold_max=1.0)"
+    assert repr(signature) == "CyclingSignature(rank=1, threshold_max=0.5)"
 
 
 def test_equatable_types_hash_consistently_with_equality(
@@ -85,6 +85,6 @@ def test_equatable_types_hash_consistently_with_equality(
 
     # CyclingSignature has no equality of its own; two signatures built the
     # same way still compare equal through their spanned subspace.
-    first = square_loop_embedded.signature(range(count), 1.0)
-    second = square_loop_embedded.signature(range(count), 1.0)
+    first = square_loop_embedded.signature(range(count), 0.5)
+    second = square_loop_embedded.signature(range(count), 0.5)
     assert first.span() == second.span()

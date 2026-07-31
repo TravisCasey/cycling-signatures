@@ -8,10 +8,7 @@ mod walker;
 
 #[cfg(feature = "serde")]
 use std::path::Path;
-use std::{
-    ops::{Range, RangeBounds},
-    sync::Arc,
-};
+use std::{ops::RangeBounds, sync::Arc};
 
 use chomp3rs::{Cube, ExecutionBackend};
 use walker::{for_each_cycle_edge, walk_and_canonicalize};
@@ -19,7 +16,7 @@ use walker::{for_each_cycle_edge, walk_and_canonicalize};
 use crate::{
     F2Vector,
     cover::{CubicalCover, floor_to_cube},
-    distance::{self, detect_components},
+    distance::detect_components,
     error::{Error, Result},
     metric::Metric,
     signature::CyclingSignature,
@@ -121,49 +118,9 @@ impl EmbeddedTrajectory {
         self.bound
     }
 
-    /// The window's empirical adjacency bound: the smallest metric distance
-    /// between two candidate endpoint samples in `segment` whose cubes are
-    /// not adjacent, or positive infinity if every candidate pair is adjacent.
-    ///
-    /// Candidate pairs are sample pairs `(i, j)` inside the segment with
-    /// `j - i < max_length`, the banded set a
-    /// [`CycleStorage::build`](crate::CycleStorage::build) with that length
-    /// cap considers as cycle endpoints. A [`signature`](Self::signature)
-    /// query has no length cap: to validate one, pass the segment length as
-    /// `max_length`. Any threshold strictly below the returned bound admits
-    /// only adjacent-cube endpoint pairs on this trajectory, so the valid
-    /// threshold band for the window is
-    /// `bound() <= threshold < adjacency_bound`.
-    ///
-    /// This is not a cheap accessor: it streams the segment's full candidate
-    /// band in bounded-width tiles, evaluating the metric over every
-    /// candidate pair. Time scales with the band size; memory is proportional
-    /// to a single tile, `max_length` rows by a fixed column count, not to the
-    /// band.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
-    ///   valid sub-range of the trajectory.
-    pub fn adjacency_bound(
-        &self,
-        segment: impl RangeBounds<usize>,
-        max_length: usize,
-        backend: &ExecutionBackend,
-    ) -> Result<f64> {
-        let range = normalize_segment(segment, self.trajectory.original_count())?;
-        distance::adjacency_bound(
-            &self.trajectory,
-            self.metric,
-            range,
-            max_length,
-            DEFAULT_OWNED_COLUMNS,
-            backend,
-        )
-    }
-
     /// Returns an error if `threshold` is below the embedded trajectory's
-    /// consecutive-distance bound under its metric.
+    /// consecutive-distance bound under its metric, or at or above the unit
+    /// cube side.
     pub(crate) fn check_threshold(&self, threshold: f64) -> Result<()> {
         if threshold < self.bound {
             return Err(Error::ThresholdBelowTrajectoryBound {
@@ -171,47 +128,10 @@ impl EmbeddedTrajectory {
                 trajectory_bound: self.bound,
             });
         }
-        Ok(())
-    }
-
-    /// The effective detection threshold for a threshold-free query over an
-    /// already-normalized `range`: the largest threshold that keeps every
-    /// candidate endpoint pair within `max_length` in adjacent cubes.
-    ///
-    /// Runs `range`'s empirical adjacency-bound sweep over candidate pairs
-    /// within `max_length`, then returns the largest threshold strictly below
-    /// that bound (its [`next_down`](f64::next_down)). Both
-    /// [`signature`](Self::signature) and
-    /// [`CycleStorage::build`](crate::CycleStorage::build) share this policy;
-    /// this is their common implementation.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::EmptyThresholdBand`] if `range`'s empirical adjacency bound
-    ///   does not exceed [`bound`](Self::bound): no threshold admits a
-    ///   recurrence there.
-    /// - Any error from the underlying adjacency-bound sweep.
-    pub(crate) fn threshold_free_detection_threshold(
-        &self,
-        range: Range<usize>,
-        max_length: usize,
-        backend: &ExecutionBackend,
-    ) -> Result<f64> {
-        let empirical_bound = distance::adjacency_bound(
-            &self.trajectory,
-            self.metric,
-            range,
-            max_length,
-            DEFAULT_OWNED_COLUMNS,
-            backend,
-        )?;
-        if empirical_bound <= self.bound {
-            return Err(Error::EmptyThresholdBand {
-                trajectory_bound: self.bound,
-                adjacency_bound: empirical_bound,
-            });
+        if threshold >= 1.0 {
+            return Err(Error::ThresholdAboveCubeSide { threshold });
         }
-        Ok(empirical_bound.next_down())
+        Ok(())
     }
 
     /// The wrapped cover.
@@ -242,9 +162,10 @@ impl EmbeddedTrajectory {
     /// Unlike [`new`](Self::new), this constructor does **not** validate the
     /// consecutive-cube-adjacency invariant: it accepts trajectories where
     /// consecutive points land in cubes differing by more than 1 in some axis.
-    /// Signature queries still detect non-adjacent forward steps and fail with
-    /// [`Error::ConsecutiveCubesNonAdjacent`], but the failure is raised
-    /// per-query rather than at construction.
+    /// [`walk_cycle`](Self::walk_cycle) and [`cycle_class`](Self::cycle_class)
+    /// still detect non-adjacent forward steps and fail with
+    /// [`Error::ConsecutiveCubesNonAdjacent`] per call, on whichever segment
+    /// is queried.
     ///
     /// # Errors
     ///
@@ -452,9 +373,7 @@ impl EmbeddedTrajectory {
     /// `threshold` is the adjacency threshold for cycle detection: pairs of
     /// trajectory points with metric distance `<= threshold` are candidate
     /// cycle endpoints, and union-find merges are gated by
-    /// [`Metric::covers_triple`]. For a threshold at the top of the window's
-    /// valid band instead of an explicit value, prefer
-    /// [`signature`](Self::signature).
+    /// [`Metric::covers_triple`].
     ///
     /// This is not a cheap query. A signature has no cycle-length cap, so it
     /// evaluates the metric over every pair of samples in the segment, a cost
@@ -468,17 +387,10 @@ impl EmbeddedTrajectory {
     ///   valid sub-range of the trajectory.
     /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
     ///   self.bound()`.
-    /// - [`Error::ThresholdExceedsAdjacencyBound`] if `threshold` admits a
-    ///   candidate endpoint pair in non-adjacent cubes (at or above the
-    ///   window's [`adjacency_bound`](Self::adjacency_bound)).
-    /// - [`Error::ConsecutiveCubesNonAdjacent`] when a detected cycle contains
-    ///   consecutive points in non-adjacent cubes. This is only possible when
-    ///   using [`from_parts`](Self::from_parts)-constructed trajectories that
-    ///   bypassed the adjacency check in [`new`](Self::new).
-    /// - [`Error::CycleEndpointsNonAdjacent`] when a detected cycle's endpoint
-    ///   cubes differ by more than 1 in some axis.
+    /// - [`Error::ThresholdAboveCubeSide`] if `threshold` is at or above the
+    ///   unit cube side.
     #[allow(clippy::missing_panics_doc)]
-    pub fn signature_with_threshold(
+    pub fn signature(
         &self,
         segment: impl RangeBounds<usize>,
         threshold: f64,
@@ -487,7 +399,7 @@ impl EmbeddedTrajectory {
         let range = normalize_segment(segment, self.trajectory.original_count())?;
         // A signature has no length cap, so every pair inside the segment is a
         // candidate. Detection clamps the cap to the segment's own length.
-        let (components, _adjacency_bound) = detect_components(
+        let components = detect_components(
             &self.trajectory,
             self.metric,
             range,
@@ -526,53 +438,12 @@ impl EmbeddedTrajectory {
             threshold,
         ))
     }
-
-    /// The cycling signature of the trajectory over the given segment, at the
-    /// top of the window's valid adjacency-threshold band.
-    ///
-    /// Runs the segment's whole-band [`adjacency_bound`](Self::adjacency_bound)
-    /// sweep, then detects cycles at the largest threshold that keeps every
-    /// admitted pair in adjacent cubes (the bound's
-    /// [`next_down`](f64::next_down)). The returned signature's
-    /// [`threshold_max`](CyclingSignature::threshold_max) is that effective
-    /// threshold. The sweep runs sequentially; callers who need parallel
-    /// control can run [`adjacency_bound`](Self::adjacency_bound) themselves
-    /// with a backend of their choice and pass an explicit threshold to
-    /// [`signature_with_threshold`](Self::signature_with_threshold) instead.
-    ///
-    /// This is not a cheap query. A signature has no cycle-length cap, so it
-    /// evaluates the metric over every pair of samples in the segment, a cost
-    /// growing with the square of the segment length. For a large window,
-    /// prefer [`CycleStorage::build`](crate::CycleStorage::build) with an
-    /// explicit `max_length`.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
-    ///   valid sub-range of the trajectory.
-    /// - [`Error::EmptyThresholdBand`] if the window's adjacency bound does not
-    ///   exceed [`bound`](Self::bound): no threshold admits a recurrence there.
-    /// - [`Error::ConsecutiveCubesNonAdjacent`] when a detected cycle contains
-    ///   consecutive points in non-adjacent cubes. This is only possible when
-    ///   using [`from_parts`](Self::from_parts)-constructed trajectories that
-    ///   bypassed the adjacency check in [`new`](Self::new).
-    /// - [`Error::CycleEndpointsNonAdjacent`] when a detected cycle's endpoint
-    ///   cubes differ by more than 1 in some axis.
-    pub fn signature(&self, segment: impl RangeBounds<usize>) -> Result<CyclingSignature> {
-        let range = normalize_segment(segment, self.trajectory.original_count())?;
-        let threshold = self.threshold_free_detection_threshold(
-            range.clone(),
-            range.len(),
-            &ExecutionBackend::Sequential,
-        )?;
-        self.signature_with_threshold(range, threshold)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use chomp3rs::ExecutionBackend;
-    use ndarray::array;
+    use ndarray::{Array2, array};
 
     use super::EmbeddedTrajectory;
     use crate::{
@@ -812,7 +683,7 @@ mod tests {
             EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())
                 .unwrap();
 
-        let signature = embedded.signature_with_threshold(.., 0.6).unwrap();
+        let signature = embedded.signature(.., 0.6).unwrap();
         assert_eq!(signature.rank(), 0);
     }
 
@@ -841,11 +712,41 @@ mod tests {
         );
     }
 
+    /// Inserts evenly spaced intermediate points between consecutive
+    /// `waypoints` so that no step's Euclidean distance exceeds `max_step`.
+    ///
+    /// Used to turn a short list of cube-center waypoints into a densely
+    /// sampled trajectory whose consecutive-distance bound stays below the
+    /// unit cube side, while every waypoint's cube membership (its
+    /// coordinate floors) is unaffected: only points strictly between
+    /// waypoints are added.
+    fn densify_path(waypoints: &[[f64; 2]], max_step: f64) -> Array2<f64> {
+        let mut points: Vec<[f64; 2]> = vec![waypoints[0]];
+        for pair in waypoints.windows(2) {
+            let start = pair[0];
+            let end = pair[1];
+            let distance = ((end[0] - start[0]).powi(2) + (end[1] - start[1]).powi(2)).sqrt();
+            let steps = ((distance / max_step).ceil() as usize).max(1);
+            for step in 1..=steps {
+                let fraction = step as f64 / steps as f64;
+                points.push([
+                    start[0] + (end[0] - start[0]) * fraction,
+                    start[1] + (end[1] - start[1]) * fraction,
+                ]);
+            }
+        }
+        let flat: Vec<f64> = points.iter().flatten().copied().collect();
+        Array2::from_shape_vec((points.len(), 2), flat)
+            .expect("flattened waypoint rows form a valid two-column matrix")
+    }
+
     #[test]
     fn signature_on_recurrent_loop_returns_rank_one() {
-        // 8-cube ring around a missing center cube at (1, 1). The cubical
-        // cover has H^1 of rank 1; the loop's class is the generator.
-        let points = array![
+        // 8-cube ring around a missing center cube at (1, 1), densely
+        // sampled so consecutive steps stay under the unit cube side and
+        // closing back to its own start. The cubical cover has H^1 of rank
+        // 1; the loop's class is the generator.
+        let waypoints = [
             [0.5, 0.5],
             [1.5, 0.5],
             [2.5, 0.5],
@@ -856,19 +757,22 @@ mod tests {
             [0.5, 1.5],
             [0.5, 0.5],
         ];
+        let points = densify_path(&waypoints, 0.4);
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded =
             EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())
                 .unwrap();
 
-        let signature = embedded.signature_with_threshold(.., 1.5).unwrap();
+        let signature = embedded.signature(.., 0.6).unwrap();
         assert_eq!(signature.rank(), 1);
     }
 
-    /// Builds the small 4-point Euclidean square loop used in round-trip tests.
+    /// Builds a densely sampled Euclidean square loop (a solid two-by-two
+    /// block of cubes, no missing center) used in round-trip tests.
     #[cfg(feature = "serde")]
     fn euclidean_square_loop() -> EmbeddedTrajectory {
-        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let waypoints = [[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5], [0.5, 0.5]];
+        let points = densify_path(&waypoints, 0.4);
         let trajectory = Trajectory::new(points.view()).unwrap();
         EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())
             .unwrap()
@@ -912,11 +816,12 @@ mod tests {
     #[test]
     fn storage_provenance_matches_reassembled_embedded() {
         let embedded = euclidean_square_loop();
-        let storage = CycleStorage::build_with_threshold(
+        let max_length = embedded.trajectory().original_count();
+        let storage = CycleStorage::build(
             &embedded,
             ..,
-            1.5,
-            4,
+            max_length,
+            0.6,
             &ExecutionBackend::Sequential,
         )
         .unwrap();
@@ -935,69 +840,5 @@ mod tests {
             EmbeddedTrajectory::from_parts(trajectory, cover, Metric::Euclidean).unwrap();
 
         assert_eq!(loaded_storage.fingerprint(), reassembled.fingerprint());
-    }
-
-    #[test]
-    fn adjacency_bound_and_nonadjacency_on_staircase() {
-        // 1D staircase through cubes 0..=3: consecutive pairs adjacent at
-        // distance 1.0, closest non-adjacent pair at distance 2.0.
-        let points = array![[0.5], [1.5], [2.5], [3.5]];
-        let trajectory = Trajectory::new(points.view()).unwrap();
-        let embedded =
-            EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())
-                .unwrap();
-
-        let full_band = embedded
-            .adjacency_bound(.., 4, &ExecutionBackend::Sequential)
-            .unwrap();
-        assert!((full_band - 2.0).abs() < 1e-12);
-        assert!(
-            embedded
-                .adjacency_bound(.., 2, &ExecutionBackend::Sequential)
-                .unwrap()
-                .is_infinite()
-        );
-
-        // A threshold at the bound admits the non-adjacent pair and fails; a
-        // threshold strictly below it succeeds.
-        let err = embedded.signature_with_threshold(.., 2.0).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::ThresholdExceedsAdjacencyBound { threshold, distance }
-                if (threshold - 2.0).abs() < 1e-12 && (distance - 2.0).abs() < 1e-12
-        ));
-        assert!(embedded.signature_with_threshold(.., 1.0).is_ok());
-
-        // The threshold-free variant detects the adjacency bound itself and
-        // runs at its next-representable-below value. The comparison is
-        // exact: both sides are the same deterministic subtraction of
-        // exactly representable inputs.
-        let filtered = embedded.signature(..).unwrap();
-        #[allow(clippy::float_cmp)]
-        {
-            assert_eq!(filtered.threshold_max(), 2.0_f64.next_down());
-        }
-    }
-
-    #[test]
-    fn signature_rejects_empty_threshold_band() {
-        // 1D fixture where every step is adjacent (cubes 0, 1, 2, 3): the
-        // trajectory bound is the largest consecutive-distance step (2.001 to
-        // 3.999, 1.998), and the window's adjacency bound is the smallest
-        // non-adjacent pair distance (samples 0 and 2, cubes 0 and 2,
-        // distance 1.5). Since the adjacency bound does not exceed the
-        // trajectory bound, no threshold admits a recurrence.
-        let points = array![[0.501], [1.999], [2.001], [3.999]];
-        let trajectory = Trajectory::new(points.view()).unwrap();
-        let embedded =
-            EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::default())
-                .unwrap();
-
-        let err = embedded.signature(..).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::EmptyThresholdBand { trajectory_bound, adjacency_bound }
-                if (trajectory_bound - 1.998).abs() < 1e-12 && (adjacency_bound - 1.5).abs() < 1e-12
-        ));
     }
 }

@@ -11,6 +11,7 @@ present there is used as-is, and running ``integrate_dadras.py`` regenerates
 the same file in place.
 """
 
+import math
 import sys
 from pathlib import Path
 
@@ -26,18 +27,19 @@ import _support
 # Sphere-bundle parameters are interdependent; see the SphereBundle metric
 # docs for the rationale. SPHERE_RADIUS sets the interpolator's direction
 # normalization radius, which the metric measures against directly. The
-# resample bound is the resolution chosen from below: the build sweeps the
-# trajectory's empirical adjacency bound and detects just under it, so the
-# stored band runs from the resample bound up to that top. The bound is tuned
-# against the raw trajectory's sample spacing (integrate_dadras.py) so
-# bisection inserts about five percent of extra points. The raw samples are
-# spaced by distance rather than time, so MAX_LENGTH caps cycles by their
-# length through state space. Boxsize is large enough that recurrences are
-# frequent while the cover still resolves the attractor's holes.
+# resample bound is the resolution chosen from below: the build detects at an
+# explicit threshold just under the unit cube side, so the stored band runs
+# from the resample bound up to that threshold. The lower bound is tuned against
+# the raw trajectory's sample spacing so resampling inserts a low number of
+# extra points. The raw samples are spaced by distance rather than time, so
+# MAX_LENGTH caps cycles by their length through state space. Boxsize is large
+# enough that recurrences are frequent while the cover still resolves the
+# attractor.
 BOXSIZE = 12.0
 SPHERE_RADIUS = 3.5
 RESAMPLE_BOUND = 0.45
 MAX_LENGTH = 1600
+THRESHOLD = math.nextafter(1.0, 0.0)
 
 
 def build() -> tuple[Path, float, float]:
@@ -60,7 +62,7 @@ def build() -> tuple[Path, float, float]:
     embedded = cs.EmbeddedTrajectory(trajectory, metric)
     del points, spline, interpolator, trajectory
 
-    storage = cs.CycleStorage.build(embedded, range(0, sample_count), MAX_LENGTH)
+    storage = cs.CycleStorage.build(embedded, range(0, sample_count), MAX_LENGTH, THRESHOLD)
     target = raw_path.parent / "dadras_storage.cyc"
     storage.save(target)
     return target, inserted_fraction, embedded.bound()
@@ -74,10 +76,7 @@ def report(storage_path: Path, inserted_fraction: float, achieved_bound: float) 
         f"generators {storage.num_generators()}, "
         f"classes {len(storage.classes())}, components {len(storage.components())}"
     )
-    print(
-        f"band [{achieved_bound:.6f}, {storage.threshold():.6f}], "
-        f"adjacency bound {storage.adjacency_bound():.6f}"
-    )
+    print(f"band [{achieved_bound:.6f}, {storage.threshold():.6f}]")
     print(f"inserted points {inserted_fraction:.2%} of original samples")
 
 

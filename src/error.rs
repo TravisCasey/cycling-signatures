@@ -154,34 +154,15 @@ pub enum Error {
         trajectory_bound: f64,
     },
 
-    /// A cycle-detection threshold admits a candidate endpoint pair landing in
-    /// non-adjacent cubes; the closing step of the walker requires adjacency.
-    /// Thresholds must stay strictly below the window's empirical adjacency
-    /// bound.
-    #[error(
-        "adjacency threshold {threshold} admits a recurrence between points in non-adjacent cubes \
-         (pair distance {distance})"
-    )]
-    ThresholdExceedsAdjacencyBound {
+    /// A cycle-detection threshold at or above the unit cube side. The merge
+    /// gate's ball radius is half the threshold, and it must stay strictly
+    /// below one half of the unit cube side: at exactly one half, thickening
+    /// a cubical complex by that radius can fill in a one-cube hole and
+    /// change its homology.
+    #[error("adjacency threshold {threshold} is not below the unit cube side")]
+    ThresholdAboveCubeSide {
         /// The threshold the caller supplied.
         threshold: f64,
-        /// Metric distance of the non-adjacent pair; an upper bound for the
-        /// window's valid threshold band.
-        distance: f64,
-    },
-
-    /// A window's adjacency bound does not exceed the trajectory's own
-    /// consecutive-distance resolution, so no threshold admits a recurrence
-    /// there.
-    #[error(
-        "trajectory bound {trajectory_bound} is not below the window's adjacency bound \
-         {adjacency_bound}, so no threshold admits a recurrence"
-    )]
-    EmptyThresholdBand {
-        /// The trajectory's consecutive-distance resolution.
-        trajectory_bound: f64,
-        /// The window's empirical adjacency bound.
-        adjacency_bound: f64,
     },
 
     /// A signature query's threshold exceeds the range the filtered

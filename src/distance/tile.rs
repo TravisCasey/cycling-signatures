@@ -12,8 +12,6 @@ use std::ops::Range;
 
 use ndarray::{Array2, ArrayView2};
 use rustc_hash::{FxHashMap, FxHashSet};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use super::tile_components::TileComponents;
 use crate::{
@@ -23,35 +21,14 @@ use crate::{
     util::disjoint::DisjointSet,
 };
 
-/// A single tile's detection outcome.
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub(super) enum TileOutcome {
-    /// The tile's component partition and its smallest metric distance over
-    /// non-adjacent candidate pairs (positive infinity if every candidate
-    /// pair is adjacent).
-    Components {
-        components: TileComponents,
-        non_adjacent_minimum: f64,
-    },
-    /// Detection aborted: a candidate pair at or below the threshold landed
-    /// in non-adjacent cubes. The distance certifies that the threshold
-    /// exceeds the tile's adjacency bound.
-    ThresholdExceeded { distance: f64 },
-}
-
 /// Connected components of below-threshold pair-edges over the tile spanning
-/// `columns`, alongside the tile's smallest non-adjacent-pair distance.
+/// `columns`.
 ///
 /// Rows reach past the tile's own columns and stop at `window_end`. Two
 /// adjacent entries are merged into the same component if and only if balls of
 /// radius `threshold / 2` around their three involved trajectory points share
 /// a common point. Each emitted component is a list of cycle segments in
 /// original-index space.
-///
-/// Returns [`TileOutcome::ThresholdExceeded`] if any non-adjacent candidate
-/// pair lies at or below `threshold`, reporting the first such pair in
-/// row-major scan order: such a pair certifies that `threshold` exceeds the
-/// tile's adjacency bound.
 ///
 /// # Panics
 ///
@@ -64,67 +41,15 @@ pub(super) fn detect_tile_components(
     window_end: usize,
     max_length: usize,
     threshold: f64,
-) -> TileOutcome {
+) -> TileComponents {
     let base = columns.start;
     let tile = build_distance_tile(trajectory, prepared, columns, window_end, max_length)
         .expect("tile column range fits inside the validated window");
     partition_tile(tile.view(), trajectory, prepared, base, threshold)
 }
 
-/// The smallest metric distance between two candidate endpoint samples of the
-/// tile spanning `columns` whose cubes are not adjacent; positive infinity if
-/// every candidate pair is adjacent.
-///
-/// The distance-only counterpart of [`detect_tile_components`]: it reads the
-/// same tile but performs no admission, merging, or component assembly.
-///
-/// # Panics
-///
-/// Panics if `columns` and `window_end` are not a valid nested pair of
-/// sub-ranges of `0..trajectory.original_count()`, or if `max_length` is 0.
-pub(super) fn tile_non_adjacent_minimum(
-    trajectory: &Trajectory,
-    prepared: &PreparedPoints,
-    columns: Range<usize>,
-    window_end: usize,
-    max_length: usize,
-) -> f64 {
-    let base = columns.start;
-    let tile = build_distance_tile(trajectory, prepared, columns, window_end, max_length)
-        .expect("tile column range fits inside the validated window");
-    let points = trajectory.points();
-    let original_indices = trajectory.original_indices();
-
-    let mut non_adjacent_minimum = f64::INFINITY;
-    for ((row, col), &distance) in tile.indexed_iter() {
-        // Row 0 is the self-comparison; padded entries hold infinity.
-        if row > 0 && distance < non_adjacent_minimum {
-            let left_point = original_indices[base + col];
-            let right_point = original_indices[base + col + row];
-            if !cubes_adjacent(points, left_point, right_point) {
-                non_adjacent_minimum = distance;
-            }
-        }
-    }
-    non_adjacent_minimum
-}
-
-/// Returns `true` if the cubes of the two dense point rows differ by at most
-/// 1 on every axis. Cube coordinates are component-wise floors, consistent
-/// with the cover's cube mapping.
-fn cubes_adjacent(points: ArrayView2<'_, f64>, left_point: usize, right_point: usize) -> bool {
-    let left_row = points.row(left_point);
-    let right_row = points.row(right_point);
-    for axis in 0..left_row.len() {
-        if (left_row[axis].floor() - right_row[axis].floor()).abs() > 1.0 {
-            return false;
-        }
-    }
-    true
-}
-
 /// Connected components of below-threshold pair-edges over a pre-built
-/// distance tile, alongside the tile's smallest non-adjacent-pair distance.
+/// distance tile.
 ///
 /// `tile` has shape `(max_length, width)`; `base` is the original-index
 /// of the tile's first column (i.e., `tile[(row, col)]` is the distance
@@ -136,12 +61,10 @@ fn partition_tile(
     prepared: &PreparedPoints,
     base: usize,
     threshold: f64,
-) -> TileOutcome {
+) -> TileComponents {
     let width = tile.ncols();
-    let points = trajectory.points();
     let original_indices = trajectory.original_indices();
     let ball_radius = threshold / 2.0;
-    let mut non_adjacent_minimum = f64::INFINITY;
 
     let mut disjoint = DisjointSet::new();
     let mut entry_ids: FxHashMap<(usize, usize), usize> = FxHashMap::default();
@@ -150,25 +73,6 @@ fn partition_tile(
     // in row-major order, which suits the predecessor convention (both
     // required predecessors are at `row - 1`).
     for ((row, col), &distance) in tile.indexed_iter() {
-        // Track the smallest distance over non-adjacent candidate pairs.
-        // Row 0 is the self-comparison (trivially adjacent); padded entries
-        // hold infinity and never undercut the running minimum.
-        // An admitted non-adjacent pair proves the threshold exceeds the
-        // window's adjacency bound: abort.
-        // The running minimum stays above the threshold whenever
-        // `TileOutcome::ThresholdExceeded` has not been returned, so only pairs
-        // below the minimum need the cube comparison.
-        if row > 0 && distance < non_adjacent_minimum {
-            let left_point = original_indices[base + col];
-            let right_point = original_indices[base + col + row];
-            if !cubes_adjacent(points, left_point, right_point) {
-                if distance <= threshold {
-                    return TileOutcome::ThresholdExceeded { distance };
-                }
-                non_adjacent_minimum = distance;
-            }
-        }
-
         if distance > threshold {
             continue;
         }
@@ -260,10 +164,7 @@ fn partition_tile(
         grouped[component_id].push((start as u32, end as u32));
     }
 
-    TileOutcome::Components {
-        components: TileComponents::from_grouped(&grouped, contains_trivial),
-        non_adjacent_minimum,
-    }
+    TileComponents::from_grouped(&grouped, contains_trivial)
 }
 
 /// Builds a rectangular distance tile of shape `(max_length, width)` over the

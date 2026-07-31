@@ -1,9 +1,9 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Construction pipeline for [`CycleStorage`]: threshold-free and
-//! explicit-threshold cycle detection over a trajectory segment, followed by
-//! per-component class deduplication and assembly.
+//! Construction pipeline for [`CycleStorage`]: explicit-threshold cycle
+//! detection over a trajectory segment, followed by per-component class
+//! deduplication and assembly.
 
 use std::ops::{Range, RangeBounds};
 
@@ -20,60 +20,12 @@ use crate::{
 };
 
 impl CycleStorage {
-    /// Builds the storage by running cycle detection over `segment` at the
-    /// largest threshold that keeps every admitted candidate pair in adjacent
-    /// cubes.
-    ///
-    /// Runs the segment's empirical adjacency-bound sweep over candidate
-    /// pairs within `max_length`, then detects cycles at the largest
-    /// threshold strictly below that bound
-    /// (its [`next_down`](f64::next_down)). The returned storage's
-    /// [`threshold`](Self::threshold) is that effective threshold, and
-    /// [`adjacency_bound`](Self::adjacency_bound) records the bound itself.
-    /// For an explicit threshold instead, use
-    /// [`build_with_threshold`](Self::build_with_threshold).
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::WindowOutOfBounds`] if `segment` does not fit inside
-    ///   `0..embedded.trajectory().original_count()`.
-    /// - [`Error::InvalidMaxLength`] if `max_length < 2`.
-    /// - [`Error::EmptyThresholdBand`] if the segment's empirical adjacency
-    ///   bound does not exceed `embedded.bound()`: no threshold admits a
-    ///   recurrence there.
-    /// - [`Error::CycleEndpointsNonAdjacent`] from
-    ///   [`EmbeddedTrajectory::cycle_class`] when walking a component
-    ///   representative.
-    /// - [`Error::ConsecutiveCubesNonAdjacent`] from
-    ///   [`EmbeddedTrajectory::cycle_class`] when walking a component
-    ///   representative on an `EmbeddedTrajectory` constructed via
-    ///   [`EmbeddedTrajectory::from_parts`] with adjacency violations.
-    pub fn build(
-        embedded: &EmbeddedTrajectory,
-        segment: impl RangeBounds<usize>,
-        max_length: usize,
-        backend: &ExecutionBackend,
-    ) -> Result<Self> {
-        let range = normalize_segment(segment, embedded.trajectory().original_count())?;
-        if max_length < 2 {
-            return Err(Error::InvalidMaxLength { max_length });
-        }
-
-        let threshold =
-            embedded.threshold_free_detection_threshold(range.clone(), max_length, backend)?;
-
-        Self::assemble(embedded, range, threshold, max_length, backend)
-    }
-
     /// Builds the storage by running cycle detection over `segment` at an
     /// explicit adjacency `threshold`, storing each surviving component's
     /// homology class and per-cycle birth.
     ///
     /// The returned storage's [`threshold`](Self::threshold) is `threshold`
-    /// itself, and [`adjacency_bound`](Self::adjacency_bound) records the
-    /// segment's empirical adjacency bound as provenance. For the largest
-    /// threshold that keeps every admitted candidate pair in adjacent cubes
-    /// instead of an explicit value, use [`build`](Self::build).
+    /// itself.
     ///
     /// # Errors
     ///
@@ -82,21 +34,13 @@ impl CycleStorage {
     /// - [`Error::InvalidMaxLength`] if `max_length < 2`.
     /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
     ///   embedded.bound()`.
-    /// - [`Error::ThresholdExceedsAdjacencyBound`] if `threshold` admits a
-    ///   candidate endpoint pair in non-adjacent cubes (at or above the
-    ///   window's [`adjacency_bound`](EmbeddedTrajectory::adjacency_bound)).
-    /// - [`Error::CycleEndpointsNonAdjacent`] from
-    ///   [`EmbeddedTrajectory::cycle_class`] when walking a component
-    ///   representative.
-    /// - [`Error::ConsecutiveCubesNonAdjacent`] from
-    ///   [`EmbeddedTrajectory::cycle_class`] when walking a component
-    ///   representative on an `EmbeddedTrajectory` constructed via
-    ///   [`EmbeddedTrajectory::from_parts`] with adjacency violations.
-    pub fn build_with_threshold(
+    /// - [`Error::ThresholdAboveCubeSide`] if `threshold` is at or above the
+    ///   unit cube side.
+    pub fn build(
         embedded: &EmbeddedTrajectory,
         segment: impl RangeBounds<usize>,
-        threshold: f64,
         max_length: usize,
+        threshold: f64,
         backend: &ExecutionBackend,
     ) -> Result<Self> {
         let range = normalize_segment(segment, embedded.trajectory().original_count())?;
@@ -108,16 +52,15 @@ impl CycleStorage {
         Self::assemble(embedded, range, threshold, max_length, backend)
     }
 
-    /// Shared assembly path for [`build`](Self::build) and
-    /// [`build_with_threshold`](Self::build_with_threshold): runs cycle
-    /// detection over the already-validated `range` at `threshold`, then
-    /// walks representatives, computes births, deduplicates classes, and
-    /// builds the containment index.
+    /// Assembly path for [`build`](Self::build): runs cycle detection over
+    /// the already-validated `range` at `threshold`, then walks
+    /// representatives, computes births, deduplicates classes, and builds the
+    /// containment index.
     ///
     /// `range` must already be normalized and `max_length` already validated
     /// as at least 2; `threshold` must already be at least the embedded
-    /// trajectory's consecutive-distance bound and strictly below every
-    /// non-adjacent candidate pair's distance in `range`.
+    /// trajectory's consecutive-distance bound and strictly below the unit cube
+    /// side.
     #[allow(clippy::missing_panics_doc)]
     fn assemble(
         embedded: &EmbeddedTrajectory,
@@ -130,7 +73,7 @@ impl CycleStorage {
         let metric = embedded.metric();
         let fingerprint = embedded.fingerprint();
 
-        let (raw_components, adjacency_bound) = detect_components(
+        let raw_components = detect_components(
             trajectory,
             metric,
             range.clone(),
@@ -218,7 +161,6 @@ impl CycleStorage {
                 ..u32::try_from(range.end).expect("extent end exceeds u32::MAX"),
             max_length: u32::try_from(max_length).expect("cycle length cap exceeds u32::MAX"),
             threshold,
-            adjacency_bound,
             num_generators,
             classes,
             components,

@@ -29,7 +29,6 @@ struct CycleStorageData {
     extent: Range<u32>,
     max_length: u32,
     threshold: f64,
-    adjacency_bound: f64,
     num_generators: usize,
     classes: Vec<F2Vector>,
     components: Vec<Component>,
@@ -46,7 +45,6 @@ impl Serialize for CycleStorage {
             extent: self.extent.clone(),
             max_length: self.max_length,
             threshold: self.threshold,
-            adjacency_bound: self.adjacency_bound,
             num_generators: self.num_generators,
             classes: self.classes.clone(),
             components: self.components.clone(),
@@ -67,7 +65,6 @@ impl<'de> Deserialize<'de> for CycleStorage {
             data.extent,
             data.max_length,
             data.threshold,
-            data.adjacency_bound,
             data.num_generators,
             data.classes,
             data.components,
@@ -82,13 +79,11 @@ impl CycleStorage {
     ///
     /// Component invariants (`coverage` bounds the cycle ranges, `class_id` is
     /// in range, cycles are non-empty) are the caller's responsibility.
-    #[allow(clippy::too_many_arguments)]
     fn from_parts(
         fingerprint: u64,
         extent: Range<u32>,
         max_length: u32,
         threshold: f64,
-        adjacency_bound: f64,
         num_generators: usize,
         classes: Vec<F2Vector>,
         components: Vec<Component>,
@@ -109,7 +104,6 @@ impl CycleStorage {
             extent,
             max_length,
             threshold,
-            adjacency_bound,
             num_generators,
             classes,
             components,
@@ -176,8 +170,7 @@ mod tests {
                 },
             ],
         };
-        let storage =
-            CycleStorage::from_parts(0, 0..100, 60, 1.5, 2.0, 1, vec![class], vec![component]);
+        let storage = CycleStorage::from_parts(0, 0..100, 60, 1.5, 1, vec![class], vec![component]);
 
         let wide = storage.signature(0..100).unwrap();
         assert_eq!(wide.generators().len(), 1);
@@ -191,10 +184,10 @@ mod tests {
     #[test]
     fn signature_drops_non_finite_birth_component() {
         // A non-finite birth only arises in a hand-assembled or deserialized
-        // storage (never one produced by `build`/`build_with_threshold`); the
-        // finiteness filter in `signature` must still exclude it from
-        // becoming a generator rather than folding infinity into a component
-        // minimum. A second, finite-birth component confirms only it survives.
+        // storage (never one produced by `build`); the finiteness filter in
+        // `signature` must still exclude it from becoming a generator rather
+        // than folding infinity into a component minimum. A second,
+        // finite-birth component confirms only it survives.
         let infinite_class = F2Vector::from_nonzero(2, [0]);
         let finite_class = F2Vector::from_nonzero(2, [1]);
         let infinite_component = Component {
@@ -218,7 +211,6 @@ mod tests {
             0..100,
             20,
             1.5,
-            2.0,
             2,
             vec![infinite_class, finite_class.clone()],
             vec![infinite_component, finite_component],
@@ -273,7 +265,6 @@ mod tests {
             0..100,
             10,
             1.5,
-            2.0,
             2,
             vec![class_zero.clone(), class_one.clone()],
             vec![component_zero, component_one],
@@ -312,7 +303,6 @@ mod tests {
             0..20,
             10,
             1.5,
-            2.0,
             2,
             vec![class_zero, class_one],
             vec![component_a, component_b],

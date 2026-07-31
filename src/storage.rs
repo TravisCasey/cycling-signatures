@@ -128,7 +128,6 @@ pub struct CycleStorage {
     extent: Range<u32>,
     max_length: u32,
     threshold: f64,
-    adjacency_bound: f64,
     num_generators: usize,
     classes: Vec<F2Vector>,
     components: Vec<Component>,
@@ -148,24 +147,10 @@ impl CycleStorage {
         self.fingerprint
     }
 
-    /// Inclusive upper end of the storage's valid query band (the effective
-    /// detection threshold).
+    /// The adjacency threshold detection ran at.
     #[must_use]
     pub fn threshold(&self) -> f64 {
         self.threshold
-    }
-
-    /// The empirical adjacency bound of the band this storage was built
-    /// over: the smallest metric distance between two candidate endpoint
-    /// samples in the build's segment whose cubes are not adjacent, or
-    /// positive infinity if every candidate pair was adjacent.
-    ///
-    /// [`threshold`](Self::threshold) is always strictly below this value;
-    /// the threshold-free [`build`](Self::build) records [`f64::MAX`] as the
-    /// threshold when the bound is infinite.
-    #[must_use]
-    pub fn adjacency_bound(&self) -> f64 {
-        self.adjacency_bound
     }
 
     /// Cycle-length cap (point count) the storage was built with.
@@ -259,8 +244,7 @@ impl CycleStorage {
         // components with no finite birth before the fold (a lone non-finite
         // birth must not survive as a candidate). Non-finite births only
         // arise from deserialized or hand-assembled storages; a storage
-        // built by `build`/`build_with_threshold` always records finite
-        // metric distances.
+        // built by `build` always records finite metric distances.
         let mut admitted: Vec<(u32, f64)> = self
             .index
             .contained_in(query)
@@ -329,95 +313,125 @@ mod tests {
     use std::{collections::BTreeSet, ops::Range};
 
     use chomp3rs::ExecutionBackend;
-    use ndarray::{Array2, array};
+    use ndarray::Array2;
+    #[cfg(feature = "serde")]
+    use ndarray::array;
 
     use super::CycleStorage;
     #[cfg(feature = "serde")]
     use crate::serialization::{load_from_reader, save_to_writer};
     use crate::{EmbeddedTrajectory, SignatureGenerator, Trajectory, error::Error, metric::Metric};
 
-    /// Builds an embedded 2D trajectory that traces a recurrent loop around a
-    /// missing center cube, then returns near its starting point. The cubical
-    /// cover has `H^1` of rank one; cycle detection at threshold `1.5`
-    /// exposes at least one non-trivial component.
-    fn loop_trajectory() -> EmbeddedTrajectory {
-        // 9-cube ring around a missing center cube at (1, 1), traversed twice
-        // so that point 0 and point 8 are at identical positions and form a
-        // detectable recurrence cycle.
-        let positions = [
-            [0.5_f64, 0.5],
-            [1.5, 0.5],
-            [2.5, 0.5],
-            [2.5, 1.5],
-            [2.5, 2.5],
-            [1.5, 2.5],
-            [0.5, 2.5],
-            [0.5, 1.5],
-            [0.5, 0.5],
-        ];
-        let flat: Vec<f64> = positions.iter().flatten().copied().collect();
-        let points = Array2::from_shape_vec((positions.len(), 2), flat).unwrap();
-        let trajectory = Trajectory::new(points.view()).unwrap();
-        EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
-            .unwrap()
+    /// Inserts evenly spaced intermediate points between consecutive
+    /// `waypoints` so that no step's Euclidean distance exceeds `max_step`.
+    ///
+    /// Used to turn a short list of cube-center waypoints into a densely
+    /// sampled trajectory whose consecutive-distance bound stays below the
+    /// unit cube side, while every waypoint's cube membership (its
+    /// coordinate floors) is unaffected: only points strictly between
+    /// waypoints are added.
+    fn densify_path(waypoints: &[[f64; 2]], max_step: f64) -> Array2<f64> {
+        let mut points: Vec<[f64; 2]> = vec![waypoints[0]];
+        for pair in waypoints.windows(2) {
+            let start = pair[0];
+            let end = pair[1];
+            let distance = ((end[0] - start[0]).powi(2) + (end[1] - start[1]).powi(2)).sqrt();
+            let steps = ((distance / max_step).ceil() as usize).max(1);
+            for step in 1..=steps {
+                let fraction = step as f64 / steps as f64;
+                points.push([
+                    start[0] + (end[0] - start[0]) * fraction,
+                    start[1] + (end[1] - start[1]) * fraction,
+                ]);
+            }
+        }
+        let flat: Vec<f64> = points.iter().flatten().copied().collect();
+        Array2::from_shape_vec((points.len(), 2), flat)
+            .expect("flattened waypoint rows form a valid two-column matrix")
     }
 
-    /// Builds the small 4-point Euclidean square loop, whose consecutive and
-    /// diagonal cube pairs are all adjacent: every candidate endpoint pair
-    /// within `max_length` shares an adjacent cube, so the band has no upper
-    /// constraint.
-    #[cfg(feature = "serde")]
-    fn euclidean_square_loop() -> EmbeddedTrajectory {
-        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+    /// Builds an embedded 2D trajectory that densely traces a recurrent loop
+    /// around a missing center cube, then returns exactly to its starting
+    /// point. The cubical cover has `H^1` of rank one; the closing recurrence
+    /// births at distance `0`.
+    fn loop_trajectory() -> EmbeddedTrajectory {
+        // 8-cube ring around a missing center cube at (1, 1), closing back to
+        // its own start.
+        let ring_cubes = [
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (2, 1),
+            (2, 2),
+            (1, 2),
+            (0, 2),
+            (0, 1),
+            (0, 0),
+        ];
+        let waypoints: Vec<[f64; 2]> = ring_cubes
+            .iter()
+            .map(|&(x, y): &(i32, i32)| [f64::from(x) + 0.5, f64::from(y) + 0.5])
+            .collect();
+        let points = densify_path(&waypoints, 0.4);
         let trajectory = Trajectory::new(points.view()).unwrap();
         EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
             .unwrap()
     }
 
     /// Two square-annulus holes (missing centers at cube `(1, 1)` and cube
-    /// `(7, 1)`), each an 8-cube ring, joined by a detour of fresh cubes far
-    /// enough from both rings that it introduces no third recurrence. The
-    /// cover has `H^1` of rank two. Ring A's cut-corner closing (samples 0
-    /// and 7) births at distance `1.0`; ring B's closing point is offset
-    /// within its cube so its closing (samples 18 and 25) births at distance
-    /// `1.2`, distinct from ring A's.
+    /// `(5, 1)`), each an 8-cube ring, joined by a detour through fresh cubes
+    /// far enough from both rings that it introduces no third recurrence. The
+    /// cover has `H^1` of rank two. Ring A's cut-corner closing births at
+    /// distance `0.8`; ring B's closing point is offset within its cube so
+    /// its closing births at distance `0.9`, distinct from ring A's.
     fn two_hole_trajectory() -> EmbeddedTrajectory {
-        let positions = [
-            // Ring A: 8-cube ring around missing center (1, 1). Indices 0..8.
-            [0.5_f64, 0.5],
-            [1.5, 0.5],
-            [2.5, 0.5],
-            [2.5, 1.5],
-            [2.5, 2.5],
-            [1.5, 2.5],
-            [0.5, 2.5],
-            [0.5, 1.5],
-            // Detour through fresh cubes, bridging ring A to ring B far
-            // enough apart that the two rings never share or approach a
-            // cube. Indices 8..18.
-            [-0.5, 1.5],
-            [-0.5, 0.5],
-            [-0.5, -0.5],
-            [0.5, -0.5],
-            [1.5, -0.5],
-            [2.5, -0.5],
-            [3.5, -0.5],
-            [4.5, -0.5],
-            [5.5, -0.5],
-            [6.5, -0.5],
-            // Ring B: 8-cube ring around missing center (7, 1), offset
-            // closing point. Indices 18..26.
-            [6.5, 0.5],
-            [7.5, 0.5],
-            [8.5, 0.5],
-            [8.5, 1.5],
-            [8.5, 2.5],
-            [7.5, 2.5],
-            [6.5, 2.5],
-            [6.5, 1.7],
+        let first_ring_cubes = [
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (2, 1),
+            (2, 2),
+            (1, 2),
+            (0, 2),
+            (0, 1),
         ];
-        let flat: Vec<f64> = positions.iter().flatten().copied().collect();
-        let points = Array2::from_shape_vec((positions.len(), 2), flat).unwrap();
+        let first_ring_centers: Vec<[f64; 2]> = first_ring_cubes
+            .iter()
+            .map(|&(x, y): &(i32, i32)| [f64::from(x) + 0.5, f64::from(y) + 0.5])
+            .collect();
+        let first_closing_point = [0.5, 1.3];
+
+        let second_ring_cubes = [
+            (4, 0),
+            (5, 0),
+            (6, 0),
+            (6, 1),
+            (6, 2),
+            (5, 2),
+            (4, 2),
+            (4, 1),
+        ];
+        let second_ring_centers: Vec<[f64; 2]> = second_ring_cubes
+            .iter()
+            .map(|&(x, y): &(i32, i32)| [f64::from(x) + 0.5, f64::from(y) + 0.5])
+            .collect();
+        let second_closing_point = [4.5, 1.4];
+
+        // Combined waypoint path: the first ring, its cut-corner closing
+        // point, a wide detour well clear of both rings' bounding boxes
+        // (avoiding both missing cubes and staying far enough from either
+        // ring that no shorter accidental recurrence forms), the second ring
+        // (whose first waypoint continues directly from the detour), and the
+        // second ring's own cut-corner closing point.
+        let mut waypoints = first_ring_centers;
+        waypoints.push(first_closing_point);
+        waypoints.push([-2.0, 1.3]);
+        waypoints.push([-2.0, -2.0]);
+        waypoints.push([4.5, -2.0]);
+        waypoints.extend_from_slice(&second_ring_centers);
+        waypoints.push(second_closing_point);
+
+        let points = densify_path(&waypoints, 0.4);
         let trajectory = Trajectory::new(points.view()).unwrap();
         EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
             .unwrap()
@@ -442,17 +456,22 @@ mod tests {
         // independent generators (num_generators() == 2), so this exercises
         // filtered structure the single-hole `loop_trajectory` fixture never
         // reaches (its cover has rank one). Ring A's cut-corner recurrence
-        // births at 1.0 (equal to the trajectory's own bound, since a
-        // minimal ring's cut-corner closing distance is exactly its unit
-        // step size); ring B's offset closing births at 1.2. Both are
-        // strictly below the empirical adjacency bound of 2.0.
+        // births at 0.8; ring B's offset closing births at 0.9.
         let embedded = two_hole_trajectory();
         let max_length = embedded.trajectory().original_count();
-        let storage =
-            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
+        let band_top = 0.95;
+        let storage = CycleStorage::build(
+            &embedded,
+            ..,
+            max_length,
+            band_top,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
 
         let signature = storage.signature(..).unwrap();
         assert_eq!(signature.rank(), 2);
+        assert_eq!(signature.num_generators(), 2);
         let births: Vec<f64> = signature
             .generators()
             .iter()
@@ -462,8 +481,8 @@ mod tests {
             births[0] < births[1],
             "expected ascending births: {births:?}"
         );
-        assert!((births[0] - 1.0).abs() < 1e-12);
-        assert!((births[1] - 1.2).abs() < 1e-12);
+        assert!((births[0] - 0.8).abs() < 1e-12);
+        assert!((births[1] - 0.9).abs() < 1e-12);
 
         let birth_one = births[0];
         let birth_two = births[1];
@@ -488,7 +507,7 @@ mod tests {
             [(birth_one, 1), (birth_two.next_down(), 1), (birth_two, 2)]
         {
             let storage_signature = storage.signature(..).unwrap();
-            let embedded_signature = embedded.signature_with_threshold(.., threshold).unwrap();
+            let embedded_signature = embedded.signature(.., threshold).unwrap();
             assert_eq!(
                 storage_signature.rank_at(threshold).unwrap(),
                 expected_rank,
@@ -505,32 +524,28 @@ mod tests {
                 "span mismatch at threshold {threshold}"
             );
         }
-
-        // The theorem holds exactly for the threshold-free paths too: same
-        // birth sequence, both sides.
-        let embedded_signature = embedded.signature(..).unwrap();
-        let embedded_births: Vec<f64> = embedded_signature
-            .generators()
-            .iter()
-            .map(SignatureGenerator::birth)
-            .collect();
-        assert_eq!(births, embedded_births);
     }
 
     #[test]
     fn signature_rank_and_span_agree_with_embedded_across_thresholds() {
-        // Path agreement: filtering a threshold-free storage's signature down
-        // to a threshold `t` must report the same rank and span as detecting
+        // Path agreement: filtering a storage's signature down to a
+        // threshold `t` must report the same rank and span as detecting
         // cycles directly at `t` through the in-memory walker, for every
         // segment and every threshold inside the valid band.
         let embedded = loop_trajectory();
         let max_length = embedded.trajectory().original_count();
-        let storage =
-            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
         let trajectory_bound = embedded.bound();
-        let band_top = storage.threshold();
+        let band_top = 0.95;
+        let storage = CycleStorage::build(
+            &embedded,
+            ..,
+            max_length,
+            band_top,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
 
-        let segments: &[Range<usize>] = &[0..max_length, 0..4, 4..9, 2..7];
+        let segments: &[Range<usize>] = &[0..max_length, 0..8, 8..max_length, 4..13];
         let thresholds = [
             trajectory_bound,
             f64::midpoint(trajectory_bound, band_top),
@@ -540,9 +555,7 @@ mod tests {
         for segment in segments {
             let storage_signature = storage.signature(segment.clone()).unwrap();
             for &threshold in &thresholds {
-                let embedded_signature = embedded
-                    .signature_with_threshold(segment.clone(), threshold)
-                    .unwrap();
+                let embedded_signature = embedded.signature(segment.clone(), threshold).unwrap();
                 assert_eq!(
                     storage_signature.rank_at(threshold).unwrap(),
                     embedded_signature.rank(),
@@ -565,11 +578,12 @@ mod tests {
         // not to sample index 0, while an explicit `0..` still falls outside
         // the extent and errors.
         let embedded = loop_trajectory();
-        let sub_segment = 4_usize..9_usize;
+        let sub_segment = 4_usize..13_usize;
         let storage = CycleStorage::build(
             &embedded,
             sub_segment.clone(),
             sub_segment.len(),
+            0.95,
             &ExecutionBackend::Sequential,
         )
         .unwrap();
@@ -596,14 +610,8 @@ mod tests {
     #[test]
     fn build_smoke() {
         let embedded = loop_trajectory();
-        let storage = CycleStorage::build_with_threshold(
-            &embedded,
-            ..,
-            1.5,
-            9,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let storage =
+            CycleStorage::build(&embedded, .., 25, 0.95, &ExecutionBackend::Sequential).unwrap();
         assert!(!storage.components().is_empty());
         for component in storage.components() {
             assert!(component.cycle_count() >= 1);
@@ -620,13 +628,7 @@ mod tests {
     #[test]
     fn max_length_below_minimum_is_rejected() {
         let embedded = loop_trajectory();
-        let outcome = CycleStorage::build_with_threshold(
-            &embedded,
-            ..,
-            1.5,
-            1,
-            &ExecutionBackend::Sequential,
-        );
+        let outcome = CycleStorage::build(&embedded, .., 1, 0.95, &ExecutionBackend::Sequential);
         assert!(matches!(
             outcome,
             Err(Error::InvalidMaxLength { max_length: 1 })
@@ -635,16 +637,14 @@ mod tests {
 
     #[test]
     fn threshold_below_trajectory_bound_is_rejected() {
-        // The loop_trajectory fixture has consecutive spacing of 1.0 (adjacent
-        // cube centers), so bound() == 1.0. A threshold of 0.5 is below that.
         let embedded = loop_trajectory();
         let trajectory_bound = embedded.bound();
-        let lower_threshold = trajectory_bound - 0.5;
-        let outcome = CycleStorage::build_with_threshold(
+        let lower_threshold = trajectory_bound - 0.1;
+        let outcome = CycleStorage::build(
             &embedded,
             ..,
+            25,
             lower_threshold,
-            9,
             &ExecutionBackend::Sequential,
         );
         assert!(matches!(
@@ -656,30 +656,49 @@ mod tests {
     }
 
     #[test]
+    fn threshold_at_cube_side_is_rejected() {
+        // A threshold of exactly 1.0 (the unit cube side) is never valid: the
+        // filtered-signature merge gate needs its half-threshold ball radius
+        // strictly below 1/2. The largest representable value strictly below
+        // it is still in-band for this fixture (bound() is far below 1) and
+        // must succeed.
+        let embedded = loop_trajectory();
+        let outcome = CycleStorage::build(&embedded, .., 25, 1.0, &ExecutionBackend::Sequential);
+        assert!(matches!(
+            outcome,
+            Err(Error::ThresholdAboveCubeSide { threshold }) if (threshold - 1.0).abs() < 1e-12
+        ));
+        assert!(
+            CycleStorage::build(
+                &embedded,
+                ..,
+                25,
+                1.0_f64.next_down(),
+                &ExecutionBackend::Sequential,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn max_length_behavior() {
         let embedded = loop_trajectory();
         let original_count = embedded.trajectory().original_count();
-        let small = CycleStorage::build_with_threshold(
+        let small =
+            CycleStorage::build(&embedded, .., 4, 0.95, &ExecutionBackend::Sequential).unwrap();
+        let medium = CycleStorage::build(
             &embedded,
             ..,
-            1.5,
-            4,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
-        let medium = CycleStorage::build_with_threshold(
-            &embedded,
-            ..,
-            1.5,
             original_count,
+            0.95,
             &ExecutionBackend::Sequential,
         )
         .unwrap();
-        let huge = CycleStorage::build_with_threshold(
+        let huge = CycleStorage::build(
             &embedded,
             ..,
-            1.5,
             10 * original_count,
+            0.95,
             &ExecutionBackend::Sequential,
         )
         .unwrap();
@@ -695,66 +714,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn build_free_and_capped_agree_at_empirical_bound() {
-        let embedded = loop_trajectory();
-        let max_length = embedded.trajectory().original_count();
-        let empirical_bound = embedded
-            .adjacency_bound(.., max_length, &ExecutionBackend::Sequential)
-            .unwrap();
-
-        let free =
-            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
-        let capped = CycleStorage::build_with_threshold(
-            &embedded,
-            ..,
-            empirical_bound.next_down(),
-            max_length,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
-
-        // Both paths derive from the same deterministic pipeline, so the
-        // comparison is exact. Both also agree with the standalone
-        // `adjacency_bound` sweep computed above.
-        #[allow(clippy::float_cmp)]
-        {
-            assert_eq!(free.threshold(), capped.threshold());
-            assert_eq!(free.adjacency_bound(), capped.adjacency_bound());
-            assert_eq!(free.adjacency_bound(), empirical_bound);
-            assert_eq!(capped.adjacency_bound(), empirical_bound);
-        }
-        assert_eq!(free.classes(), capped.classes());
-        assert_eq!(cycle_set(&free), cycle_set(&capped));
-    }
-
-    #[test]
-    fn build_rejects_empty_threshold_band() {
-        // Every consecutive step lands in an adjacent cube, but the smallest
-        // non-adjacent candidate pair distance (samples 0 and 2) does not
-        // exceed the trajectory's own consecutive-distance bound (samples 2
-        // and 3), so no threshold admits a recurrence.
-        let points = array![[0.501], [1.999], [2.001], [3.999]];
-        let trajectory = Trajectory::new(points.view()).unwrap();
-        let embedded =
-            EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
-                .unwrap();
-
-        let outcome = CycleStorage::build(&embedded, .., 4, &ExecutionBackend::Sequential);
-        assert!(matches!(outcome, Err(Error::EmptyThresholdBand { .. })));
-    }
-
     #[cfg(feature = "serde")]
     #[test]
     fn save_load_round_trip_preserves_queries() {
         let embedded = loop_trajectory();
-        let threshold = 1.5;
+        let threshold = 0.95;
         let max_length = embedded.trajectory().original_count();
-        let storage = CycleStorage::build_with_threshold(
+        let storage = CycleStorage::build(
             &embedded,
             ..,
-            threshold,
             max_length,
+            threshold,
             &ExecutionBackend::Sequential,
         )
         .unwrap();
@@ -767,8 +737,12 @@ mod tests {
         // caller can confirm it against the embedded trajectory.
         assert_eq!(loaded_storage.fingerprint(), embedded.fingerprint());
 
-        let segments: &[Range<usize>] =
-            &[0..embedded.trajectory().original_count(), 0..4, 4..9, 2..7];
+        let segments: &[Range<usize>] = &[
+            0..embedded.trajectory().original_count(),
+            0..8,
+            8..max_length,
+            4..13,
+        ];
         for segment in segments {
             // `CyclingSignature` has no equality of its own, so compare its
             // full-band span, its per-generator births, and its band top
@@ -815,14 +789,8 @@ mod tests {
     #[test]
     fn loaded_fingerprint_distinguishes_embedded() {
         let embedded = loop_trajectory();
-        let storage = CycleStorage::build_with_threshold(
-            &embedded,
-            ..,
-            1.5,
-            9,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let storage =
+            CycleStorage::build(&embedded, .., 25, 0.95, &ExecutionBackend::Sequential).unwrap();
         let mut buffer: Vec<u8> = Vec::new();
         save_to_writer(&mut buffer, &storage).unwrap();
 
@@ -842,39 +810,5 @@ mod tests {
         )
         .unwrap();
         assert_ne!(loaded.fingerprint(), other_embedded.fingerprint());
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn build_on_unconstrained_band_is_infinite_and_round_trips() {
-        let embedded = euclidean_square_loop();
-        let storage = CycleStorage::build(&embedded, .., 4, &ExecutionBackend::Sequential).unwrap();
-
-        // Every candidate pair in this fixture is cube-adjacent, so the bound
-        // and its derived threshold take on exact sentinel values that
-        // round-trip unchanged through serde.
-        #[allow(clippy::float_cmp)]
-        {
-            assert_eq!(storage.adjacency_bound(), f64::INFINITY);
-            assert_eq!(storage.threshold(), f64::MAX);
-        }
-
-        // The same holds for the threshold-free direct path: with no
-        // non-adjacent candidate pair anywhere in the window, detection runs
-        // unconstrained and the signature's band top is the sentinel value.
-        let signature = embedded.signature(..).unwrap();
-        #[allow(clippy::float_cmp)]
-        {
-            assert_eq!(signature.threshold_max(), f64::MAX);
-        }
-
-        let mut buffer: Vec<u8> = Vec::new();
-        save_to_writer(&mut buffer, &storage).unwrap();
-        let loaded = load_from_reader::<CycleStorage, _>(&buffer[..]).unwrap();
-        #[allow(clippy::float_cmp)]
-        {
-            assert_eq!(loaded.adjacency_bound(), f64::INFINITY);
-            assert_eq!(loaded.threshold(), f64::MAX);
-        }
     }
 }

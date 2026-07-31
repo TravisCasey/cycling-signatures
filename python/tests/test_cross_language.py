@@ -14,12 +14,12 @@ def _load(metric):
 
 
 def test_load_rust_fixture_and_query():
-    assert _load(cs.Euclidean()).signature(range(0, 201), 1.0).rank() == 1
+    assert _load(cs.Euclidean()).signature(range(0, 201), 0.5).rank() == 1
 
 
 def test_provenance_fingerprint_comparison():
     euclidean = _load(cs.Euclidean())
-    storage = cs.CycleStorage.build(euclidean, range(0, 201), 201, threshold=1.0)
+    storage = cs.CycleStorage.build(euclidean, range(0, 201), 201, threshold=0.5)
     assert storage.fingerprint() == euclidean.fingerprint()
 
 
