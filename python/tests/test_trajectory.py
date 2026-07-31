@@ -11,6 +11,15 @@ def test_points_roundtrip_through_numpy():
     np.testing.assert_allclose(trajectory.points(), points)
 
 
+def test_point_count_counts_fill_rows():
+    # A resampled trajectory carries fill rows, so its point count exceeds its
+    # original sample count and matches the height of the points array.
+    spline = cs.CubicSpline(np.array([0.0, 1.0]), np.array([[0.0, 0.0], [1.0, 0.0]]))
+    trajectory = cs.Trajectory.resample(spline, cs.Euclidean(), 0.2)
+    assert trajectory.point_count() == trajectory.points().shape[0]
+    assert trajectory.point_count() > trajectory.original_count()
+
+
 def test_new_rejects_non_finite():
     with pytest.raises(ValueError):
         cs.Trajectory(np.array([[0.0, 0.0], [1.0, np.nan]]))

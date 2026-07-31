@@ -54,7 +54,7 @@ def build() -> tuple[Path, float, float]:
     interpolator = cs.ChebyshevSphereBundleInterpolator(spline, SPHERE_RADIUS_FLOOR)
     metric = cs.SphereBundle(SPHERE_RADIUS_FLOOR)
     trajectory = cs.Trajectory.resample(interpolator, metric, RESAMPLE_BOUND)
-    inserted_fraction = (len(trajectory.points()) - sample_count) / sample_count
+    inserted_fraction = (trajectory.point_count() - sample_count) / sample_count
 
     embedded = cs.EmbeddedTrajectory(trajectory, metric)
     del points, spline, interpolator, trajectory

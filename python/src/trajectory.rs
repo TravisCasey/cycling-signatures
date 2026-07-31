@@ -118,6 +118,21 @@ impl PyTrajectory {
         self.inner.points().to_pyarray(py)
     }
 
+    /// Returns the number of points in the trajectory.
+    ///
+    /// This counts every row of ``points``, including the interpolated fill
+    /// rows a resampled trajectory carries. For the number of original
+    /// samples, use ``original_count``.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The number of trajectory points.
+    #[must_use]
+    fn point_count(&self) -> usize {
+        self.inner.len()
+    }
+
     /// Returns the number of original sample points.
     ///
     /// For a trajectory built with ``Trajectory(points)``, this equals the row
