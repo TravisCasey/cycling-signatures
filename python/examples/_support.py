@@ -56,11 +56,11 @@ _LORENZ_CACHE = Path(__file__).resolve().parent / "lorenz" / "data"
 
 # Published example data on Zenodo.
 _LORENZ_STORAGE = _RemoteFile(
-    url="https://zenodo.org/records/21649293/files/lorenz_storage.cyc?download=1",
-    sha256="56125bf6da1a739294bad9ad70e2c3f28fc1a942bb6567336e23899d44e41575",
+    url="https://zenodo.org/records/21711622/files/lorenz_storage.cyc?download=1",
+    sha256="74b5f6102853f38458acb513d3481b4d8683da9dfb1245c32499bd54d28f4bd9",
 )
 _LORENZ_RAW = _RemoteFile(
-    url="https://zenodo.org/records/21649293/files/lorenz_raw.npy?download=1",
+    url="https://zenodo.org/records/21711622/files/lorenz_raw.npy?download=1",
     sha256="74103f830bfc532f91a0a999a805b835f2444ed799de73ae631b372036993101",
 )
 
@@ -95,11 +95,11 @@ def lorenz_raw() -> Path:
 _DADRAS_CACHE = Path(__file__).resolve().parent / "dadras" / "data"
 
 _DADRAS_STORAGE = _RemoteFile(
-    url="https://zenodo.org/records/21649293/files/dadras_storage.cyc?download=1",
-    sha256="7b5c8ae9e9771d02800b42b950322789b7e6fd3f880ee46c0ffd410b80ec5c90",
+    url="https://zenodo.org/records/21711622/files/dadras_storage.cyc?download=1",
+    sha256="8b3cf2bd76f27adf4611eba7b75e85a35a385859b2ae0add46883ba89f11cf3d",
 )
 _DADRAS_RAW = _RemoteFile(
-    url="https://zenodo.org/records/21649293/files/dadras_raw.npy?download=1",
+    url="https://zenodo.org/records/21711622/files/dadras_raw.npy?download=1",
     sha256="d9a57917ff8e44e2a9ca4b9879af3eedaf9b0c37aeb2ea4e5facd715d806e61e",
 )
 
