@@ -15,7 +15,7 @@ pub mod cubic_spline;
 pub mod sphere_bundle;
 
 pub use cubic_spline::CubicSpline;
-pub use sphere_bundle::ChebyshevSphereBundleInterpolator;
+pub use sphere_bundle::SphereBundleInterpolator;
 
 /// A query-only interpolator fit at construction over a set of knots.
 pub trait Interpolator {

@@ -11,7 +11,7 @@ use pyo3::{exceptions::PyTypeError, prelude::*};
 
 use crate::{
     errors::to_pyerr,
-    interpolation::{PyChebyshevSphereBundleInterpolator, PyCubicSpline},
+    interpolation::{PyCubicSpline, PySphereBundleInterpolator},
     metric::metric_from_py,
 };
 
@@ -58,7 +58,7 @@ impl PyTrajectory {
     ///
     /// Parameters
     /// ----------
-    /// interpolator : ``CubicSpline`` or ``ChebyshevSphereBundleInterpolator``
+    /// interpolator : ``CubicSpline`` or ``SphereBundleInterpolator``
     ///     The interpolator to sample.
     /// metric : ``Euclidean`` or ``SphereBundle``
     ///     The metric that measures consecutive-point spacing.
@@ -91,7 +91,7 @@ impl PyTrajectory {
                 inner: Arc::new(inner),
             });
         }
-        if let Ok(bundle) = interpolator.cast::<PyChebyshevSphereBundleInterpolator>() {
+        if let Ok(bundle) = interpolator.cast::<PySphereBundleInterpolator>() {
             let inner =
                 Trajectory::resample(&bundle.borrow().inner, metric, bound).map_err(to_pyerr)?;
             return Ok(Self {
@@ -99,7 +99,7 @@ impl PyTrajectory {
             });
         }
         Err(PyTypeError::new_err(format!(
-            "expected a CubicSpline or ChebyshevSphereBundleInterpolator, got {}",
+            "expected a CubicSpline or SphereBundleInterpolator, got {}",
             interpolator.get_type().name()?
         )))
     }

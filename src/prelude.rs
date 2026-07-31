@@ -10,7 +10,7 @@
 //! ```
 
 pub use crate::{
-    ChebyshevSphereBundleInterpolator, Component, Cube, CubicSpline, CubicalCover, Cycle,
-    CycleStorage, CyclingSignature, EmbeddedTrajectory, Error, ExecutionBackend, F2Subspace,
-    F2Vector, Interpolator, Metric, Result, SignatureGenerator, Trajectory,
+    Component, Cube, CubicSpline, CubicalCover, Cycle, CycleStorage, CyclingSignature,
+    EmbeddedTrajectory, Error, ExecutionBackend, F2Subspace, F2Vector, Interpolator, Metric,
+    Result, SignatureGenerator, SphereBundleInterpolator, Trajectory,
 };

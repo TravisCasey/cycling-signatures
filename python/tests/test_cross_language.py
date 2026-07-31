@@ -25,7 +25,7 @@ def test_provenance_fingerprint_comparison():
 
 def test_fingerprint_distinguishes_metric():
     # 4D sphere-bundle-valid square loop: positions step through adjacent
-    # cubes; the direction half is constant and nonzero.
+    # cubes; the direction half is constant.
     points = np.array(
         [
             [0.5, 0.5, 1.0, 0.5],
@@ -36,7 +36,5 @@ def test_fingerprint_distinguishes_metric():
     )
     trajectory = cs.Trajectory(points)
     euclidean = cs.EmbeddedTrajectory(trajectory, cs.Euclidean())
-    sphere_zero = cs.EmbeddedTrajectory(trajectory, cs.SphereBundle(0))
-    sphere_one = cs.EmbeddedTrajectory(trajectory, cs.SphereBundle(1))
-    assert euclidean.fingerprint() != sphere_zero.fingerprint()
-    assert sphere_zero.fingerprint() != sphere_one.fingerprint()
+    sphere = cs.EmbeddedTrajectory(trajectory, cs.SphereBundle())
+    assert euclidean.fingerprint() != sphere.fingerprint()

@@ -127,56 +127,30 @@ impl PyEuclidean {
 /// A distance metric on the L2 sphere bundle.
 ///
 /// Operates on even-length coordinate vectors whose first half is a spatial
-/// position and whose second half is a nonzero direction (velocity) vector.
-/// The distance is the maximum of two quantities: the Euclidean distance
-/// between the position halves, and the direction weight times the Euclidean
-/// distance between the L2-normalized direction halves. The direction weight
-/// is the cover radius ``radius_floor + 0.5``, derived from the same integer
-/// the ``ChebyshevSphereBundleInterpolator`` takes.
-///
-/// Parameters
-/// ----------
-/// radius_floor : int
-///     Non-negative integer floor of the direction-normalization radius.
-///
-/// Raises
-/// ------
-/// ``OverflowError``
-///     If ``radius_floor`` does not fit in an unsigned 32-bit integer.
+/// position and whose second half is a direction (velocity) vector. Neither
+/// half is normalized: the distance is the maximum of the two halves'
+/// Euclidean distances, measured directly on the given coordinates. This
+/// metric is calibrated against ``SphereBundleInterpolator``, which stores
+/// each direction half as the unit tangent scaled to the L2 sphere of radius
+/// ``radius_floor + 0.5``.
 #[pyclass(name = "SphereBundle", frozen)]
-pub(crate) struct PySphereBundle {
-    radius_floor: u32,
-}
+pub(crate) struct PySphereBundle;
 
 #[pymethods]
 impl PySphereBundle {
-    /// Creates a sphere-bundle metric from a radius floor.
+    /// Creates a sphere-bundle metric.
     #[new]
-    fn new(radius_floor: u32) -> Self {
-        Self { radius_floor }
-    }
-
-    /// Returns the radius floor set at construction.
-    ///
-    /// Returns
-    /// -------
-    /// int
-    ///     The radius floor.
-    #[must_use]
-    fn radius_floor(&self) -> u32 {
-        self.radius_floor
+    fn new() -> Self {
+        Self
     }
 
     /// Returns the distance between two coordinate vectors.
-    ///
-    /// The direction half of each vector is L2-normalized before the distance
-    /// is taken, so the result is independent of the direction magnitudes.
     ///
     /// Parameters
     /// ----------
     /// point : ndarray
     ///     A one-dimensional, even-length coordinate vector whose first half is
-    ///     a position and whose second half is a nonzero direction.
+    ///     a position and whose second half is a direction.
     /// other : ndarray
     ///     A coordinate vector of the same length as ``point``.
     ///
@@ -190,18 +164,13 @@ impl PySphereBundle {
     /// ``ValueError``
     ///     If the two vectors differ in length.
     #[allow(clippy::needless_pass_by_value)]
+    #[allow(clippy::unused_self)]
     fn distance(
         &self,
         point: PyReadonlyArray1<'_, f64>,
         other: PyReadonlyArray1<'_, f64>,
     ) -> PyResult<f64> {
-        scalar_distance(
-            Metric::SphereBundle {
-                radius_floor: self.radius_floor,
-            },
-            &point,
-            &other,
-        )
+        scalar_distance(Metric::SphereBundle, &point, &other)
     }
 
     /// Returns the matrix of pairwise distances among the rows of ``points``.
@@ -219,23 +188,19 @@ impl PySphereBundle {
     ///     between row ``i`` and row ``j``. The diagonal is zero.
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
+    #[allow(clippy::unused_self)]
     fn distance_matrix<'py>(
         &self,
         py: Python<'py>,
         points: PyReadonlyArray2<'_, f64>,
     ) -> Bound<'py, PyArray2<f64>> {
-        pairwise_matrix(
-            Metric::SphereBundle {
-                radius_floor: self.radius_floor,
-            },
-            &points,
-            py,
-        )
+        pairwise_matrix(Metric::SphereBundle, &points, py)
     }
 
     /// Returns a string representation of the metric.
+    #[allow(clippy::unused_self)]
     fn __repr__(&self) -> String {
-        format!("SphereBundle(radius_floor={})", self.radius_floor)
+        "SphereBundle()".to_string()
     }
 }
 
@@ -245,10 +210,8 @@ pub(crate) fn metric_from_py(object: &Bound<'_, PyAny>) -> PyResult<Metric> {
     if object.cast::<PyEuclidean>().is_ok() {
         return Ok(Metric::Euclidean);
     }
-    if let Ok(sphere) = object.cast::<PySphereBundle>() {
-        return Ok(Metric::SphereBundle {
-            radius_floor: sphere.get().radius_floor,
-        });
+    if object.cast::<PySphereBundle>().is_ok() {
+        return Ok(Metric::SphereBundle);
     }
     Err(PyTypeError::new_err(format!(
         "expected a Euclidean or SphereBundle metric, got {}",

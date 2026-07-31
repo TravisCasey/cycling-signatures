@@ -10,28 +10,28 @@ use crate::interpolation::{DerivativeInterpolator, Interpolator};
 /// Wraps a [`DerivativeInterpolator`] and produces samples that concatenate
 /// the inner position with a scaled direction.
 ///
-/// At each parameter, the scaled direction is the inner derivative normalized
-/// by its Chebyshev norm, then multiplied by the configured radius. Each
-/// sample has length twice that of the inner interpolator: the first half is
-/// the position, the second half is the scaled direction.
+/// At each parameter, the scaled direction is the inner derivative
+/// normalized to unit L2 length, then multiplied by the configured radius,
+/// placing it on the L2 sphere of that radius. Each sample has length twice
+/// that of the inner interpolator: the first half is the position, the
+/// second half is the scaled direction.
 ///
 /// The radius is set indirectly through a `radius_floor: u32` and is fixed at
-/// `radius_floor + 0.5`. The half-integer offset keeps every direction
-/// coordinate strictly between two integers, so a coordinate of an extremal
-/// component never lands exactly where the floor function is sign-asymmetric.
-///
-/// To measure distances on the resulting embedding, pair this interpolator with
-/// [`Metric::SphereBundle`](crate::metric::Metric::SphereBundle) using the same
-/// `radius_floor`. The sphere-bundle metric derives its direction weight from
-/// the same `radius_floor`, so passing one integer to both the interpolator and
-/// metric keeps recurrence thresholds compatible with cube adjacency.
+/// `radius_floor + 0.5`. That radius matches how the cubical cover counts
+/// direction cubes: it is both the direction shell's cube resolution and,
+/// via [`Metric::SphereBundle`](crate::metric::Metric::SphereBundle), the
+/// distance scale a recurrence threshold is measured against, so the same
+/// radius must govern both. The half-integer offset also keeps every
+/// extremal direction coordinate at `+-(radius_floor + 0.5)`, never an
+/// integer, so a direction coordinate at its largest magnitude never lands
+/// exactly on a cube boundary.
 #[derive(Debug, Clone)]
-pub struct ChebyshevSphereBundleInterpolator<Inner> {
+pub struct SphereBundleInterpolator<Inner> {
     inner: Inner,
     radius: f64,
 }
 
-impl<Inner: DerivativeInterpolator> ChebyshevSphereBundleInterpolator<Inner> {
+impl<Inner: DerivativeInterpolator> SphereBundleInterpolator<Inner> {
     /// Wraps `inner` with the given radius floor.
     ///
     /// The actual normalization radius is `radius_floor + 0.5`; see the
@@ -42,7 +42,7 @@ impl<Inner: DerivativeInterpolator> ChebyshevSphereBundleInterpolator<Inner> {
     ///
     /// ```
     /// use cycling_signatures::interpolation::{
-    ///     ChebyshevSphereBundleInterpolator, CubicSpline, Interpolator,
+    ///     CubicSpline, Interpolator, SphereBundleInterpolator,
     /// };
     /// use ndarray::array;
     ///
@@ -51,7 +51,7 @@ impl<Inner: DerivativeInterpolator> ChebyshevSphereBundleInterpolator<Inner> {
     ///     array![[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]].view(),
     /// )
     /// .unwrap();
-    /// let bundle = ChebyshevSphereBundleInterpolator::new(inner, 1);
+    /// let bundle = SphereBundleInterpolator::new(inner, 1);
     /// assert_eq!(bundle.radius(), 1.5);
     ///
     /// let sample = bundle.sample(0.5);
@@ -71,7 +71,7 @@ impl<Inner: DerivativeInterpolator> ChebyshevSphereBundleInterpolator<Inner> {
     }
 }
 
-impl<Inner: DerivativeInterpolator> Interpolator for ChebyshevSphereBundleInterpolator<Inner> {
+impl<Inner: DerivativeInterpolator> Interpolator for SphereBundleInterpolator<Inner> {
     /// # Panics
     ///
     /// Panics if `parameter` is outside the fitted domain, or if the inner
@@ -80,13 +80,10 @@ impl<Inner: DerivativeInterpolator> Interpolator for ChebyshevSphereBundleInterp
         let position = self.inner.sample(parameter);
         let derivative = self.inner.derivative(parameter);
 
-        let linf_norm = derivative
-            .iter()
-            .map(|component| component.abs())
-            .fold(0.0_f64, f64::max);
-        assert!(linf_norm > 0.0, "zero derivative at parameter {parameter}");
+        let l2_norm = derivative.dot(&derivative).sqrt();
+        assert!(l2_norm > 0.0, "zero derivative at parameter {parameter}");
 
-        let scaled: Array1<f64> = derivative.mapv(|component| component / linf_norm * self.radius);
+        let scaled: Array1<f64> = derivative.mapv(|component| component / l2_norm * self.radius);
 
         let dimension = position.len();
         let mut result = Array1::<f64>::zeros(2 * dimension);
@@ -105,7 +102,7 @@ impl<Inner: DerivativeInterpolator> Interpolator for ChebyshevSphereBundleInterp
 mod tests {
     use ndarray::array;
 
-    use super::ChebyshevSphereBundleInterpolator;
+    use super::SphereBundleInterpolator;
     use crate::interpolation::{CubicSpline, Interpolator};
 
     #[test]
@@ -113,11 +110,11 @@ mod tests {
         // Three properties asserted together:
         //   - output length is 2 * inner dimension,
         //   - the spatial half matches the inner spline's own sample, and
-        //   - the direction half has L-infinity norm equal to the radius.
+        //   - the direction half has L2 norm equal to the radius.
         let knots = array![0.0, 1.0, 2.0, 3.0];
         let values = array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]];
         let inner = CubicSpline::new(knots.clone(), values.view()).unwrap();
-        let bundle = ChebyshevSphereBundleInterpolator::new(inner.clone(), 2);
+        let bundle = SphereBundleInterpolator::new(inner.clone(), 2);
         let radius = bundle.radius();
 
         for parameter in [0.5, 1.0, 1.5, 2.0, 2.5] {
@@ -128,15 +125,16 @@ mod tests {
             assert!((sample[0] - inner_sample[0]).abs() < 1e-12);
             assert!((sample[1] - inner_sample[1]).abs() < 1e-12);
 
-            let direction_linf = sample
+            let direction_l2 = sample
                 .iter()
                 .skip(2)
-                .map(|component| component.abs())
-                .fold(0.0_f64, f64::max);
+                .map(|component| component * component)
+                .sum::<f64>()
+                .sqrt();
             assert!(
-                (direction_linf - radius).abs() < 1e-10,
-                "L-infinity norm of direction at parameter {parameter}: got {direction_linf}, \
-                 expected {radius}"
+                (direction_l2 - radius).abs() < 1e-10,
+                "L2 norm of direction at parameter {parameter}: got {direction_l2}, expected \
+                 {radius}"
             );
         }
     }
@@ -150,7 +148,7 @@ mod tests {
             array![[5.0, 5.0], [5.0, 5.0], [5.0, 5.0]].view(),
         )
         .unwrap();
-        let bundle = ChebyshevSphereBundleInterpolator::new(inner, 0);
+        let bundle = SphereBundleInterpolator::new(inner, 0);
         let _ = bundle.sample(0.5);
     }
 }

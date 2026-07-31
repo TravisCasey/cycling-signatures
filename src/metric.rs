@@ -8,19 +8,15 @@ use ndarray::{Array2, ArrayView1, ArrayView2};
 
 mod sphere_bundle;
 
-use sphere_bundle::{
-    direction_weight, normalize_directions_in_place, sphere_bundle_covers_triple,
-    sphere_bundle_distance,
-};
+use sphere_bundle::{sphere_bundle_covers_triple, sphere_bundle_distance};
 
 /// A distance mode over rows of a trajectory.
 ///
 /// The crate supports exactly two modes. [`Metric::Euclidean`] measures
 /// position coordinates directly. [`Metric::SphereBundle`] measures
 /// even-length points whose first half is a spatial position and whose second
-/// half is a nonzero scaling of a direction vector; see the variant
-/// documentation for the distance formula and its calibration with the
-/// cubical cover.
+/// half is a direction vector; see the variant documentation for the distance
+/// formula and its calibration with the cubical cover.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Metric {
     /// The standard Euclidean metric.
@@ -33,28 +29,26 @@ pub enum Metric {
     ///
     /// Operates on any sphere-bundle-like input: a vector of even length
     /// `2 * dimension` whose first half is a spatial position and whose
-    /// second half is some nonzero scaling of a direction (velocity) vector.
-    /// The direction half is L2-normalized to a unit vector before the
-    /// position and direction terms are combined, which lifts the input into
-    /// the sphere bundle. Following normalization the distance is
+    /// second half is a direction vector. The distance is the maximum of the
+    /// two halves' Euclidean distances:
     ///
     /// ```text
     /// max(
     ///     euclidean(position_left, position_right),
-    ///     weight * euclidean(direction_left_unit, direction_right_unit),
+    ///     euclidean(direction_left, direction_right),
     /// )
     /// ```
     ///
-    /// where `weight` is the cover radius `radius_floor + 0.5`, derived from
-    /// the same `radius_floor` that
-    /// [`ChebyshevSphereBundleInterpolator`](crate::interpolation::ChebyshevSphereBundleInterpolator)
-    /// takes. The shared integer keeps the direction term measured on the
-    /// same scale as the radius-scaled direction cubes, so recurrence
-    /// thresholds stay compatible with cube adjacency.
+    /// This metric is calibrated against
+    /// [`SphereBundleInterpolator`](crate::interpolation::SphereBundleInterpolator),
+    /// which stores each direction half as the unit tangent scaled to the L2
+    /// sphere of radius `radius_floor + 0.5`. That radius plays two roles at
+    /// once: it is the direction cover's cube resolution and the
+    /// position/direction exchange rate.
     ///
     /// ```
     /// use cycling_signatures::{
-    ///     interpolation::{ChebyshevSphereBundleInterpolator, CubicSpline},
+    ///     interpolation::{CubicSpline, SphereBundleInterpolator},
     ///     metric::Metric,
     /// };
     /// use ndarray::array;
@@ -64,22 +58,28 @@ pub enum Metric {
     ///     array![[0.0, 0.0], [1.0, 0.0], [2.0, 1.0]].view(),
     /// )
     /// .unwrap();
-    /// // One integer drives both the interpolator and the metric.
-    /// let interpolator = ChebyshevSphereBundleInterpolator::new(spline, 3);
-    /// let metric = Metric::SphereBundle { radius_floor: 3 };
+    /// let interpolator = SphereBundleInterpolator::new(spline, 3);
     /// assert_eq!(interpolator.radius(), 3.5);
     ///
-    /// // Identical directions: the position term dominates.
-    /// let left = array![0.0, 0.0, 1.0, 0.0];
-    /// let right = array![3.0, 4.0, 1.0, 0.0];
+    /// let metric = Metric::SphereBundle;
+    ///
+    /// // Identical direction halves, each at the interpolator's radius:
+    /// // the direction term is zero, so the position term dominates.
+    /// let left = array![0.0, 0.0, 3.5, 0.0];
+    /// let right = array![3.0, 4.0, 3.5, 0.0];
     /// assert!((metric.distance(left.view(), right.view()) - 5.0).abs() < 1e-12);
+    ///
+    /// // Identical positions, orthogonal direction halves each at magnitude
+    /// // 3.5: the direction term is 3.5 * sqrt(2) and dominates, while the
+    /// // position term contributes nothing.
+    /// let left = array![0.0, 0.0, 3.5, 0.0];
+    /// let right = array![0.0, 0.0, 0.0, 3.5];
+    /// let expected = 3.5 * 2.0_f64.sqrt();
+    /// assert!(
+    ///     (metric.distance(left.view(), right.view()) - expected).abs() < 1e-12
+    /// );
     /// ```
-    SphereBundle {
-        /// Integer floor of the direction-normalization radius. The cover
-        /// radius, and the direction weight derived from it, is
-        /// `radius_floor + 0.5`.
-        radius_floor: u32,
-    },
+    SphereBundle,
 }
 
 impl Metric {
@@ -88,15 +88,12 @@ impl Metric {
     /// # Panics
     ///
     /// Panics if `point.len() != other.len()`. The sphere-bundle mode also
-    /// panics if the common length is not even or if either direction half
-    /// has zero L2 norm.
+    /// panics if the common length is not even.
     #[must_use]
     pub fn distance(self, point: ArrayView1<'_, f64>, other: ArrayView1<'_, f64>) -> f64 {
         match self {
             Metric::Euclidean => euclidean_distance(point, other),
-            Metric::SphereBundle { radius_floor } => {
-                sphere_bundle_distance(radius_floor, point, other)
-            },
+            Metric::SphereBundle => sphere_bundle_distance(point, other),
         }
     }
 
@@ -151,32 +148,31 @@ impl Metric {
     ) -> bool {
         match self {
             Metric::Euclidean => euclidean_covers_triple(first, second, third, radius),
-            Metric::SphereBundle { radius_floor } => {
-                sphere_bundle_covers_triple(radius_floor, first, second, third, radius)
-            },
+            Metric::SphereBundle => sphere_bundle_covers_triple(first, second, third, radius),
         }
     }
 
     /// Prepares `points` for repeated [`PreparedPoints::distance`] queries
     /// under this metric.
     ///
-    /// The result holds a contiguous copy of `points`. Under
-    /// [`Metric::SphereBundle`], each row's direction half is replaced by its
-    /// L2-normalized unit vector (computed identically to how
-    /// [`Metric::distance`] normalizes it), so that later distance queries
-    /// need no further normalization or allocation. Under
-    /// [`Metric::Euclidean`], rows are copied unchanged.
+    /// The result holds a contiguous copy of `points`, unmodified: distance
+    /// under this metric never normalizes its input, so preparation is a
+    /// plain copy that later distance queries read from without further
+    /// allocation.
     ///
     /// # Panics
     ///
-    /// Under [`Metric::SphereBundle`], panics if any row's length is odd or
-    /// if any row's direction half has zero L2 norm.
+    /// Under [`Metric::SphereBundle`], panics if `points.ncols()` is odd.
     #[must_use]
     pub(crate) fn prepare(self, points: ArrayView2<'_, f64>) -> PreparedPoints {
-        let mut rows = points.to_owned();
-        if let Metric::SphereBundle { .. } = self {
-            normalize_directions_in_place(&mut rows);
+        if let Metric::SphereBundle = self {
+            assert!(
+                points.ncols().is_multiple_of(2),
+                "sphere bundle metric requires even dimension, got {}",
+                points.ncols(),
+            );
         }
+        let rows = points.to_owned();
         PreparedPoints { rows, metric: self }
     }
 }
@@ -184,11 +180,9 @@ impl Metric {
 /// Points prepared for repeated distance evaluation under a fixed
 /// [`Metric`], built by [`Metric::prepare`].
 ///
-/// Preparation folds the per-pair normalization work that
-/// [`Metric::SphereBundle`] would otherwise repeat on every call into a
-/// single pass over the input, so that [`PreparedPoints::distance`]
-/// evaluates each pair by reading plain contiguous slices, without
-/// allocating.
+/// Preparation copies the input into a single contiguous array, so that
+/// [`PreparedPoints::distance`] evaluates each pair by reading plain
+/// contiguous slices, without allocating.
 pub(crate) struct PreparedPoints {
     rows: Array2<f64>,
     metric: Metric,
@@ -217,11 +211,11 @@ impl PreparedPoints {
 
         match self.metric {
             Metric::Euclidean => euclidean_distance_slices(left, right),
-            Metric::SphereBundle { radius_floor } => {
+            Metric::SphereBundle => {
                 let half = left.len() / 2;
                 let position_distance = euclidean_distance_slices(&left[..half], &right[..half]);
                 let direction_distance = euclidean_distance_slices(&left[half..], &right[half..]);
-                position_distance.max(direction_weight(radius_floor) * direction_distance)
+                position_distance.max(direction_distance)
             },
         }
     }
@@ -254,18 +248,17 @@ impl PreparedPoints {
                 ],
                 radius,
             ),
-            Metric::SphereBundle { radius_floor } => {
+            Metric::SphereBundle => {
                 let half = first.len() / 2;
-                let weight = direction_weight(radius_floor);
                 let position_sides = [
                     euclidean_distance_slices(&first[..half], &second[..half]),
                     euclidean_distance_slices(&first[..half], &third[..half]),
                     euclidean_distance_slices(&second[..half], &third[..half]),
                 ];
                 let direction_sides = [
-                    weight * euclidean_distance_slices(&first[half..], &second[half..]),
-                    weight * euclidean_distance_slices(&first[half..], &third[half..]),
-                    weight * euclidean_distance_slices(&second[half..], &third[half..]),
+                    euclidean_distance_slices(&first[half..], &second[half..]),
+                    euclidean_distance_slices(&first[half..], &third[half..]),
+                    euclidean_distance_slices(&second[half..], &third[half..]),
                 ];
                 sides_cover_triple(position_sides, radius)
                     && sides_cover_triple(direction_sides, radius)
@@ -412,14 +405,12 @@ mod tests {
             }
         }
 
-        // Direction halves scaled to different norms per row so
-        // normalization is exercised at more than one scale.
         let sphere_points = array![
             [0.0, 0.0, 1.0, 0.0],
             [3.0, 4.0, 0.0, 2.0],
-            [1.0, 1.0, 3.0, 4.0],
+            [1.0, 1.0, 0.0, 0.0],
         ];
-        let metric = Metric::SphereBundle { radius_floor: 2 };
+        let metric = Metric::SphereBundle;
         let sphere_prepared = metric.prepare(sphere_points.view());
         for left in 0..sphere_points.nrows() {
             for right in 0..sphere_points.nrows() {
@@ -430,12 +421,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "zero direction L2 norm")]
-    fn prepare_zero_direction_norm_panics() {
-        // The first row's direction half is the zero vector; L2
-        // normalization during preparation is undefined.
-        let points = array![[0.0, 0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 0.0]];
-        let _ = Metric::SphereBundle { radius_floor: 1 }.prepare(points.view());
+    #[should_panic(expected = "sphere bundle metric requires even dimension, got 3")]
+    fn prepare_odd_length_panics() {
+        let points = array![[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]];
+        let _ = Metric::SphereBundle.prepare(points.view());
     }
 
     #[test]

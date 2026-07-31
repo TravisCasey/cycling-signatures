@@ -9,12 +9,12 @@ YELLOW='\033[0;33m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-skip_gallery=0
+with_gallery=0
 for argument in "$@"; do
     case "$argument" in
-        --skip-gallery) skip_gallery=1 ;;
+        --with-gallery) with_gallery=1 ;;
         *)
-            echo "usage: ${0##*/} [--skip-gallery]" >&2
+            echo "usage: ${0##*/} [--with-gallery]" >&2
             exit 2
             ;;
     esac
@@ -131,8 +131,9 @@ gallery_input_stamp() {
     sha256sum examples/_support.py cycling_signatures/_core*.so
 }
 
-if [ "$skip_gallery" -eq 1 ]; then
-    skip_step "Gallery build" "--skip-gallery requested"
+if [ "$with_gallery" -eq 0 ]; then
+    skip_step "Gallery build" \
+        "published storages predate the current wire format; re-enable with --with-gallery once data is republished"
 else
     if ! current_stamp=$(gallery_input_stamp); then
         echo -e "${RED}  could not stamp the gallery inputs${RESET}" >&2

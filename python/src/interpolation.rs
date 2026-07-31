@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use cycling_signatures::{ChebyshevSphereBundleInterpolator, CubicSpline};
+use cycling_signatures::{CubicSpline, SphereBundleInterpolator};
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 
@@ -66,15 +66,18 @@ impl PyCubicSpline {
 
 /// A sphere-bundle interpolator that wraps a ``CubicSpline``.
 ///
-/// At each parameter value the output concatenates the position from the inner
-/// spline with a direction vector: the inner derivative, *normalized by its
-/// Chebyshev norm*, then scaled to the configured radius. Each sample has
+/// At each parameter value the output concatenates the position from the
+/// inner spline with a direction vector: the inner derivative, normalized to
+/// unit L2 length, then scaled to the configured radius. Each sample has
 /// length twice that of the inner spline.
 ///
 /// The radius is ``radius_floor + 0.5``, where ``radius_floor`` is given at
-/// construction. The half-integer offset keeps every direction coordinate
-/// strictly between two integers, ensuring that cube-floor assignments for the
-/// direction components are unambiguous at extremal values.
+/// construction. That radius matches how the cubical cover counts direction
+/// cubes; pair this interpolator with the ``SphereBundle`` metric to measure
+/// distances on the resulting embedding. The half-integer offset also keeps
+/// every extremal direction coordinate at plus-or-minus ``radius_floor +
+/// 0.5``, never an integer, so a direction coordinate at its largest
+/// magnitude never lands exactly on a cube boundary.
 ///
 /// Parameters
 /// ----------
@@ -94,20 +97,20 @@ impl PyCubicSpline {
 ///         np.array([0.0, 1.0, 2.0]),
 ///         np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]]),
 ///     )
-///     bundle = cs.ChebyshevSphereBundleInterpolator(spline, 1)
+///     bundle = cs.SphereBundleInterpolator(spline, 1)
 ///     assert bundle.radius() == 1.5
-#[pyclass(name = "ChebyshevSphereBundleInterpolator")]
-pub(crate) struct PyChebyshevSphereBundleInterpolator {
-    pub(crate) inner: ChebyshevSphereBundleInterpolator<Arc<CubicSpline>>,
+#[pyclass(name = "SphereBundleInterpolator")]
+pub(crate) struct PySphereBundleInterpolator {
+    pub(crate) inner: SphereBundleInterpolator<Arc<CubicSpline>>,
 }
 
 #[pymethods]
-impl PyChebyshevSphereBundleInterpolator {
+impl PySphereBundleInterpolator {
     /// Wraps a ``CubicSpline`` with the given radius floor.
     #[new]
     fn new(inner: &Bound<'_, PyCubicSpline>, radius_floor: u32) -> Self {
         let spline = Arc::clone(&inner.borrow().inner);
-        let bundle = ChebyshevSphereBundleInterpolator::new(spline, radius_floor);
+        let bundle = SphereBundleInterpolator::new(spline, radius_floor);
         Self { inner: bundle }
     }
 
@@ -127,6 +130,6 @@ impl PyChebyshevSphereBundleInterpolator {
 /// Registers the interpolation classes on the module.
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyCubicSpline>()?;
-    module.add_class::<PyChebyshevSphereBundleInterpolator>()?;
+    module.add_class::<PySphereBundleInterpolator>()?;
     Ok(())
 }

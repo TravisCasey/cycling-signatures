@@ -18,7 +18,7 @@ Interpolation
 .. autoclass:: cycling_signatures.CubicSpline
    :members:
 
-.. autoclass:: cycling_signatures.ChebyshevSphereBundleInterpolator
+.. autoclass:: cycling_signatures.SphereBundleInterpolator
    :members:
 
 Trajectories

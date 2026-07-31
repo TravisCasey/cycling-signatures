@@ -5,8 +5,7 @@ import cycling_signatures as cs
 
 def test_metric_reprs_round_trip_construction():
     assert repr(cs.Euclidean()) == "Euclidean()"
-    assert repr(cs.SphereBundle(1)) == "SphereBundle(radius_floor=1)"
-    assert repr(cs.SphereBundle(3)) == "SphereBundle(radius_floor=3)"
+    assert repr(cs.SphereBundle()) == "SphereBundle()"
 
 
 def test_storage_repr_reports_construction_parameters(square_loop_storage, square_loop_points):

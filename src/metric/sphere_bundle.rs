@@ -4,82 +4,40 @@
 //! Distance functions on the L2 sphere bundle, backing
 //! [`Metric::SphereBundle`](crate::metric::Metric::SphereBundle).
 
-use ndarray::{Array1, Array2, ArrayView1, s};
+use ndarray::{ArrayView1, s};
 
 use crate::metric::{euclidean_distance, sides_cover_triple};
 
-/// The direction weight derived from a radius floor: the cover radius
-/// `radius_floor + 0.5`.
-pub(crate) fn direction_weight(radius_floor: u32) -> f64 {
-    f64::from(radius_floor) + 0.5
-}
-
-/// Splits a sphere-bundle point into its position half and L2-normalized
-/// direction half.
+/// Splits a sphere-bundle point into its position half and direction half.
 ///
-/// A valid sphere-bundle point has even-length coordinates (the first half
-/// is position, the second half is direction) with a nonzero direction half
-/// so its L2-normalization is well-defined. Both conditions are asserted.
+/// A valid sphere-bundle point has even-length coordinates: the first half is
+/// position, the second half is direction. An odd length is not a valid
+/// sphere-bundle point at all, so the even-length requirement is asserted:
+/// that catches malformed input loudly instead of silently splitting it into
+/// a mismatched position half and direction half.
 ///
 /// # Panics
 ///
-/// Panics if `point.len()` is odd or if the direction half has zero L2 norm.
-fn split_and_normalize(point: ArrayView1<'_, f64>) -> (ArrayView1<'_, f64>, Array1<f64>) {
+/// Panics if `point.len()` is odd.
+fn split(point: ArrayView1<'_, f64>) -> (ArrayView1<'_, f64>, ArrayView1<'_, f64>) {
     assert!(
         point.len().is_multiple_of(2),
         "sphere bundle metric requires even dimension, got {}",
         point.len(),
     );
     let half = point.len() / 2;
-    let position = point.slice_move(s![..half]);
-
-    let direction = point.slice(s![half..]);
-    let norm = direction.dot(&direction).sqrt();
-    assert!(norm > 0.0, "zero direction L2 norm");
-    let unit = &direction / norm;
-    (position, unit)
-}
-
-/// Normalizes every row's direction half (the second half of each row) to a
-/// unit L2 vector, in place.
-///
-/// Every row is assumed to hold sphere-bundle coordinates of the same
-/// even length as `rows.ncols()` (the first half position, the second half
-/// direction), matching the layout [`sphere_bundle_distance`] expects.
-///
-/// # Panics
-///
-/// Panics if `rows.ncols()` is odd, or if any row's direction half has zero
-/// L2 norm.
-pub(crate) fn normalize_directions_in_place(rows: &mut Array2<f64>) {
-    let length = rows.ncols();
-    assert!(
-        length.is_multiple_of(2),
-        "sphere bundle metric requires even dimension, got {length}"
-    );
-    let half = length / 2;
-
-    for mut row in rows.rows_mut() {
-        let direction = row.slice(s![half..]);
-        let norm = direction.dot(&direction).sqrt();
-        assert!(norm > 0.0, "zero direction L2 norm");
-        row.slice_mut(s![half..])
-            .iter_mut()
-            .for_each(|coordinate| *coordinate /= norm);
-    }
+    (point.slice_move(s![..half]), point.slice_move(s![half..]))
 }
 
 /// The sphere-bundle distance between two even-length points: the maximum of
-/// the position-half Euclidean distance and the weighted Euclidean distance
-/// between the L2-normalized direction halves, with the weight derived from
-/// `radius_floor`.
+/// the position-half and direction-half Euclidean distances, measured on the
+/// stored coordinates with no normalization.
 ///
 /// # Panics
 ///
-/// Panics if `point.len() != other.len()`, if the common length is not even,
-/// or if either direction half has zero L2 norm.
+/// Panics if `point.len() != other.len()`, or if the common length is not
+/// even.
 pub(crate) fn sphere_bundle_distance(
-    radius_floor: u32,
     point: ArrayView1<'_, f64>,
     other: ArrayView1<'_, f64>,
 ) -> f64 {
@@ -90,22 +48,24 @@ pub(crate) fn sphere_bundle_distance(
         point.len(),
         other.len()
     );
-    let (position_point, direction_point) = split_and_normalize(point);
-    let (position_other, direction_other) = split_and_normalize(other);
-    let position_distance = euclidean_distance(position_point, position_other);
-    let direction_distance = euclidean_distance(direction_point.view(), direction_other.view());
-    position_distance.max(direction_weight(radius_floor) * direction_distance)
+    let (position_point, direction_point) = split(point);
+    let (position_other, direction_other) = split(other);
+    euclidean_distance(position_point, position_other)
+        .max(euclidean_distance(direction_point, direction_other))
 }
 
 /// Returns `true` if sphere-bundle balls with `radius` around the three
 /// points share a common point.
 ///
+/// Both the position and direction halves must independently admit a common
+/// point at `radius`, exact by the max-metric's product structure over the
+/// two Euclidean factors.
+///
 /// # Panics
 ///
 /// Panics if `first`, `second`, and `third` do not all have the same length,
-/// if that length is not even, or if any direction half has zero L2 norm.
+/// or if that length is not even.
 pub(crate) fn sphere_bundle_covers_triple(
-    radius_floor: u32,
     first: ArrayView1<'_, f64>,
     second: ArrayView1<'_, f64>,
     third: ArrayView1<'_, f64>,
@@ -119,10 +79,9 @@ pub(crate) fn sphere_bundle_covers_triple(
         third.len()
     );
 
-    let (position_first, direction_first) = split_and_normalize(first);
-    let (position_second, direction_second) = split_and_normalize(second);
-    let (position_third, direction_third) = split_and_normalize(third);
-    let weight = direction_weight(radius_floor);
+    let (position_first, direction_first) = split(first);
+    let (position_second, direction_second) = split(second);
+    let (position_third, direction_third) = split(third);
 
     let position_sides = [
         euclidean_distance(position_first, position_second),
@@ -130,9 +89,9 @@ pub(crate) fn sphere_bundle_covers_triple(
         euclidean_distance(position_second, position_third),
     ];
     let direction_sides = [
-        weight * euclidean_distance(direction_first.view(), direction_second.view()),
-        weight * euclidean_distance(direction_first.view(), direction_third.view()),
-        weight * euclidean_distance(direction_second.view(), direction_third.view()),
+        euclidean_distance(direction_first, direction_second),
+        euclidean_distance(direction_first, direction_third),
+        euclidean_distance(direction_second, direction_third),
     ];
 
     sides_cover_triple(position_sides, radius) && sides_cover_triple(direction_sides, radius)
@@ -145,71 +104,59 @@ mod tests {
     use crate::metric::Metric;
 
     #[test]
-    fn distance_max_of_position_and_weighted_direction() {
-        // 4D points: 2 position + 2 direction. Position diff (3, 4) -> 5.
-        // Direction halves (1, 0) and (0, 1) are already unit L2, so the
-        // L2-normalized direction euclidean is sqrt(2).
+    fn distance_is_max_of_position_and_direction() {
+        // 4D points: 2 position + 2 direction. Position diff (3, 4) -> 5,
+        // direction diff (1, -1) -> sqrt(2). Neither half is normalized, so
+        // both distances are read directly off the stored coordinates.
         let left = array![0.0, 0.0, 1.0, 0.0];
         let right = array![3.0, 4.0, 0.0, 1.0];
 
-        // Position dominates under the smallest weight (radius_floor 0 gives
-        // weight 0.5).
-        let metric = Metric::SphereBundle { radius_floor: 0 };
-        let distance = metric.distance(left.view(), right.view());
+        // Position dominates: 5.0 > sqrt(2).
+        let distance = Metric::SphereBundle.distance(left.view(), right.view());
         assert!((distance - 5.0).abs() < 1e-12);
 
-        // Direction dominates under a large weight: 10.5 * sqrt(2) > 5.
-        let metric = Metric::SphereBundle { radius_floor: 10 };
-        let distance = metric.distance(left.view(), right.view());
-        assert!((distance - 10.5 * 2.0_f64.sqrt()).abs() < 1e-12);
-    }
+        // Identical position halves (distance 0), so each of these two
+        // distances is exactly its direction difference's L2 norm: (1, -10)
+        // -> sqrt(101), (1, -20) -> sqrt(401). The two right-hand points
+        // differ only in direction magnitude, and the metric distinguishes
+        // them, since the direction half is not normalized away.
+        let right_small_direction = array![0.0, 0.0, 0.0, 10.0];
+        let distance_small =
+            Metric::SphereBundle.distance(left.view(), right_small_direction.view());
+        assert!((distance_small - 101.0_f64.sqrt()).abs() < 1e-12);
 
-    #[test]
-    fn distance_is_invariant_to_direction_scale() {
-        // L2 normalization absorbs any positive rescaling of the direction
-        // half, so the radius_floor choice on the interpolator side does
-        // not change the metric value.
-        let metric = Metric::SphereBundle { radius_floor: 1 };
+        let right_large_direction = array![0.0, 0.0, 0.0, 20.0];
+        let distance_large =
+            Metric::SphereBundle.distance(left.view(), right_large_direction.view());
+        assert!((distance_large - 401.0_f64.sqrt()).abs() < 1e-12);
 
-        let baseline_left = array![0.0, 0.0, 1.0, 0.0];
-        let baseline_right = array![0.0, 0.0, 0.0, 1.0];
-        let baseline = metric.distance(baseline_left.view(), baseline_right.view());
-
-        // Same directions, multiplied by 7.5 (a different radius_floor + 0.5).
-        let scaled_left = array![0.0, 0.0, 7.5, 0.0];
-        let scaled_right = array![0.0, 0.0, 0.0, 7.5];
-        let scaled = metric.distance(scaled_left.view(), scaled_right.view());
-
-        assert!((scaled - baseline).abs() < 1e-12);
+        assert!((distance_small - distance_large).abs() > 1e-12);
     }
 
     #[test]
     #[should_panic(expected = "dimension mismatch: first 2, second 4")]
     fn distance_dimension_mismatch_panics() {
-        let metric = Metric::SphereBundle { radius_floor: 1 };
         let left = array![0.0, 0.0];
         let right = array![1.0, 2.0, 3.0, 4.0];
-        let _ = metric.distance(left.view(), right.view());
+        let _ = Metric::SphereBundle.distance(left.view(), right.view());
     }
 
     #[test]
     #[should_panic(expected = "sphere bundle metric requires even dimension, got 3")]
     fn distance_odd_length_panics() {
-        let metric = Metric::SphereBundle { radius_floor: 1 };
         let left = array![0.0, 0.0, 0.0];
         let right = array![1.0, 2.0, 3.0];
-        let _ = metric.distance(left.view(), right.view());
+        let _ = Metric::SphereBundle.distance(left.view(), right.view());
     }
 
     #[test]
-    #[should_panic(expected = "zero direction L2 norm")]
-    fn distance_zero_direction_norm_panics() {
-        // Direction half of the left point is the zero vector; L2
-        // normalization is undefined.
-        let metric = Metric::SphereBundle { radius_floor: 1 };
+    fn distance_allows_zero_direction_half() {
+        // A zero direction half is a legal point at the origin of the
+        // direction factor now that the metric no longer normalizes.
         let left = array![0.0, 0.0, 0.0, 0.0];
         let right = array![0.0, 0.0, 1.0, 0.0];
-        let _ = metric.distance(left.view(), right.view());
+        let distance = Metric::SphereBundle.distance(left.view(), right.view());
+        assert!((distance - 1.0).abs() < 1e-12);
     }
 
     #[test]
@@ -218,18 +165,21 @@ mod tests {
         // equilateral triangle of side 1.0 in 2D, with identical direction
         // halves (so the direction check passes at any radius).
         //
-        // Full pairwise sphere-bundle distance per pair is 1.0. A pairwise
-        // check against 2 * radius = 1.0 would accept at radius 0.5; the
-        // position-side smallest enclosing l_2 ball has radius
+        // A pairwise check against 2 * radius = 1.0 would accept at radius
+        // 0.5; the position-side smallest enclosing l_2 ball has radius
         // 1.0 / sqrt(3) ~= 0.577 > 0.5, so the Cech test rejects there and
         // accepts above the circumradius.
-        let metric = Metric::SphereBundle { radius_floor: 0 };
         let first = array![0.0, 0.0, 1.0, 0.0];
         let second = array![1.0, 0.0, 1.0, 0.0];
         let third = array![0.5, 3.0_f64.sqrt() / 2.0, 1.0, 0.0];
 
-        assert!(!metric.covers_triple(first.view(), second.view(), third.view(), 0.5));
-        assert!(metric.covers_triple(first.view(), second.view(), third.view(), 0.6));
+        assert!(!Metric::SphereBundle.covers_triple(
+            first.view(),
+            second.view(),
+            third.view(),
+            0.5
+        ));
+        assert!(Metric::SphereBundle.covers_triple(first.view(), second.view(), third.view(), 0.6));
     }
 
     #[test]
@@ -242,7 +192,7 @@ mod tests {
             [1.0, 1.0, 1.0, 1.0],
         ];
         let pairs = [(0, 1), (1, 2), (0, 2)];
-        let metric = Metric::SphereBundle { radius_floor: 0 };
+        let metric = Metric::SphereBundle;
 
         let mut out = vec![0.0; pairs.len()];
         metric.fill_distances(points.view(), &pairs, &mut out);

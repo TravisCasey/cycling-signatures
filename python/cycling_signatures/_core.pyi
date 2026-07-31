@@ -17,8 +17,7 @@ class Euclidean:
     def __repr__(self) -> str: ...
 
 class SphereBundle:
-    def __init__(self, radius_floor: int) -> None: ...
-    def radius_floor(self) -> int: ...
+    def __init__(self) -> None: ...
     def distance(self, point: NDArray[np.float64], other: NDArray[np.float64]) -> float: ...
     def distance_matrix(self, points: NDArray[np.float64]) -> NDArray[np.float64]: ...
     def __repr__(self) -> str: ...
@@ -28,11 +27,11 @@ Metric: TypeAlias = Euclidean | SphereBundle
 class CubicSpline:
     def __init__(self, knots: NDArray[np.float64], values: NDArray[np.float64]) -> None: ...
 
-class ChebyshevSphereBundleInterpolator:
+class SphereBundleInterpolator:
     def __init__(self, inner: CubicSpline, radius_floor: int) -> None: ...
     def radius(self) -> float: ...
 
-Interpolator: TypeAlias = CubicSpline | ChebyshevSphereBundleInterpolator
+Interpolator: TypeAlias = CubicSpline | SphereBundleInterpolator
 
 class HomologyClass:
     def __len__(self) -> int: ...
@@ -137,7 +136,6 @@ class CycleStorage:
     def load(path: str | os.PathLike[str]) -> CycleStorage: ...
 
 __all__ = [
-    "ChebyshevSphereBundleInterpolator",
     "Component",
     "CubicSpline",
     "Cycle",
@@ -148,6 +146,7 @@ __all__ = [
     "FormatVersionMismatchError",
     "HomologyClass",
     "SphereBundle",
+    "SphereBundleInterpolator",
     "Subspace",
     "Trajectory",
 ]

@@ -378,10 +378,9 @@ impl EmbeddedTrajectory {
     /// metric identity.
     ///
     /// The metric contributes a stable binary encoding: the tag byte `0` for
-    /// the Euclidean mode, or the tag byte `1` followed by the radius floor as
-    /// little-endian bytes for the sphere-bundle mode. The per-point cube map
-    /// is not hashed: it is fully determined by the trajectory points and the
-    /// cover cubes, both already covered.
+    /// the Euclidean mode, or the tag byte `1` for the sphere-bundle mode. The
+    /// per-point cube map is not hashed: it is fully determined by the
+    /// trajectory points and the cover cubes, both already covered.
     #[must_use]
     pub fn fingerprint(&self) -> u64 {
         let mut hasher = Fingerprint::new();
@@ -389,10 +388,7 @@ impl EmbeddedTrajectory {
         hasher.write(&self.cover.fingerprint().to_le_bytes());
         match self.metric {
             Metric::Euclidean => hasher.write(&[0]),
-            Metric::SphereBundle { radius_floor } => {
-                hasher.write(&[1]);
-                hasher.write(&radius_floor.to_le_bytes());
-            },
+            Metric::SphereBundle => hasher.write(&[1]),
         }
         hasher.finish()
     }
@@ -910,12 +906,8 @@ mod tests {
 
         let trajectory: Trajectory = load_from_reader(&trajectory_buffer[..]).unwrap();
         let cover: CubicalCover = load_from_reader(&cover_buffer[..]).unwrap();
-        let reloaded = EmbeddedTrajectory::from_parts(
-            trajectory,
-            cover,
-            Metric::SphereBundle { radius_floor: 0 },
-        )
-        .unwrap();
+        let reloaded =
+            EmbeddedTrajectory::from_parts(trajectory, cover, Metric::SphereBundle).unwrap();
 
         assert_ne!(reloaded.fingerprint(), embedded.fingerprint());
     }

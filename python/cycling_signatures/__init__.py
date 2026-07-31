@@ -5,7 +5,6 @@ in dynamical systems.
 """
 
 from ._core import (
-    ChebyshevSphereBundleInterpolator,
     Component,
     CubicSpline,
     Cycle,
@@ -16,12 +15,12 @@ from ._core import (
     FormatVersionMismatchError,
     HomologyClass,
     SphereBundle,
+    SphereBundleInterpolator,
     Subspace,
     Trajectory,
 )
 
 __all__ = [
-    "ChebyshevSphereBundleInterpolator",
     "Component",
     "CubicSpline",
     "Cycle",
@@ -32,6 +31,7 @@ __all__ = [
     "FormatVersionMismatchError",
     "HomologyClass",
     "SphereBundle",
+    "SphereBundleInterpolator",
     "Subspace",
     "Trajectory",
 ]
