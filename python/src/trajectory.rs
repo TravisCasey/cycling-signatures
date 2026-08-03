@@ -130,9 +130,8 @@ impl PyTrajectory {
     /// A greedy forward walk always keeps the first and last point, and
     /// keeps an intermediate point once the next point would fall further
     /// than ``spacing`` from the last kept point. Any spacing up to the
-    /// intended detection threshold is valid; a spacing at most half the
-    /// threshold best preserves the merges that group recurrent cycles into
-    /// components.
+    /// intended detection threshold is valid: the threshold has to clear the
+    /// output's own consecutive-point distance, which this spacing bounds.
     ///
     /// Only the lower end is validated here. A spacing coarse enough to put
     /// consecutive kept points more than one cube apart surfaces later, when

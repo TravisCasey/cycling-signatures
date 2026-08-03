@@ -21,13 +21,12 @@ use crate::{
     util::disjoint::DisjointSet,
 };
 
-/// Connected components of below-threshold pair-edges over the tile spanning
+/// Connected components of the admitted endpoint pairs over the tile spanning
 /// `columns`.
 ///
 /// Rows reach past the tile's own columns and stop at `window_end`. Two
-/// adjacent entries are merged into the same component if and only if balls of
-/// radius `threshold / 2` around their three involved trajectory points share
-/// a common point. Each emitted component is a list of cycle segments.
+/// entries adjacent in the tile are merged into the same component whenever
+/// both are admitted. Each emitted component is a list of cycle segments.
 ///
 /// # Panics
 ///
@@ -44,23 +43,17 @@ pub(super) fn detect_tile_components(
     let base = columns.start;
     let tile = build_distance_tile(trajectory, prepared, columns, window_end, max_length)
         .expect("tile column range fits inside the validated window");
-    partition_tile(tile.view(), prepared, base, threshold)
+    partition_tile(tile.view(), base, threshold)
 }
 
-/// Connected components of below-threshold pair-edges over a pre-built
+/// Connected components of the admitted endpoint pairs over a pre-built
 /// distance tile.
 ///
 /// `tile` has shape `(max_length, width)`; `base` is the point index of the
 /// tile's first column (i.e., `tile[(row, col)]` is the distance between
 /// `points[base + col]` and `points[base + col + row]`).
-fn partition_tile(
-    tile: ArrayView2<'_, f64>,
-    prepared: &PreparedPoints,
-    base: usize,
-    threshold: f64,
-) -> TileComponents {
+fn partition_tile(tile: ArrayView2<'_, f64>, base: usize, threshold: f64) -> TileComponents {
     let width = tile.ncols();
-    let ball_radius = threshold / 2.0;
 
     let mut disjoint = DisjointSet::new();
     let mut entry_ids: FxHashMap<(usize, usize), usize> = FxHashMap::default();
@@ -76,19 +69,9 @@ fn partition_tile(
         entry_ids.insert((row, col), id);
 
         // Shorter-by-one neighbor at (row - 1, col): same start
-        // `base + col`, cycle ends one step earlier. Triple of trajectory
-        // points involved in the merge:
-        //   shared left:        base + col
-        //   right of shorter:   base + col + row - 1
-        //   right of current:   base + col + row
+        // `base + col`, cycle ends one step earlier.
         if row > 0
             && let Some(&shorter_id) = entry_ids.get(&(row - 1, col))
-            && prepared.covers_triple(
-                base + col,
-                base + col + row - 1,
-                base + col + row,
-                ball_radius,
-            )
         {
             disjoint.union(id, shorter_id);
         }
@@ -103,15 +86,9 @@ fn partition_tile(
         // column is owned by the next tile, where the partner is present and
         // the edge is found instead. Every edge is therefore discovered
         // exactly once, and neither side is dropped at a boundary.
-        //
-        // Triple:
-        //   shared right:       base + col + row
-        //   left of later:      base + col + 1
-        //   left of current:    base + col
         if row > 0
             && col + 1 < width
             && let Some(&later_id) = entry_ids.get(&(row - 1, col + 1))
-            && prepared.covers_triple(base + col + row, base + col + 1, base + col, ball_radius)
         {
             disjoint.union(id, later_id);
         }

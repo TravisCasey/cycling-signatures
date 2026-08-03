@@ -1,8 +1,24 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Connected components of below-threshold pair-edges over a trajectory
-//! segment.
+//! Connected components of recurrent cycles over a trajectory segment.
+//!
+//! Detection reads the grid of endpoint pairs `(start, end)` over the segment
+//! and admits the pairs whose two points lie within the adjacency threshold.
+//! An admitted pair is the cycle that runs along the trajectory from `start`
+//! to `end` and closes back to `start`. A component is a connected region of
+//! the admitted set in that grid: two admitted pairs are neighbors when they
+//! share one endpoint and their other two endpoints are consecutive
+//! trajectory points.
+//!
+//! Neighboring cycles are homologous in the cover, so a component carries a
+//! single homology class. The two cycles differ by a loop that stays inside
+//! the block of cubes spanned by their three distinct endpoints, and those
+//! three points are pairwise within the threshold: two by admission, the
+//! consecutive pair because a valid threshold clears the trajectory's own
+//! resolution. A threshold below the cube side then puts the three cubes
+//! within one position per axis of each other, so every cube of the block
+//! they span meets in a common vertex and any loop confined to it contracts.
 
 mod stitch;
 mod tile;
@@ -41,7 +57,7 @@ fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Ve
     column_ranges
 }
 
-/// Connected components of below-threshold pair-edges over `range`, computed
+/// Connected components of the admitted endpoint pairs over `range`, computed
 /// across tiles that each own `owned_columns` of it.
 ///
 /// Per-tile work (distance-tile construction and the tile's own component
@@ -311,20 +327,20 @@ mod tests {
         // straddle the boundary between the tile owning columns 0..8 and the
         // one owning 8..14. The read-ahead column ensures they merge.
         let points = array![
+            [0.25, 1.5],
+            [0.75, 0.5],
+            [0.25, 0.25],
+            [0.5, 0.25],
+            [0.5, 0.0],
+            [0.25, 0.25],
             [1.0, 0.5],
-            [0.25, 0.75],
-            [0.5, 0.0],
-            [1.5, 1.25],
-            [0.25, 0.5],
-            [1.0, 0.75],
-            [1.25, 0.75],
-            [1.0, 0.75],
-            [0.25, 1.25],
-            [0.5, 0.0],
-            [1.5, 0.5],
-            [0.75, 1.5],
-            [0.25, 0.0],
+            [0.5, 1.25],
             [0.0, 0.5],
+            [1.25, 0.5],
+            [0.0, 0.0],
+            [0.25, 1.25],
+            [0.25, 0.0],
+            [1.0, 1.5],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
         let max_length = 34;
@@ -405,6 +421,40 @@ mod tests {
         // partitions, which is what a fold-back fixture silently produced here.
         assert!(!whole.is_empty(), "fixture detects no components");
         assert_eq!(split, whole);
+    }
+
+    #[test]
+    fn grid_adjacent_admitted_entries_share_a_component() {
+        // Points 0, 3 and 4 form an equilateral triangle of side 0.85 at
+        // threshold 0.9, while points 1 and 2 sit far enough away that no
+        // other pair is admitted. The pairs (0, 3) and (0, 4) are therefore
+        // both admitted, share the endpoint at index 0, and are one row apart
+        // in the endpoint-pair grid, so they belong to one component.
+        let side = 0.85;
+        let points = array![
+            [0.0, 0.0],
+            [5.0, 0.0],
+            [10.0, 0.0],
+            [side, 0.0],
+            [side / 2.0, side * 3.0_f64.sqrt() / 2.0],
+        ];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let components = detect_components(
+            &trajectory,
+            Metric::Euclidean,
+            0..points.nrows(),
+            0.9,
+            points.nrows(),
+            points.nrows(),
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        assert_eq!(
+            components,
+            vec![vec![0..4, 0..5]],
+            "expected the two admitted pairs sharing point 0 in one component",
+        );
     }
 
     #[test]

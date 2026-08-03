@@ -8,7 +8,7 @@ use ndarray::{Array2, ArrayView1, ArrayView2};
 
 mod sphere_bundle;
 
-use sphere_bundle::{sphere_bundle_covers_triple, sphere_bundle_distance};
+use sphere_bundle::sphere_bundle_distance;
 
 /// A distance mode over rows of a trajectory.
 ///
@@ -126,33 +126,6 @@ impl Metric {
         }
     }
 
-    /// Returns `true` if balls with `radius` around `first`, `second`, and
-    /// `third` share a common point.
-    ///
-    /// Both modes use closed-form smallest-enclosing-ball tests: in terms of
-    /// named complexes, this admits the Cech simplex, strictly more selective
-    /// than the Vietoris-Rips condition that all pairwise distances are at
-    /// most `2 * radius`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `first`, `second`, and `third` do not all have the same
-    /// length, with the sphere-bundle additions listed on
-    /// [`Metric::distance`].
-    #[must_use]
-    pub fn covers_triple(
-        self,
-        first: ArrayView1<'_, f64>,
-        second: ArrayView1<'_, f64>,
-        third: ArrayView1<'_, f64>,
-        radius: f64,
-    ) -> bool {
-        match self {
-            Metric::Euclidean => euclidean_covers_triple(first, second, third, radius),
-            Metric::SphereBundle => sphere_bundle_covers_triple(first, second, third, radius),
-        }
-    }
-
     /// Prepares `points` for repeated [`PreparedPoints::distance`] queries
     /// under this metric.
     ///
@@ -220,52 +193,6 @@ impl PreparedPoints {
             },
         }
     }
-
-    /// Returns `true` if balls of `radius` around the three prepared rows
-    /// share a common point, equal to [`Metric::covers_triple`] evaluated on
-    /// the corresponding original rows.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any row index is out of bounds for the prepared points.
-    #[must_use]
-    pub(crate) fn covers_triple(
-        &self,
-        first_row: usize,
-        second_row: usize,
-        third_row: usize,
-        radius: f64,
-    ) -> bool {
-        let first = self.row(first_row);
-        let second = self.row(second_row);
-        let third = self.row(third_row);
-
-        match self.metric {
-            Metric::Euclidean => sides_cover_triple(
-                [
-                    euclidean_distance_slices(first, second),
-                    euclidean_distance_slices(first, third),
-                    euclidean_distance_slices(second, third),
-                ],
-                radius,
-            ),
-            Metric::SphereBundle => {
-                let half = first.len() / 2;
-                let position_sides = [
-                    euclidean_distance_slices(&first[..half], &second[..half]),
-                    euclidean_distance_slices(&first[..half], &third[..half]),
-                    euclidean_distance_slices(&second[..half], &third[..half]),
-                ];
-                let direction_sides = [
-                    euclidean_distance_slices(&first[half..], &second[half..]),
-                    euclidean_distance_slices(&first[half..], &third[half..]),
-                    euclidean_distance_slices(&second[half..], &third[half..]),
-                ];
-                sides_cover_triple(position_sides, radius)
-                    && sides_cover_triple(direction_sides, radius)
-            },
-        }
-    }
 }
 
 /// Accumulates squared coordinate differences over `pairs` in index order
@@ -298,60 +225,6 @@ pub(crate) fn euclidean_distance(point: ArrayView1<'_, f64>, other: ArrayView1<'
     euclidean_norm_of_differences(point.iter().copied().zip(other.iter().copied()))
 }
 
-/// Returns `true` if the smallest enclosing `l_2` ball of a point triple with
-/// the given pairwise side lengths has radius at most `radius`. Closed form:
-///
-/// - If the longest side `c` satisfies `c^2 >= a^2 + b^2` (obtuse or right
-///   triangle at the vertex opposite `c`, or collinear), the smallest enclosing
-///   ball has `c` as diameter.
-/// - Otherwise the smallest enclosing ball is the circumscribed circle, with
-///   radius `(a * b * c) / (4 * area)` and `area` from Heron's formula.
-///
-/// Sides are ordered `[first-second, first-third, second-third]`. The order is
-/// part of the contract: the circumscribed-circle branch sums and multiplies
-/// the sides in the order given, so a permuted array is mathematically equal
-/// and numerically different.
-fn sides_cover_triple(sides: [f64; 3], radius: f64) -> bool {
-    let mut sorted = sides;
-    sorted.sort_by(f64::total_cmp);
-    let [shorter, mid, longest] = sorted;
-
-    if longest > 2.0 * radius {
-        return false;
-    }
-
-    if longest * longest >= shorter * shorter + mid * mid {
-        // Obtuse, right, or collinear: enclosing ball has the longest side as
-        // diameter.
-        return longest <= 2.0 * radius;
-    }
-
-    // Acute triangle: circumscribed circle. Heron's formula for area.
-    let [first_second, first_third, second_third] = sides;
-    let semi = (first_second + first_third + second_third) / 2.0;
-    let area = (semi * (semi - first_second) * (semi - first_third) * (semi - second_third)).sqrt();
-    let circumradius = (first_second * first_third * second_third) / (4.0 * area);
-    circumradius <= radius
-}
-
-/// Returns `true` if the smallest enclosing `l_2` ball of `first`, `second`,
-/// `third` has radius at most `radius`.
-fn euclidean_covers_triple(
-    first: ArrayView1<'_, f64>,
-    second: ArrayView1<'_, f64>,
-    third: ArrayView1<'_, f64>,
-    radius: f64,
-) -> bool {
-    sides_cover_triple(
-        [
-            euclidean_distance(first, second),
-            euclidean_distance(first, third),
-            euclidean_distance(second, third),
-        ],
-        radius,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use ndarray::array;
@@ -364,25 +237,6 @@ mod tests {
         let target = array![3.0, 4.0, 0.0];
         let distance = Metric::Euclidean.distance(origin.view(), target.view());
         assert!((distance - 5.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn euclidean_covers_triple_uses_smallest_enclosing_ball() {
-        // Equilateral triangle of side 2.0. All pairwise distances equal
-        // 2 * radius at radius 1.0, so a pairwise (Vietoris-Rips) test would
-        // accept; the smallest enclosing ball has radius 2 / sqrt(3) > 1.0,
-        // so the Cech test rejects there and accepts just above the
-        // circumradius.
-        let first = array![0.0, 0.0];
-        let second = array![2.0, 0.0];
-        let third = array![1.0, 3.0_f64.sqrt()];
-        assert!(!Metric::Euclidean.covers_triple(first.view(), second.view(), third.view(), 1.0));
-        assert!(Metric::Euclidean.covers_triple(
-            first.view(),
-            second.view(),
-            third.view(),
-            2.0 / 3.0_f64.sqrt() + 1e-9,
-        ));
     }
 
     #[test]

@@ -28,8 +28,7 @@ impl EmbeddedTrajectory {
     ///
     /// `threshold` is the adjacency threshold for cycle detection: pairs of
     /// trajectory points with metric distance `<= threshold` are admitted as
-    /// cycle endpoints, and union-find merges are gated by
-    /// [`Metric::covers_triple`](crate::Metric::covers_triple).
+    /// cycle endpoints.
     ///
     /// This is not a cheap query. A signature has no cycle-length cap, so it
     /// evaluates the metric over every pair of points in the segment, a cost

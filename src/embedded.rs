@@ -208,9 +208,9 @@ impl EmbeddedTrajectory {
     /// The maximum metric distance between consecutive trajectory points: the
     /// detection resolution of this embedding.
     ///
-    /// A cycle-detection threshold below this value leaves consecutive points
-    /// themselves unadmitted as pair-edges, so the component-merge step's
-    /// hypotheses no longer hold.
+    /// This is the smallest usable cycle-detection threshold: below it some
+    /// consecutive pair of points is farther apart than the threshold, and
+    /// cycles a single step apart can no longer be shown to be homologous.
     #[must_use]
     pub fn bound(&self) -> f64 {
         self.bound

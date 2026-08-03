@@ -6,7 +6,7 @@
 
 use ndarray::{ArrayView1, s};
 
-use crate::metric::{euclidean_distance, sides_cover_triple};
+use crate::metric::euclidean_distance;
 
 /// Splits a sphere-bundle point into its position half and direction half.
 ///
@@ -52,49 +52,6 @@ pub(crate) fn sphere_bundle_distance(
     let (position_other, direction_other) = split(other);
     euclidean_distance(position_point, position_other)
         .max(euclidean_distance(direction_point, direction_other))
-}
-
-/// Returns `true` if sphere-bundle balls with `radius` around the three
-/// points share a common point.
-///
-/// Both the position and direction halves must independently admit a common
-/// point at `radius`, exact by the max-metric's product structure over the
-/// two Euclidean factors.
-///
-/// # Panics
-///
-/// Panics if `first`, `second`, and `third` do not all have the same length,
-/// or if that length is not even.
-pub(crate) fn sphere_bundle_covers_triple(
-    first: ArrayView1<'_, f64>,
-    second: ArrayView1<'_, f64>,
-    third: ArrayView1<'_, f64>,
-    radius: f64,
-) -> bool {
-    assert!(
-        first.len() == second.len() && first.len() == third.len(),
-        "dimension mismatch: first {}, second {}, third {}",
-        first.len(),
-        second.len(),
-        third.len()
-    );
-
-    let (position_first, direction_first) = split(first);
-    let (position_second, direction_second) = split(second);
-    let (position_third, direction_third) = split(third);
-
-    let position_sides = [
-        euclidean_distance(position_first, position_second),
-        euclidean_distance(position_first, position_third),
-        euclidean_distance(position_second, position_third),
-    ];
-    let direction_sides = [
-        euclidean_distance(direction_first, direction_second),
-        euclidean_distance(direction_first, direction_third),
-        euclidean_distance(direction_second, direction_third),
-    ];
-
-    sides_cover_triple(position_sides, radius) && sides_cover_triple(direction_sides, radius)
 }
 
 #[cfg(test)]
@@ -157,29 +114,6 @@ mod tests {
         let right = array![0.0, 0.0, 1.0, 0.0];
         let distance = Metric::SphereBundle.distance(left.view(), right.view());
         assert!((distance - 1.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn covers_triple_uses_smallest_enclosing_ball_per_half() {
-        // Three sphere-bundle points whose position halves form an
-        // equilateral triangle of side 1.0 in 2D, with identical direction
-        // halves (so the direction check passes at any radius).
-        //
-        // A pairwise check against 2 * radius = 1.0 would accept at radius
-        // 0.5; the position-side smallest enclosing l_2 ball has radius
-        // 1.0 / sqrt(3) ~= 0.577 > 0.5, so the Cech test rejects there and
-        // accepts above the circumradius.
-        let first = array![0.0, 0.0, 1.0, 0.0];
-        let second = array![1.0, 0.0, 1.0, 0.0];
-        let third = array![0.5, 3.0_f64.sqrt() / 2.0, 1.0, 0.0];
-
-        assert!(!Metric::SphereBundle.covers_triple(
-            first.view(),
-            second.view(),
-            third.view(),
-            0.5
-        ));
-        assert!(Metric::SphereBundle.covers_triple(first.view(), second.view(), third.view(), 0.6));
     }
 
     #[test]

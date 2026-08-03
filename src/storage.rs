@@ -674,10 +674,10 @@ mod tests {
     #[test]
     fn threshold_at_cube_side_is_rejected() {
         // A threshold of exactly 1.0 (the cube side) is never valid: the
-        // filtered-signature merge gate needs its half-threshold ball radius
-        // strictly below 1/2. The largest representable value strictly below
-        // it is still in-band for this fixture (bound() is far below 1) and
-        // must succeed.
+        // thickening that justifies a detected class has half-threshold
+        // radius, which must stay strictly below 1/2. The largest
+        // representable value below it is still in-band for this fixture
+        // (bound() is far below 1) and must succeed.
         let embedded = loop_trajectory();
         let outcome = CycleStorage::build(&embedded, .., 25, 1.0, &ExecutionBackend::Sequential);
         assert!(matches!(

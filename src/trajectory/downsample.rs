@@ -26,8 +26,8 @@ impl Trajectory {
     /// This is the detection resolution: the output is the vertex set cycle
     /// detection runs over, and its size is the dominant cost lever of a
     /// detection pass. Any spacing up to the intended detection threshold is
-    /// valid; a spacing at most half the threshold best preserves the merges
-    /// that group recurrent cycles into components.
+    /// valid: the threshold has to clear the output's own consecutive-point
+    /// distance, which this spacing bounds.
     ///
     /// Only the lower end is validated here. A spacing coarse enough to put
     /// consecutive kept points more than one cube apart is rejected later, by
@@ -48,9 +48,7 @@ impl Trajectory {
     /// let dense = Trajectory::resample(&spline, Metric::Euclidean, 0.05).unwrap();
     /// let cover =
     ///     CubicalCover::build(&dense, &ExecutionBackend::default()).unwrap();
-    /// let detection = dense
-    ///     .downsample(Metric::Euclidean, threshold / 2.0)
-    ///     .unwrap();
+    /// let detection = dense.downsample(Metric::Euclidean, threshold).unwrap();
     /// let embedded =
     ///     EmbeddedTrajectory::new(detection, cover, Metric::Euclidean).unwrap();
     /// assert!(embedded.bound() <= threshold);

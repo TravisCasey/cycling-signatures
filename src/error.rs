@@ -203,11 +203,11 @@ pub enum Error {
         trajectory_bound: f64,
     },
 
-    /// A cycle-detection threshold at or above the cube side, 1. The merge
-    /// gate's ball radius is half the threshold, and it must stay strictly
-    /// below one half of the cube side: at exactly one half, thickening a
-    /// cubical complex by that radius can fill in a one-cube hole and change
-    /// its homology.
+    /// A cycle-detection threshold at or above the cube side, 1. Detection
+    /// justifies a cycle's homology class through a thickening of the cover
+    /// by half the threshold, and that radius must stay strictly below one
+    /// half of the cube side: at exactly one half, the thickening can fill in
+    /// a one-cube hole and change the homology it is meant to preserve.
     #[error("adjacency threshold {threshold} is not below the cube side")]
     ThresholdAboveCubeSide {
         /// The threshold the caller supplied.
