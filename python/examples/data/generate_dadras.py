@@ -45,11 +45,11 @@ DOWNSAMPLE_SPACING = THRESHOLD / 2
 
 
 def build() -> tuple[Path, float, float]:
-    """Build the storage; return its path, inserted fraction, and bound.
+    """Build the storage; return its path, inserted fraction, and resolution.
 
     The fraction is the share of resample-inserted rows relative to the raw
-    sample count. The bound is the detection trajectory's achieved
-    resolution, the recorded band's lower end.
+    sample count. The resolution is the detection trajectory's achieved
+    consecutive-point resolution, the recorded band's lower end.
     """
     raw_path = _support.dadras_raw()
     points = np.load(raw_path)
@@ -69,10 +69,10 @@ def build() -> tuple[Path, float, float]:
     storage = cs.CycleStorage.build(embedded, range(0, len(detection)), MAX_LENGTH, THRESHOLD)
     target = raw_path.parent / "dadras_storage.cyc"
     storage.save(target)
-    return target, inserted_fraction, embedded.bound()
+    return target, inserted_fraction, embedded.resolution()
 
 
-def report(storage_path: Path, inserted_fraction: float, achieved_bound: float) -> None:
+def report(storage_path: Path, inserted_fraction: float, achieved_resolution: float) -> None:
     """Print a storage summary: size, contents, band, and resample cost."""
     storage = cs.CycleStorage.load(storage_path)
     print(f"dadras_storage.cyc  {storage_path.stat().st_size / 1e6:.1f} MB")
@@ -80,10 +80,10 @@ def report(storage_path: Path, inserted_fraction: float, achieved_bound: float) 
         f"generators {storage.num_generators()}, "
         f"classes {len(storage.classes())}, components {len(storage.components())}"
     )
-    print(f"band [{achieved_bound:.6f}, {storage.threshold():.6f}]")
+    print(f"band [{achieved_resolution:.6f}, {storage.threshold():.6f}]")
     print(f"inserted points {inserted_fraction:.2%} of raw samples")
 
 
 if __name__ == "__main__":
-    storage_path, inserted_fraction, achieved_bound = build()
-    report(storage_path, inserted_fraction, achieved_bound)
+    storage_path, inserted_fraction, achieved_resolution = build()
+    report(storage_path, inserted_fraction, achieved_resolution)

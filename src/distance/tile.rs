@@ -16,8 +16,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use super::tile_components::TileComponents;
 use crate::{
     error::{Error, Result},
-    metric::PreparedPoints,
-    trajectory::Trajectory,
+    metric::MetricPoints,
     util::disjoint::DisjointSet,
 };
 
@@ -31,17 +30,16 @@ use crate::{
 /// # Panics
 ///
 /// Panics if `columns` and `window_end` are not a valid nested pair of
-/// sub-ranges of `0..trajectory.len()`, or if `max_length` is 0.
+/// sub-ranges of `0..points.len()`, or if `max_length` is 0.
 pub(super) fn detect_tile_components(
-    trajectory: &Trajectory,
-    prepared: &PreparedPoints,
+    points: &MetricPoints<'_>,
     columns: Range<usize>,
     window_end: usize,
     max_length: usize,
     threshold: f64,
 ) -> TileComponents {
     let base = columns.start;
-    let tile = build_distance_tile(trajectory, prepared, columns, window_end, max_length)
+    let tile = build_distance_tile(points, columns, window_end, max_length)
         .expect("tile column range fits inside the validated window");
     partition_tile(tile.view(), base, threshold)
 }
@@ -156,15 +154,14 @@ fn partition_tile(tile: ArrayView2<'_, f64>, base: usize, threshold: f64) -> Til
 /// # Errors
 ///
 /// - [`Error::WindowOutOfBounds`] if `columns` and `window_end` are not a valid
-///   nested pair of sub-ranges of `0..trajectory.len()`.
+///   nested pair of sub-ranges of `0..points.len()`.
 fn build_distance_tile(
-    trajectory: &Trajectory,
-    prepared: &PreparedPoints,
+    points: &MetricPoints<'_>,
     columns: Range<usize>,
     window_end: usize,
     max_length: usize,
 ) -> Result<Array2<f64>> {
-    let point_count = trajectory.len();
+    let point_count = points.len();
     if columns.start > columns.end || columns.end > window_end || window_end > point_count {
         return Err(Error::WindowOutOfBounds {
             start: columns.start,
@@ -189,7 +186,7 @@ fn build_distance_tile(
             if end_index >= window_end {
                 break;
             }
-            tile[(row, col)] = prepared.distance(start_index, end_index);
+            tile[(row, col)] = points.distance(start_index, end_index);
         }
     }
 

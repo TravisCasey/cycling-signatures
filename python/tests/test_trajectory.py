@@ -19,14 +19,10 @@ def test_constructor_accepts_a_supplied_parameterization():
     np.testing.assert_allclose(trajectory.parameters(), parameters)
 
 
-def test_constructor_rejects_parameter_count_mismatch():
+def test_constructor_rejects_invalid_parameters():
     points = np.array([[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]])
     with pytest.raises(ValueError):
         cs.Trajectory(points, np.array([0.0, 1.0]))
-
-
-def test_constructor_rejects_non_increasing_parameters():
-    points = np.array([[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]])
     # A NaN parameter fails every comparison, so the guard must reject it
     # rather than let it silently pass.
     with pytest.raises(ValueError):
@@ -59,6 +55,14 @@ def test_downsample_rejects_spacing_below_resolution():
     # rather than let it silently pass.
     with pytest.raises(ValueError):
         trajectory.downsample(cs.Euclidean(), float("nan"))
+
+
+def test_resolution_reports_the_largest_consecutive_gap():
+    # Consecutive gaps of 3.0 and 5.0; the coarsest is what the trajectory
+    # resolves at.
+    points = np.array([[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]])
+    trajectory = cs.Trajectory(points)
+    assert trajectory.resolution(cs.Euclidean()) == pytest.approx(5.0)
 
 
 def test_save_load_roundtrip(tmp_path):

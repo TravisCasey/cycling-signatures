@@ -5,19 +5,18 @@
 //! `F_2`.
 
 mod build;
+mod generators;
+#[cfg(feature = "serde")]
+mod serialization;
 
-use std::cmp::Ordering;
 #[cfg(feature = "serde")]
 use std::path::Path;
+use std::{cmp::Ordering, mem};
 
-use chomp3rs::{
-    Chain, Complex, CoreductionMatching, Cube, CubicalComplex, ExecutionBackend, F2, MorseMatching,
-    Orthant, OrthantTrie, Ring, TopCubeGrader, TopCubicalMatching,
-};
+use chomp3rs::{Chain, Cube, ExecutionBackend, F2};
+use generators::{compute_edge_classes, compute_generators};
 use ndarray::{Array2, ArrayView1, ArrayView2};
 use rustc_hash::FxHashMap;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize, de::Error as DeserializeError};
 
 use crate::{
     error::{Error, Result},
@@ -62,10 +61,14 @@ impl CubicalCover {
             return Err(Error::CubicalCoverZeroDimension);
         }
 
-        for row in cubes.outer_iter() {
-            for (axis, &coordinate) in row.iter().enumerate() {
+        for (row, cube) in cubes.outer_iter().enumerate() {
+            for (axis, &coordinate) in cube.iter().enumerate() {
                 if coordinate < i64::from(i32::MIN) || coordinate > i64::from(i32::MAX) - 1 {
-                    return Err(Error::CubeCoordinateOutOfRange { axis, coordinate });
+                    return Err(Error::CubeCoordinateOutOfRange {
+                        row,
+                        axis,
+                        coordinate,
+                    });
                 }
             }
         }
@@ -147,15 +150,37 @@ impl CubicalCover {
         hasher.finish()
     }
 
-    /// The row index in [`cubes`](Self::cubes) of the cube containing `point`,
-    /// or `None` if that cube is not in the cover. `point` is floored
-    /// component-wise to its integer cube, then located in the canonical
-    /// (sorted) cube list.
-    #[must_use]
-    pub(crate) fn cube_index(&self, point: ArrayView1<'_, f64>) -> Option<usize> {
-        let mut buffer: Vec<i64> = Vec::with_capacity(self.cubes.ncols());
-        floor_to_cube(point, &mut buffer);
-        find_cube(self.cubes.view(), &buffer)
+    /// The row index in [`cubes`](Self::cubes) of the cube containing each row
+    /// of `points`, in order. Every point is floored component-wise to its
+    /// integer cube, which is then located in the canonical (sorted) cube
+    /// list.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::EmbeddedCubeNotInCover`] naming the first point whose cube
+    ///   the cover does not contain.
+    pub(crate) fn cube_indices(&self, points: ArrayView2<'_, f64>) -> Result<Vec<usize>> {
+        let dimension = self.cubes.ncols();
+        let mut indices: Vec<usize> = Vec::with_capacity(points.nrows());
+        let mut cube: Vec<i64> = Vec::with_capacity(dimension);
+        let mut previous_cube: Vec<i64> = Vec::with_capacity(dimension);
+        let mut previous_index = 0_usize;
+        for (point_index, point) in points.outer_iter().enumerate() {
+            floor_to_cube(point, &mut cube);
+            // Neighboring points frequently share a cube, and repeating the
+            // last answer is cheaper than searching the cube list again.
+            if point_index > 0 && cube == previous_cube {
+                indices.push(previous_index);
+                continue;
+            }
+            let Some(cube_index) = find_cube(self.cubes.view(), &cube) else {
+                return Err(Error::EmbeddedCubeNotInCover { point_index });
+            };
+            indices.push(cube_index);
+            previous_index = cube_index;
+            mem::swap(&mut previous_cube, &mut cube);
+        }
+        Ok(indices)
     }
 
     /// Writes this cover to `path` in the crate's binary format.
@@ -182,10 +207,29 @@ impl CubicalCover {
     }
 }
 
+/// The first axis on which the cubes `from` and `to` sit more than one
+/// position apart, paired with the signed cube difference along that axis
+/// measured from `from` to `to`. `None` when the cubes are adjacent.
+///
+/// Two cubes are adjacent when they intersect, which for unit cubes means
+/// their coordinates differ by at most 1 on every axis.
+pub(crate) fn non_adjacent_axis<'a>(
+    from: impl IntoIterator<Item = &'a i64>,
+    to: impl IntoIterator<Item = &'a i64>,
+) -> Option<(usize, i64)> {
+    for (axis, (&start, &end)) in from.into_iter().zip(to).enumerate() {
+        let delta = end - start;
+        if delta.abs() > 1 {
+            return Some((axis, delta));
+        }
+    }
+    None
+}
+
 /// Floors each coordinate of `point` to its integer cube index, writing the
 /// result into `out` (cleared first). A point's cube is the component-wise
 /// floor of its coordinates.
-pub(crate) fn floor_to_cube(point: ArrayView1<'_, f64>, out: &mut Vec<i64>) {
+fn floor_to_cube(point: ArrayView1<'_, f64>, out: &mut Vec<i64>) {
     out.clear();
     out.extend(point.iter().map(|&value| value.floor() as i64));
 }
@@ -225,177 +269,6 @@ fn canonicalize_cubes(cubes: ArrayView2<'_, i64>) -> Array2<i64> {
     }
 
     canonical
-}
-
-/// Computes cohomology generators for the cubical complex defined by
-/// `canonical_cubes` (sorted, deduplicated, in-range).
-fn compute_generators(
-    canonical_cubes: &Array2<i64>,
-    backend: &ExecutionBackend,
-) -> Vec<Chain<Cube, F2>> {
-    let dimension = canonical_cubes.ncols();
-
-    // `from_cubes` rejects zero-row input before calling this helper, so
-    // every column has at least one entry.
-    let minimum_orthant: Orthant = (0..dimension)
-        .map(|axis| {
-            canonical_cubes
-                .column(axis)
-                .iter()
-                .copied()
-                .min()
-                .expect("canonical_cubes has at least one row") as i32
-        })
-        .collect();
-
-    let maximum_orthant: Orthant = (0..dimension)
-        .map(|axis| {
-            canonical_cubes
-                .column(axis)
-                .iter()
-                .copied()
-                .max()
-                .expect("canonical_cubes has at least one row") as i32
-                + 1
-        })
-        .collect();
-
-    let orthants: Vec<Orthant> = canonical_cubes
-        .outer_iter()
-        .map(|row| row.iter().map(|&value| value as i32).collect())
-        .collect();
-
-    let grading_function =
-        TopCubeGrader::new(OrthantTrie::uniform(orthants.clone(), 0, 1), Some(0));
-
-    let complex = CubicalComplex::<F2, TopCubeGrader<OrthantTrie>>::new(
-        minimum_orthant,
-        maximum_orthant,
-        grading_function,
-    );
-
-    let top_matching = TopCubicalMatching::<F2, OrthantTrie>::builder()
-        .max_grade(0)
-        .max_dimension(2)
-        .subgrid_shape(vec![1_i32; dimension])
-        .filter_orthants(orthants)
-        .backend(backend.clone())
-        .build(complex);
-
-    let (lower_matchings, morse_complex) = top_matching.full_reduce(CoreductionMatching::new);
-
-    let generator_cells: Vec<u32> = morse_complex
-        .iter()
-        .filter(|cell| morse_complex.cell_dimension(cell) == 1)
-        .collect();
-
-    let mut lower_reps: Vec<Chain<u32, F2>> = generator_cells
-        .iter()
-        .map(|&cell| Chain::from(cell))
-        .collect();
-
-    for matching in lower_matchings.iter().rev() {
-        lower_reps = lower_reps
-            .into_iter()
-            .map(|chain| matching.colift_capped(chain, 0))
-            .collect();
-    }
-
-    let mut generators: Vec<Chain<Cube, F2>> = lower_reps
-        .into_iter()
-        .map(|chain| top_matching.colift_capped(chain, 0))
-        .collect();
-
-    // Lex-sort generators
-    generators.sort_by(compare_chains);
-
-    generators
-}
-
-/// A total ordering on [`Chain<Cube, F2>`](Chain) used for deterministic
-/// sorting.
-fn compare_chains(left: &Chain<Cube, F2>, right: &Chain<Cube, F2>) -> std::cmp::Ordering {
-    let left_entries: Vec<&Cube> = left.into_iter().map(|(cube, _)| cube).collect();
-    let right_entries: Vec<&Cube> = right.into_iter().map(|(cube, _)| cube).collect();
-    left_entries.cmp(&right_entries)
-}
-
-/// Builds the edge-to-class lookup table from the generator chains. Each
-/// generator contributes a `1` at its own index for every edge it contains.
-fn compute_edge_classes(generators: &[Chain<Cube, F2>]) -> FxHashMap<Cube, F2Vector> {
-    let mut edge_classes: FxHashMap<Cube, F2Vector> = FxHashMap::default();
-    let num_generators = generators.len();
-    for (generator_index, generator) in generators.iter().enumerate() {
-        for (cube, coefficient) in generator {
-            if *coefficient == F2::zero() {
-                continue;
-            }
-            let entry = edge_classes
-                .entry(cube.clone())
-                .or_insert_with(|| F2Vector::zeros(num_generators));
-            entry.set(generator_index, F2::one());
-        }
-    }
-    edge_classes
-}
-
-#[cfg(feature = "serde")]
-#[derive(Serialize, Deserialize)]
-struct CoverData {
-    #[serde(with = "crate::serialization::npy_field")]
-    cubes: Array2<i64>,
-    generators: Vec<Vec<Cube>>,
-}
-
-#[cfg(feature = "serde")]
-impl Serialize for CubicalCover {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let generators: Vec<Vec<Cube>> = self
-            .generators
-            .iter()
-            .map(|generator| {
-                let mut cubes: Vec<Cube> = generator
-                    .iter()
-                    .filter(|(_, coefficient)| **coefficient != F2::zero())
-                    .map(|(cube, _)| cube.clone())
-                    .collect();
-                cubes.sort();
-                cubes
-            })
-            .collect();
-        CoverData {
-            cubes: self.cubes.clone(),
-            generators,
-        }
-        .serialize(serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> Deserialize<'de> for CubicalCover {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let data = CoverData::deserialize(deserializer)?;
-        if data.cubes.nrows() == 0 {
-            return Err(D::Error::custom("cubical cover requires at least one cube"));
-        }
-        let generators: Vec<Chain<Cube, F2>> = data
-            .generators
-            .into_iter()
-            .map(|cubes| cubes.into_iter().map(|cube| (cube, F2::one())).collect())
-            .collect();
-        let edge_classes = compute_edge_classes(&generators);
-        Ok(Self {
-            cubes: data.cubes,
-            generators,
-            edge_classes,
-        })
-    }
 }
 
 #[cfg(test)]
@@ -449,15 +322,17 @@ mod tests {
     fn from_cubes_rejects_out_of_range_coordinate() {
         // The largest valid coordinate is i32::MAX - 1; i32::MAX is one past it,
         // reserved as headroom for the half-open bounding orthant.
+        // The offending cube is the second row as supplied.
         let input = array![[0_i64, 0], [1, i64::from(i32::MAX)]];
         let outcome = CubicalCover::from_cubes(input.view(), &ExecutionBackend::default());
 
         assert!(matches!(
             outcome.unwrap_err(),
             Error::CubeCoordinateOutOfRange {
+                row: 1,
                 axis: 1,
                 coordinate,
-            } if coordinate == i64::from(i32::MAX),
+            } if coordinate == i64::from(i32::MAX)
         ));
     }
 

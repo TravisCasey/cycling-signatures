@@ -9,9 +9,12 @@ use std::ops::RangeBounds;
 
 use chomp3rs::ExecutionBackend;
 
-use super::{DEFAULT_OWNED_COLUMNS, EmbeddedTrajectory};
+use super::EmbeddedTrajectory;
 use crate::{
-    F2Vector, distance::detect_components, error::Result, signature::CyclingSignature,
+    F2Vector,
+    distance::{DEFAULT_OWNED_COLUMNS, detect_components},
+    error::Result,
+    signature::CyclingSignature,
     util::range::normalize_segment,
 };
 
@@ -40,8 +43,8 @@ impl EmbeddedTrajectory {
     ///
     /// - [`Error::WindowOutOfBounds`](crate::Error::WindowOutOfBounds) if
     ///   `segment` does not normalize to a valid sub-range of the trajectory.
-    /// - [`Error::ThresholdBelowTrajectoryBound`](crate::Error::ThresholdBelowTrajectoryBound)
-    ///   if `threshold < self.bound()`.
+    /// - [`Error::ThresholdBelowResolution`](crate::Error::ThresholdBelowResolution)
+    ///   if `threshold < self.resolution()`.
     /// - [`Error::ThresholdAboveCubeSide`](crate::Error::ThresholdAboveCubeSide)
     ///   if `threshold` is at or above the cube side.
     #[allow(clippy::missing_panics_doc)]
@@ -50,15 +53,14 @@ impl EmbeddedTrajectory {
         segment: impl RangeBounds<usize>,
         threshold: f64,
     ) -> Result<CyclingSignature> {
-        self.check_threshold(threshold)?;
         let trajectory = self.trajectory();
-        let metric = self.metric();
         let range = normalize_segment(segment, trajectory.len())?;
+        self.check_threshold(threshold)?;
+        let metric_points = self.metric_points();
         // A signature has no length cap, so every pair inside the segment is
-        // admitted. Detection clamps the cap to the segment's own length.
+        // admitted; detection clamps the cap to the segment's own length.
         let components = detect_components(
-            trajectory,
-            metric,
+            &metric_points,
             range,
             threshold,
             trajectory.len(),
@@ -66,24 +68,20 @@ impl EmbeddedTrajectory {
             &ExecutionBackend::Sequential,
         )?;
 
-        let points = trajectory.points();
-        let mut births: Vec<(f64, F2Vector)> = Vec::with_capacity(components.len());
-        for cycles in components {
-            // Every cycle in a component carries the same class, so the
-            // shortest is chosen: walk cost grows with cycle length.
-            let representative = cycles
-                .iter()
-                .min_by_key(|cycle| cycle.end - cycle.start)
-                .expect("connected components are nonempty by construction");
-            let class = self.cycle_class(representative.clone())?;
-            let birth = cycles
-                .iter()
-                .map(|cycle| metric.distance(points.row(cycle.start), points.row(cycle.end - 1)))
-                .fold(f64::INFINITY, f64::min);
-            births.push((birth, class));
-        }
+        let classes = self.component_classes(&components)?;
+        let births: Vec<(f64, F2Vector)> = components
+            .into_iter()
+            .zip(classes)
+            .map(|(cycles, class)| {
+                let birth = cycles
+                    .iter()
+                    .map(|cycle| metric_points.distance(cycle.start, cycle.end - 1))
+                    .fold(f64::INFINITY, f64::min);
+                (birth, class)
+            })
+            .collect();
 
-        Ok(CyclingSignature::from_candidates(
+        Ok(CyclingSignature::from_births(
             births,
             self.cover().num_generators(),
             threshold,

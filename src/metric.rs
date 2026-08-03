@@ -4,7 +4,7 @@
 //! The [`Metric`] enum of distance modes over rows of an
 //! [`Array2<f64>`](ndarray::Array2).
 
-use ndarray::{Array2, ArrayView1, ArrayView2};
+use ndarray::{ArrayView1, ArrayView2};
 
 mod sphere_bundle;
 
@@ -126,19 +126,15 @@ impl Metric {
         }
     }
 
-    /// Prepares `points` for repeated [`PreparedPoints::distance`] queries
-    /// under this metric.
-    ///
-    /// The result holds a contiguous copy of `points`, unmodified: distance
-    /// under this metric never normalizes its input, so preparation is a
-    /// plain copy that later distance queries read from without further
-    /// allocation.
+    /// Pairs this metric with the contiguous point array `points` for repeated
+    /// indexed distance queries.
     ///
     /// # Panics
     ///
-    /// Under [`Metric::SphereBundle`], panics if `points.ncols()` is odd.
+    /// Panics if `points` is not laid out row-major and contiguously. Under
+    /// [`Metric::SphereBundle`], also panics if `points.ncols()` is odd.
     #[must_use]
-    pub(crate) fn prepare(self, points: ArrayView2<'_, f64>) -> PreparedPoints {
+    pub(crate) fn over(self, points: ArrayView2<'_, f64>) -> MetricPoints<'_> {
         if let Metric::SphereBundle = self {
             assert!(
                 points.ncols().is_multiple_of(2),
@@ -146,38 +142,51 @@ impl Metric {
                 points.ncols(),
             );
         }
-        let rows = points.to_owned();
-        PreparedPoints { rows, metric: self }
+        let count = points.nrows();
+        let dimension = points.ncols();
+        let coordinates = points
+            .to_slice()
+            .expect("point rows must be contiguous to be measured by index");
+        MetricPoints {
+            coordinates,
+            count,
+            dimension,
+            metric: self,
+        }
     }
 }
 
-/// Points prepared for repeated distance evaluation under a fixed
-/// [`Metric`], built by [`Metric::prepare`].
+/// A point array viewed through a fixed [`Metric`], built by [`Metric::over`].
 ///
-/// Preparation copies the input into a single contiguous array, so that
-/// [`PreparedPoints::distance`] evaluates each pair by reading plain
-/// contiguous slices, without allocating.
-pub(crate) struct PreparedPoints {
-    rows: Array2<f64>,
+/// Holds the points as one contiguous run of coordinates, so that
+/// [`MetricPoints::distance`] evaluates each pair by slicing that run, without
+/// allocating or re-checking layout.
+pub(crate) struct MetricPoints<'points> {
+    coordinates: &'points [f64],
+    count: usize,
+    dimension: usize,
     metric: Metric,
 }
 
-impl PreparedPoints {
-    /// The contiguous coordinates of prepared row `index`.
-    fn row(&self, index: usize) -> &[f64] {
-        self.rows
-            .row(index)
-            .to_slice()
-            .expect("prepared points are stored contiguously")
+impl MetricPoints<'_> {
+    /// The number of points in view.
+    #[must_use]
+    pub(crate) fn len(&self) -> usize {
+        self.count
     }
 
-    /// The distance between prepared rows `left_row` and `right_row`, equal
-    /// to [`Metric::distance`] evaluated on the corresponding original rows.
+    /// The contiguous coordinates of row `index`.
+    fn row(&self, index: usize) -> &[f64] {
+        &self.coordinates[index * self.dimension..][..self.dimension]
+    }
+
+    /// The distance between rows `left_row` and `right_row`, equal to
+    /// [`Metric::distance`] evaluated on the corresponding original rows.
     ///
     /// # Panics
     ///
-    /// Panics if `left_row` or `right_row` is out of bounds for the prepared
-    /// points.
+    /// Panics if `left_row` or `right_row` is out of bounds for the points in
+    /// view.
     #[must_use]
     pub(crate) fn distance(&self, left_row: usize, right_row: usize) -> f64 {
         let left = self.row(left_row);
@@ -249,14 +258,14 @@ mod tests {
 
     #[test]
     #[allow(clippy::float_cmp)]
-    fn prepared_distance_matches_metric_distance_bit_for_bit() {
+    fn indexed_distance_matches_metric_distance_bit_for_bit() {
         let euclidean_points = array![[0.0, 0.0], [3.0, 4.0], [1.0, 1.0]];
-        let euclidean_prepared = Metric::Euclidean.prepare(euclidean_points.view());
+        let euclidean_view = Metric::Euclidean.over(euclidean_points.view());
         for left in 0..euclidean_points.nrows() {
             for right in 0..euclidean_points.nrows() {
                 let expected = Metric::Euclidean
                     .distance(euclidean_points.row(left), euclidean_points.row(right));
-                assert_eq!(euclidean_prepared.distance(left, right), expected);
+                assert_eq!(euclidean_view.distance(left, right), expected);
             }
         }
 
@@ -266,20 +275,20 @@ mod tests {
             [1.0, 1.0, 0.0, 0.0],
         ];
         let metric = Metric::SphereBundle;
-        let sphere_prepared = metric.prepare(sphere_points.view());
+        let sphere_view = metric.over(sphere_points.view());
         for left in 0..sphere_points.nrows() {
             for right in 0..sphere_points.nrows() {
                 let expected = metric.distance(sphere_points.row(left), sphere_points.row(right));
-                assert_eq!(sphere_prepared.distance(left, right), expected);
+                assert_eq!(sphere_view.distance(left, right), expected);
             }
         }
     }
 
     #[test]
     #[should_panic(expected = "sphere bundle metric requires even dimension, got 3")]
-    fn prepare_odd_length_panics() {
+    fn over_odd_length_panics() {
         let points = array![[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]];
-        let _ = Metric::SphereBundle.prepare(points.view());
+        let _ = Metric::SphereBundle.over(points.view());
     }
 
     #[test]

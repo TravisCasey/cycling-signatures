@@ -45,12 +45,20 @@ pub enum Error {
 
     /// A cube coordinate is outside the range the cubical-homology backend
     /// accepts.
+    ///
+    /// `row` locates the offender in whichever array was covered: covering an
+    /// explicit cube set, it is the row of that set as the caller supplied it,
+    /// before the cubes are sorted and deduplicated; covering a trajectory, it
+    /// is the row of the trajectory point whose cube fell out of range.
     #[error(
-        "cube coordinate {coordinate} at axis {axis} is outside the allowed range [{}, {}]",
+        "cube coordinate {coordinate} at row {row}, axis {axis} is outside the allowed range \
+         [{}, {}]",
         i32::MIN,
         i32::MAX - 1
     )]
     CubeCoordinateOutOfRange {
+        /// The row of the offending cube in the array that was covered.
+        row: usize,
         /// The axis (cube column) of the offending coordinate.
         axis: usize,
         /// The rejected coordinate.
@@ -189,18 +197,18 @@ pub enum Error {
     },
 
     /// A cycle-detection threshold below the embedded trajectory's
-    /// consecutive-point distance under its metric: cycles below this
+    /// consecutive-point resolution under its metric: cycles below this
     /// resolution are not meaningfully detectable.
     #[error(
-        "adjacency threshold {threshold} is below the consecutive-point distance \
-         {trajectory_bound}"
+        "adjacency threshold {threshold} is below the trajectory's consecutive-point resolution \
+         {resolution}"
     )]
-    ThresholdBelowTrajectoryBound {
+    ThresholdBelowResolution {
         /// The threshold the caller supplied.
         threshold: f64,
-        /// The embedded trajectory's consecutive-point distance under its
+        /// The embedded trajectory's consecutive-point resolution under its
         /// metric.
-        trajectory_bound: f64,
+        resolution: f64,
     },
 
     /// A cycle-detection threshold at or above the cube side, 1. Detection

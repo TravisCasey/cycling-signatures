@@ -5,7 +5,7 @@
 //! interpolator, inserting points between its knots until consecutive ones
 //! meet a metric spacing.
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2};
 
 use super::Trajectory;
 use crate::{
@@ -48,7 +48,7 @@ impl Trajectory {
     ///     CubicalCover::build(&trajectory, &ExecutionBackend::default()).unwrap();
     /// let embedded =
     ///     EmbeddedTrajectory::new(trajectory, cover, Metric::Euclidean).unwrap();
-    /// assert!(embedded.bound() <= 0.5);
+    /// assert!(embedded.resolution() <= 0.5);
     /// ```
     ///
     /// # Errors
@@ -66,6 +66,7 @@ impl Trajectory {
     /// Panics if `interpolator.knots()` is not strictly increasing. The
     /// emitted parameters inherit their order from the knots, so a knot
     /// sequence breaking that contract cannot produce a valid trajectory.
+    /// Also panics if the interpolator returns samples of differing lengths.
     pub fn resample<I: Interpolator>(
         interpolator: &I,
         metric: Metric,
@@ -88,12 +89,12 @@ impl Trajectory {
             "interpolator knots must be strictly increasing"
         );
 
-        let mut samples: Vec<Array1<f64>> = Vec::new();
-        let mut parameters: Vec<f64> = Vec::new();
         let first_sample = interpolator.sample(knots[0]);
         check_finite_sample(&first_sample, knots[0])?;
-        samples.push(first_sample);
-        parameters.push(knots[0]);
+        let dimension = first_sample.len();
+        let mut coordinates: Vec<f64> = first_sample.iter().copied().collect();
+        let mut parameters: Vec<f64> = vec![knots[0]];
+        let mut last_sample = first_sample;
 
         for pair in knots.windows(2) {
             let (parameter_lower, parameter_upper) = (pair[0], pair[1]);
@@ -101,10 +102,7 @@ impl Trajectory {
             check_finite_sample(&sample_upper, parameter_upper)?;
             let mut stack = vec![Interval {
                 parameter_lower,
-                sample_lower: samples
-                    .last()
-                    .expect("at least one sample exists at this point")
-                    .clone(),
+                sample_lower: last_sample.clone(),
                 parameter_upper,
                 sample_upper,
                 depth: 0,
@@ -113,8 +111,9 @@ impl Trajectory {
                 if metric.distance(interval.sample_lower.view(), interval.sample_upper.view())
                     <= spacing
                 {
-                    samples.push(interval.sample_upper);
+                    coordinates.extend(interval.sample_upper.iter().copied());
                     parameters.push(interval.parameter_upper);
+                    last_sample = interval.sample_upper;
                     continue;
                 }
                 let parameter_mid = interval.midpoint_parameter();
@@ -132,11 +131,8 @@ impl Trajectory {
             }
         }
 
-        let dimension = samples[0].len();
-        let mut points = Array2::<f64>::zeros((samples.len(), dimension));
-        for (row, sample) in samples.iter().enumerate() {
-            points.index_axis_mut(Axis(0), row).assign(sample);
-        }
+        let points = Array2::from_shape_vec((parameters.len(), dimension), coordinates)
+            .expect("every interpolator sample has the dimension of the first");
 
         Ok(Self { points, parameters })
     }

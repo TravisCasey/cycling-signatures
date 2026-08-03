@@ -246,8 +246,8 @@ impl PyCycleStorage {
     ///     The largest cycle point count to detect. Must be at least ``2``.
     /// threshold : float
     ///     The largest endpoint distance admitted as a cycle. Must be at
-    ///     least the embedded trajectory's ``bound`` and strictly below ``1.0``
-    ///     (the cube side).
+    ///     least the embedded trajectory's ``resolution`` and strictly below
+    ///     ``1.0`` (the cube side).
     ///
     /// Returns
     /// -------
@@ -259,8 +259,8 @@ impl PyCycleStorage {
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if the segment indices are out
     ///     of bounds, if ``max_length`` is less than ``2``, if ``threshold``
-    ///     is below the embedded trajectory's ``bound`` or not below ``1.0``,
-    ///     or if a detected cycle's consecutive or endpoint points fall in
+    ///     is below the embedded trajectory's ``resolution`` or not below
+    ///     ``1.0``, or if a detected cycle's endpoint points fall in
     ///     non-adjacent cubes.
     #[staticmethod]
     fn build(

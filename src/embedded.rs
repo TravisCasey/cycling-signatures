@@ -9,34 +9,23 @@ mod walker;
 
 #[cfg(feature = "serde")]
 use std::path::Path;
-use std::{ops::RangeBounds, sync::Arc};
+use std::{
+    ops::{Range, RangeBounds},
+    sync::Arc,
+};
 
 use chomp3rs::{Cube, ExecutionBackend};
 use walker::for_each_cycle_edge;
 
 use crate::{
     F2Vector,
-    cover::CubicalCover,
+    cover::{CubicalCover, non_adjacent_axis},
     error::{Error, Result},
     interpolation::Interpolator,
-    metric::Metric,
-    trajectory::{Trajectory, max_consecutive_distance},
+    metric::{Metric, MetricPoints},
+    trajectory::Trajectory,
     util::{fingerprint::Fingerprint, range::normalize_segment},
 };
-
-/// Columns each tile owns in the banded-distance passes that back cycle
-/// detection.
-///
-/// The count bounds per-tile memory at `8 * max_length * owned_columns` bytes
-/// per worker without affecting the result, and it is the largest lever on the
-/// memory a detection pass needs.
-///
-/// Lowering tends to improve results to a certain point due to cache residence
-/// and locality. There is a redundant `1 / owned_columns` portion that grows
-/// as the column count is reduced, but it is outweighed in this regime. It
-/// also sets parallel dispatch granularity, which is another positive of small
-/// tiles.
-pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 256;
 
 /// Pairs a [`Trajectory`] with a [`CubicalCover`], the metric used for queries,
 /// and the per-point cube-index map.
@@ -51,12 +40,12 @@ pub struct EmbeddedTrajectory {
     cover: Arc<CubicalCover>,
     metric: Metric,
     point_to_cube: Vec<usize>,
-    bound: f64,
+    resolution: f64,
 }
 
 impl EmbeddedTrajectory {
     /// Places `trajectory`'s points in `cover`, recording each point's cube
-    /// index and the consecutive-point distance bound under `metric`.
+    /// index and the consecutive-point resolution under `metric`.
     ///
     /// `cover` must contain the cube of every point, so it is normally built
     /// from this trajectory, or from the denser trajectory this one was
@@ -86,13 +75,7 @@ impl EmbeddedTrajectory {
         }
 
         let points = trajectory.points();
-        let mut point_to_cube: Vec<usize> = Vec::with_capacity(points.nrows());
-        for point_index in 0..points.nrows() {
-            match cover.cube_index(points.row(point_index)) {
-                Some(cube_index) => point_to_cube.push(cube_index),
-                None => return Err(Error::EmbeddedCubeNotInCover { point_index }),
-            }
-        }
+        let point_to_cube = cover.cube_indices(points)?;
 
         // Consecutive points must land in adjacent cubes for every walk over
         // this trajectory to be well defined, so the whole trajectory is
@@ -101,25 +84,25 @@ impl EmbeddedTrajectory {
         for point_index in 0..point_to_cube.len().saturating_sub(1) {
             let current = point_to_cube[point_index];
             let next = point_to_cube[point_index + 1];
-            for axis in 0..cubes.ncols() {
-                let delta = cubes[(next, axis)] - cubes[(current, axis)];
-                if delta.abs() > 1 {
-                    return Err(Error::ConsecutiveCubesNonAdjacent {
-                        point_index,
-                        axis,
-                        delta,
-                    });
-                }
+            if current == next {
+                continue;
+            }
+            if let Some((axis, delta)) = non_adjacent_axis(cubes.row(current), cubes.row(next)) {
+                return Err(Error::ConsecutiveCubesNonAdjacent {
+                    point_index,
+                    axis,
+                    delta,
+                });
             }
         }
 
-        let bound = max_consecutive_distance(points, metric);
+        let resolution = trajectory.resolution(metric);
         Ok(Self {
             trajectory,
             cover,
             metric,
             point_to_cube,
-            bound,
+            resolution,
         })
     }
 
@@ -151,7 +134,7 @@ impl EmbeddedTrajectory {
     ///     &ExecutionBackend::default(),
     /// )
     /// .unwrap();
-    /// assert!(embedded.bound() <= 0.4);
+    /// assert!(embedded.resolution() <= 0.4);
     /// ```
     ///
     /// # Errors
@@ -206,29 +189,30 @@ impl EmbeddedTrajectory {
     }
 
     /// The maximum metric distance between consecutive trajectory points: the
-    /// detection resolution of this embedding.
+    /// detection resolution of this embedding, equal to
+    /// [`Trajectory::resolution`] under the embedded metric.
     ///
     /// This is the smallest usable cycle-detection threshold: below it some
     /// consecutive pair of points is farther apart than the threshold, and
     /// cycles a single step apart can no longer be shown to be homologous.
     #[must_use]
-    pub fn bound(&self) -> f64 {
-        self.bound
+    pub fn resolution(&self) -> f64 {
+        self.resolution
     }
 
     /// Returns an error if `threshold` is below the embedded trajectory's
-    /// consecutive-point distance under its metric (including when it is
+    /// consecutive-point resolution under its metric (including when it is
     /// NaN), or at or above the cube side.
     pub(crate) fn check_threshold(&self, threshold: f64) -> Result<()> {
-        // Negated form (rather than `threshold < self.bound`) so a NaN
+        // Negated form (rather than `threshold < self.resolution`) so a NaN
         // threshold fails loudly here instead of silently passing both band
         // checks; past this guard the threshold is a number, so a plain
         // comparison suffices below.
         #[allow(clippy::neg_cmp_op_on_partial_ord)]
-        if !(threshold >= self.bound) {
-            return Err(Error::ThresholdBelowTrajectoryBound {
+        if !(threshold >= self.resolution) {
+            return Err(Error::ThresholdBelowResolution {
                 threshold,
-                trajectory_bound: self.bound,
+                resolution: self.resolution,
             });
         }
         if threshold >= 1.0 {
@@ -250,8 +234,40 @@ impl EmbeddedTrajectory {
     ///
     /// Panics if `point_index >= trajectory.len()`.
     #[must_use]
-    pub(crate) fn point_to_cube(&self, point_index: usize) -> usize {
+    fn point_to_cube(&self, point_index: usize) -> usize {
         self.point_to_cube[point_index]
+    }
+
+    /// The trajectory's points viewed through the metric this embedding was
+    /// built with, ready for repeated indexed distance queries.
+    #[must_use]
+    pub(crate) fn metric_points(&self) -> MetricPoints<'_> {
+        self.metric.over(self.trajectory.points())
+    }
+
+    /// The homology class of every component in `components`, in order.
+    ///
+    /// Each component's class is read off its shortest cycle: every cycle in a
+    /// component carries the same class, and walk cost grows with cycle
+    /// length.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`cycle_class`](Self::cycle_class), for the representative
+    /// walked out of each component.
+    pub(crate) fn component_classes(
+        &self,
+        components: &[Vec<Range<usize>>],
+    ) -> Result<Vec<F2Vector>> {
+        let mut classes: Vec<F2Vector> = Vec::with_capacity(components.len());
+        for cycles in components {
+            let representative = cycles
+                .iter()
+                .min_by_key(|cycle| cycle.end - cycle.start)
+                .expect("connected components are nonempty by construction");
+            classes.push(self.cycle_class(representative.clone())?);
+        }
+        Ok(classes)
     }
 
     /// The sequence of 1-cube edges traversed when walking the cycle
@@ -263,8 +279,8 @@ impl EmbeddedTrajectory {
     /// staircase between the cubes of its two points.
     ///
     /// Useful for visualizing the cubical representation of a particular cycle.
-    /// For the homology class only, prefer [`cycle_class`](Self::cycle_class),
-    /// which avoids materializing the edge list.
+    /// For the homology class alone, call [`cycle_class`](Self::cycle_class)
+    /// instead.
     ///
     /// # Errors
     ///
@@ -273,14 +289,12 @@ impl EmbeddedTrajectory {
     /// - [`Error::CycleEndpointsNonAdjacent`] if the cubes of the trajectory
     ///   points at `segment.start` and `segment.end - 1` differ by more than 1
     ///   in some axis.
-    /// - [`Error::ConsecutiveCubesNonAdjacent`] if a forward step inside the
-    ///   segment lands in cubes differing by more than 1 in some axis.
-    ///   [`new`](Self::new) rules this out across the whole trajectory; the
-    ///   walker rechecks it per step.
     ///
     /// # Panics
     ///
-    /// Panics if the normalized segment contains fewer than 2 points.
+    /// Panics if the normalized segment contains fewer than 2 points, or if a
+    /// forward step inside the segment lands in cubes differing by more than 1
+    /// in some axis.
     pub fn walk_cycle(&self, segment: impl RangeBounds<usize>) -> Result<Vec<Cube>> {
         let segment = normalize_segment(segment, self.trajectory.len())?;
         assert!(
@@ -289,24 +303,6 @@ impl EmbeddedTrajectory {
             segment.start,
             segment.end
         );
-
-        // Endpoint adjacency: the cycle's closing step requires the cubes of
-        // its two endpoints to differ by at most 1 in each axis. Forward steps
-        // are already guaranteed adjacent by construction.
-        let cubes = self.cover.cubes();
-        let start_cube_index = self.point_to_cube(segment.start);
-        let end_cube_index = self.point_to_cube(segment.end - 1);
-        for axis in 0..cubes.ncols() {
-            let delta = cubes[(start_cube_index, axis)] - cubes[(end_cube_index, axis)];
-            if delta.abs() > 1 {
-                return Err(Error::CycleEndpointsNonAdjacent {
-                    start: segment.start,
-                    end: segment.end,
-                    axis,
-                    delta,
-                });
-            }
-        }
 
         let mut edges = Vec::new();
         for_each_cycle_edge(self, segment, |edge| {
@@ -430,14 +426,39 @@ mod tests {
         EmbeddedTrajectory::new(trajectory, cover, Metric::Euclidean)
     }
 
+    /// The centers of the eight cubes ringing the missing center cube `(1, 1)`,
+    /// closing back on the first.
+    ///
+    /// Covering these cubes and no others leaves a one-cube hole, so the cover
+    /// has `H^1` of rank one and a loop around the ring carries its generator.
+    fn ring_waypoints() -> [[f64; 2]; 9] {
+        [
+            [0.5, 0.5],
+            [1.5, 0.5],
+            [2.5, 0.5],
+            [2.5, 1.5],
+            [2.5, 2.5],
+            [1.5, 2.5],
+            [0.5, 2.5],
+            [0.5, 1.5],
+            [0.5, 0.5],
+        ]
+    }
+
+    /// Stacks `points` into a two-column array, one row per point.
+    fn stack_points(points: &[[f64; 2]]) -> Array2<f64> {
+        let flat: Vec<f64> = points.iter().flatten().copied().collect();
+        Array2::from_shape_vec((points.len(), 2), flat)
+            .expect("flattened point rows form a valid two-column matrix")
+    }
+
     /// Inserts evenly spaced intermediate points between consecutive
     /// `waypoints` so that no step's Euclidean distance exceeds `max_step`.
     ///
-    /// Used to turn a short list of cube-center waypoints into a densely
-    /// sampled trajectory whose consecutive-distance bound stays below the
-    /// cube side, while every waypoint's cube membership (its coordinate
-    /// floors) is unaffected: only points strictly between waypoints are
-    /// added.
+    /// Turns a short list of cube-center waypoints into a densely sampled
+    /// trajectory whose consecutive-point resolution stays below the cube side,
+    /// while every waypoint's cube membership (its coordinate floors) is
+    /// unaffected: only points strictly between waypoints are added.
     fn densify_path(waypoints: &[[f64; 2]], max_step: f64) -> Array2<f64> {
         let mut points: Vec<[f64; 2]> = vec![waypoints[0]];
         for pair in waypoints.windows(2) {
@@ -453,25 +474,7 @@ mod tests {
                 ]);
             }
         }
-        let flat: Vec<f64> = points.iter().flatten().copied().collect();
-        Array2::from_shape_vec((points.len(), 2), flat)
-            .expect("flattened waypoint rows form a valid two-column matrix")
-    }
-
-    /// The eight cube centers of a ring around the missing center cube
-    /// `(1, 1)`, closing back on the first.
-    fn ring_waypoints() -> [[f64; 2]; 9] {
-        [
-            [0.5, 0.5],
-            [1.5, 0.5],
-            [2.5, 0.5],
-            [2.5, 1.5],
-            [2.5, 2.5],
-            [1.5, 2.5],
-            [0.5, 2.5],
-            [0.5, 1.5],
-            [0.5, 0.5],
-        ]
+        stack_points(&points)
     }
 
     #[test]
@@ -508,16 +511,7 @@ mod tests {
         //
         // Each consecutive pair of cube centers is adjacent, and the closing
         // step (0,1)->(0,0) differs by 1 in axis 1 only, so the cycle is valid.
-        let waypoints = ring_waypoints();
-        let points = Array2::from_shape_vec(
-            (8, 2),
-            waypoints[..8]
-                .iter()
-                .flatten()
-                .copied()
-                .collect::<Vec<f64>>(),
-        )
-        .unwrap();
+        let points = stack_points(&ring_waypoints()[..8]);
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
@@ -553,8 +547,9 @@ mod tests {
 
     #[test]
     fn new_maps_each_point_to_its_cover_cube() {
-        // Four points landing in three distinct cubes; rows 0 and 1
-        // share a cube.
+        // Four points landing in three distinct cubes, which the cover holds
+        // in sorted order as (0, 0), (1, 0), (2, 0). Rows 0 and 1 share a
+        // cube, so the map is not the identity.
         //
         // (0.1, 0.1), (0.9, 0.9) -> cube (0, 0)
         // (1.5, 0.5)             -> cube (1, 0)
@@ -563,8 +558,6 @@ mod tests {
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
-        let expected_cubes = array![[0_i64, 0], [1, 0], [2, 0]];
-        assert_eq!(embedded.cover().cubes(), expected_cubes.view());
         assert_eq!(embedded.point_to_cube(0), 0);
         assert_eq!(embedded.point_to_cube(1), 0);
         assert_eq!(embedded.point_to_cube(2), 1);

@@ -12,10 +12,10 @@ def test_signature_of_square_loop(square_loop_embedded, square_loop_points):
     assert signature.span().contains(generator_class)
 
 
-def test_threshold_below_bound_raises(square_loop_embedded, square_loop_points):
+def test_threshold_below_resolution_raises(square_loop_embedded, square_loop_points):
     with pytest.raises(ValueError):
         square_loop_embedded.signature(
-            (0, square_loop_points.shape[0]), square_loop_embedded.bound() / 2.0
+            (0, square_loop_points.shape[0]), square_loop_embedded.resolution() / 2.0
         )
 
 

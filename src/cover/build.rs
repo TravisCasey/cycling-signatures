@@ -9,7 +9,7 @@ use chomp3rs::ExecutionBackend;
 use ndarray::Array2;
 use rustc_hash::FxHashSet;
 
-use super::{CubicalCover, floor_to_cube};
+use super::{CubicalCover, floor_to_cube, non_adjacent_axis};
 use crate::{
     error::{Error, Result},
     trajectory::Trajectory,
@@ -41,14 +41,16 @@ impl CubicalCover {
     /// - [`Error::CubicalCoverZeroDimension`] if the trajectory's points have
     ///   zero columns.
     /// - [`Error::CubeCoordinateOutOfRange`] if a point's cube coordinate falls
-    ///   outside `[i32::MIN, i32::MAX - 1]`.
+    ///   outside `[i32::MIN, i32::MAX - 1]`, naming the offending trajectory
+    ///   point by its row.
     pub fn build(trajectory: &Trajectory, backend: &ExecutionBackend) -> Result<Self> {
         Self::from_cubes(visited_cubes(trajectory)?.view(), backend)
     }
 }
 
 /// Floors every point of `trajectory` to its integer cube, returning the
-/// deduplicated cube array in no particular order. Rejects consecutive
+/// deduplicated cube array in no particular order. Rejects a cube coordinate
+/// outside the range the cubical-homology backend accepts, and consecutive
 /// points whose cubes differ by more than 1 in some axis.
 fn visited_cubes(trajectory: &Trajectory) -> Result<Array2<i64>> {
     let points = trajectory.points();
@@ -59,17 +61,23 @@ fn visited_cubes(trajectory: &Trajectory) -> Result<Array2<i64>> {
     let mut visited: FxHashSet<Vec<i64>> = FxHashSet::default();
     for (row, point) in points.outer_iter().enumerate() {
         floor_to_cube(point, &mut cube_buffer);
-        if row > 0 {
-            for axis in 0..dimension {
-                let delta = cube_buffer[axis] - previous_cube[axis];
-                if delta.abs() > 1 {
-                    return Err(Error::ConsecutiveCubesNonAdjacent {
-                        point_index: row - 1,
-                        axis,
-                        delta,
-                    });
-                }
+        for (axis, &coordinate) in cube_buffer.iter().enumerate() {
+            if coordinate < i64::from(i32::MIN) || coordinate > i64::from(i32::MAX) - 1 {
+                return Err(Error::CubeCoordinateOutOfRange {
+                    row,
+                    axis,
+                    coordinate,
+                });
             }
+        }
+        if row > 0
+            && let Some((axis, delta)) = non_adjacent_axis(&previous_cube, &cube_buffer)
+        {
+            return Err(Error::ConsecutiveCubesNonAdjacent {
+                point_index: row - 1,
+                axis,
+                delta,
+            });
         }
         if !visited.contains(cube_buffer.as_slice()) {
             visited.insert(cube_buffer.clone());
@@ -105,6 +113,26 @@ mod tests {
 
         let expected = array![[0_i64, 0], [1, 0], [2, 0]];
         assert_eq!(cover.cubes(), expected.view());
+    }
+
+    #[test]
+    fn build_rejects_out_of_range_cube_coordinate() {
+        // The largest representable coordinate is i32::MAX - 1; a point
+        // flooring to i32::MAX is one past it.
+        let far_coordinate = f64::from(i32::MAX) + 0.5;
+        let points = array![[0.5, 0.5], [far_coordinate, 0.5]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+
+        let outcome = CubicalCover::build(&trajectory, &ExecutionBackend::default());
+
+        assert!(matches!(
+            outcome.unwrap_err(),
+            Error::CubeCoordinateOutOfRange {
+                row: 1,
+                axis: 0,
+                coordinate,
+            } if coordinate == i64::from(i32::MAX)
+        ));
     }
 
     #[test]

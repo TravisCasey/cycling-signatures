@@ -133,6 +133,28 @@ impl Trajectory {
         self.points.ncols()
     }
 
+    /// The maximum metric distance between consecutive points: the finest
+    /// separation this trajectory resolves. `0.0` when there are fewer than
+    /// two points.
+    ///
+    /// This is the floor for a valid [`downsample`](Self::downsample)
+    /// spacing, and the quantity
+    /// [`EmbeddedTrajectory::resolution`](crate::EmbeddedTrajectory::resolution)
+    /// reports for the trajectory an embedding was built over.
+    ///
+    /// # Panics
+    ///
+    /// Under [`Metric::SphereBundle`], panics if the points have odd
+    /// dimension, which the metric cannot split into position and direction
+    /// halves.
+    #[must_use]
+    pub fn resolution(&self, metric: Metric) -> f64 {
+        let measured = metric.over(self.points());
+        (0..self.len().saturating_sub(1))
+            .map(|point_index| measured.distance(point_index, point_index + 1))
+            .fold(0.0_f64, f64::max)
+    }
+
     /// A stable 64-bit fingerprint of this trajectory's content.
     ///
     /// Derived from the points and the parameterization. Two trajectories with
@@ -192,35 +214,12 @@ fn check_points(points: ArrayView2<'_, f64>) -> Result<()> {
     Ok(())
 }
 
-/// The maximum metric distance between consecutive rows of `points`, or `0.0`
-/// when there are fewer than two rows.
-pub(crate) fn max_consecutive_distance(points: ArrayView2<'_, f64>, metric: Metric) -> f64 {
-    let mut max = 0.0_f64;
-    for point_index in 0..points.nrows().saturating_sub(1) {
-        let distance = metric.distance(points.row(point_index), points.row(point_index + 1));
-        if distance > max {
-            max = distance;
-        }
-    }
-    max
-}
-
 #[cfg(test)]
 mod tests {
     use ndarray::{Array2, array};
 
     use super::Trajectory;
     use crate::error::Error;
-
-    #[test]
-    fn new_records_points_under_the_index_parameterization() {
-        let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]];
-        let trajectory = Trajectory::new(points.view()).unwrap();
-
-        assert_eq!(trajectory.len(), 3);
-        assert_eq!(trajectory.dimension(), 2);
-        assert_eq!(trajectory.parameters(), &[0.0, 1.0, 2.0]);
-    }
 
     #[test]
     fn with_parameters_records_the_supplied_parameterization() {

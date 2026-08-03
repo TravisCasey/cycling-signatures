@@ -6,7 +6,7 @@
 
 use ndarray::Array2;
 
-use super::{Trajectory, max_consecutive_distance};
+use super::Trajectory;
 use crate::{
     error::{Error, Result},
     metric::Metric,
@@ -51,7 +51,7 @@ impl Trajectory {
     /// let detection = dense.downsample(Metric::Euclidean, threshold).unwrap();
     /// let embedded =
     ///     EmbeddedTrajectory::new(detection, cover, Metric::Euclidean).unwrap();
-    /// assert!(embedded.bound() <= threshold);
+    /// assert!(embedded.resolution() <= threshold);
     /// ```
     ///
     /// # Errors
@@ -63,7 +63,7 @@ impl Trajectory {
     #[allow(clippy::missing_panics_doc)]
     pub fn downsample(&self, metric: Metric, spacing: f64) -> Result<Self> {
         let points = self.points();
-        let resolution = max_consecutive_distance(points, metric);
+        let resolution = self.resolution(metric);
         // Negated form (rather than `spacing < resolution`) so a NaN spacing
         // fails loudly instead of silently passing the comparison.
         #[allow(clippy::neg_cmp_op_on_partial_ord)]
@@ -124,6 +124,11 @@ mod tests {
         let dense = Trajectory::resample(&spline, Metric::Euclidean, 0.05).unwrap();
         let thinned = dense.downsample(Metric::Euclidean, spacing).unwrap();
 
+        assert!(
+            thinned.len() < dense.len(),
+            "fixture does not thin; every assertion below holds trivially",
+        );
+
         // Points and parameters are carried over verbatim, so both are matched
         // exactly rather than approximately: walking the kept parameters
         // forward through the dense ones must never have to search backward,
@@ -157,9 +162,9 @@ mod tests {
 
     #[test]
     fn downsample_coarsens_closely_spaced_points() {
-        // A spacing far wider than the whole path collapses the trajectory to
-        // just its first and last point: fewer points than went in, the
-        // property downsampling exists to produce.
+        // Every point of this path is within 10.0 of its first point, so a
+        // spacing that wide keeps nothing but the first and the last: the
+        // walk must not retain intermediate points it has no reason to.
         let knots = array![0.0, 1.0, 2.0];
         let values = array![[0.0, 0.0], [1.0, 1.0], [3.0, 2.0]];
         let spline = CubicSpline::new(knots, values.view()).unwrap();
@@ -167,7 +172,7 @@ mod tests {
         let dense = Trajectory::resample(&spline, Metric::Euclidean, 0.1).unwrap();
         let thinned = dense.downsample(Metric::Euclidean, 10.0).unwrap();
 
-        assert!(thinned.len() < dense.len());
+        assert_eq!(thinned.len(), 2);
     }
 
     #[test]

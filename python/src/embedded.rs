@@ -30,7 +30,7 @@ use crate::{
 ///     detection = dense.downsample(metric, downsample_spacing)
 ///     embedded = cs.EmbeddedTrajectory(detection, cover, metric)
 ///
-/// The ``bound`` method reports the largest distance between consecutive
+/// The ``resolution`` method reports the largest distance between consecutive
 /// points; any adjacency threshold passed to ``signature`` must be at least
 /// this value.
 ///
@@ -100,7 +100,7 @@ impl PyEmbeddedTrajectory {
     ///     a ``(start, stop)`` integer tuple.
     /// threshold : float
     ///     The largest endpoint distance admitted as a cycle. Must be at
-    ///     least ``bound`` and strictly below ``1.0`` (the cube side).
+    ///     least ``resolution`` and strictly below ``1.0`` (the cube side).
     ///
     /// Returns
     /// -------
@@ -111,9 +111,9 @@ impl PyEmbeddedTrajectory {
     /// ------
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if ``threshold`` is below
-    ///     ``bound`` or not below ``1.0``, if the segment indices are out of
-    ///     range, or if a detected cycle's consecutive or endpoint points
-    ///     fall in non-adjacent cubes.
+    ///     ``resolution`` or not below ``1.0``, if the segment indices are
+    ///     out of range, or if a detected cycle's endpoint points fall in
+    ///     non-adjacent cubes.
     fn signature(
         &self,
         py: Python<'_>,
@@ -152,7 +152,7 @@ impl PyEmbeddedTrajectory {
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if it contains fewer than two
     ///     points, if the segment indices are out of bounds, or if the
-    ///     segment's consecutive or endpoint points fall in non-adjacent cubes.
+    ///     segment's endpoint points fall in non-adjacent cubes.
     fn cycle_class(&self, segment: &Bound<'_, PyAny>) -> PyResult<PyHomologyClass> {
         let range = segment_from_py(segment)?;
         if range.end < range.start + 2 {
@@ -168,18 +168,18 @@ impl PyEmbeddedTrajectory {
     }
 
     /// Returns the largest distance between consecutive points in the
-    /// embedded trajectory.
+    /// embedded trajectory: its detection resolution.
     ///
     /// Any adjacency threshold passed to ``signature`` must be at least this
-    /// value.
+    /// value. Equals ``Trajectory.resolution`` under the embedded metric.
     ///
     /// Returns
     /// -------
     /// float
     ///     The largest distance between consecutive points.
     #[must_use]
-    fn bound(&self) -> f64 {
-        self.inner.bound()
+    fn resolution(&self) -> f64 {
+        self.inner.resolution()
     }
 
     /// Returns a content fingerprint of the embedded trajectory.

@@ -5,7 +5,7 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use cycling_signatures::Trajectory;
+use cycling_signatures::{Interpolator, Metric, Trajectory};
 use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
 use pyo3::{exceptions::PyTypeError, prelude::*};
 
@@ -99,24 +99,19 @@ impl PyTrajectory {
     ///     If ``interpolator`` or ``metric`` is not a recognized type.
     #[staticmethod]
     fn resample(
+        py: Python<'_>,
         interpolator: &Bound<'_, PyAny>,
         metric: &Bound<'_, PyAny>,
         spacing: f64,
     ) -> PyResult<Self> {
         let metric = metric_from_py(metric)?;
         if let Ok(spline) = interpolator.cast::<PyCubicSpline>() {
-            let inner =
-                Trajectory::resample(&spline.borrow().inner, metric, spacing).map_err(to_pyerr)?;
-            return Ok(Self {
-                inner: Arc::new(inner),
-            });
+            let spline = Arc::clone(&spline.borrow().inner);
+            return Self::resampled(py, spline, metric, spacing);
         }
         if let Ok(bundle) = interpolator.cast::<PySphereBundleInterpolator>() {
-            let inner =
-                Trajectory::resample(&bundle.borrow().inner, metric, spacing).map_err(to_pyerr)?;
-            return Ok(Self {
-                inner: Arc::new(inner),
-            });
+            let bundle = bundle.borrow().inner.clone();
+            return Self::resampled(py, bundle, metric, spacing);
         }
         Err(PyTypeError::new_err(format!(
             "expected a CubicSpline or SphereBundleInterpolator, got {}",
@@ -156,12 +151,47 @@ impl PyTrajectory {
     ///     consecutive-point distance (including if it is NaN).
     /// ``TypeError``
     ///     If ``metric`` is not a recognized type.
-    fn downsample(&self, metric: &Bound<'_, PyAny>, spacing: f64) -> PyResult<Self> {
+    fn downsample(
+        &self,
+        py: Python<'_>,
+        metric: &Bound<'_, PyAny>,
+        spacing: f64,
+    ) -> PyResult<Self> {
         let metric = metric_from_py(metric)?;
-        let inner = self.inner.downsample(metric, spacing).map_err(to_pyerr)?;
+        let trajectory = Arc::clone(&self.inner);
+        let inner = py
+            .detach(move || trajectory.downsample(metric, spacing))
+            .map_err(to_pyerr)?;
         Ok(Self {
             inner: Arc::new(inner),
         })
+    }
+
+    /// Returns the maximum distance between consecutive points under
+    /// ``metric``: the finest separation this trajectory resolves. Zero when
+    /// the trajectory has fewer than two points.
+    ///
+    /// This is the floor for a valid ``downsample`` spacing, and the
+    /// value ``EmbeddedTrajectory.resolution`` reports for the trajectory an
+    /// embedding was built over.
+    ///
+    /// Parameters
+    /// ----------
+    /// metric : ``Euclidean`` or ``SphereBundle``
+    ///     The metric that measures point spacing.
+    ///
+    /// Returns
+    /// -------
+    /// float
+    ///     The maximum distance between consecutive points.
+    ///
+    /// Raises
+    /// ------
+    /// ``TypeError``
+    ///     If ``metric`` is not a recognized type.
+    fn resolution(&self, metric: &Bound<'_, PyAny>) -> PyResult<f64> {
+        let metric = metric_from_py(metric)?;
+        Ok(self.inner.resolution(metric))
     }
 
     /// Returns the trajectory points as a two-dimensional array.
@@ -248,6 +278,24 @@ impl PyTrajectory {
     #[staticmethod]
     fn load(path: PathBuf) -> PyResult<Self> {
         let inner = Trajectory::load(path).map_err(to_pyerr)?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+}
+
+impl PyTrajectory {
+    /// Resamples `interpolator` with the interpreter detached, so other
+    /// Python threads run during the sampling.
+    fn resampled<I: Interpolator + Send>(
+        py: Python<'_>,
+        interpolator: I,
+        metric: Metric,
+        spacing: f64,
+    ) -> PyResult<Self> {
+        let inner = py
+            .detach(move || Trajectory::resample(&interpolator, metric, spacing))
+            .map_err(to_pyerr)?;
         Ok(Self {
             inner: Arc::new(inner),
         })

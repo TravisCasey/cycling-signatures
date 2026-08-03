@@ -61,31 +61,28 @@ pub struct CyclingSignature {
 }
 
 impl CyclingSignature {
-    /// Builds a filtered signature from candidate `(birth, class)` pairs.
+    /// Builds a filtered signature from `(birth, class)` pairs.
     ///
-    /// Candidates are sorted by ascending birth (ties broken by input order),
+    /// The pairs are sorted by ascending birth (ties broken by input order),
     /// then reduced by incremental Gaussian elimination over the fixed
-    /// ambient generator basis: each candidate is combined by exclusive-or
-    /// with the classes of already-retained generators with a set bit at
-    /// that generator's leading index; a candidate that reduces to zero is
-    /// dropped, and a nonzero remainder is retained with its birth. A
-    /// candidate sharing an earlier candidate's class always reduces to
-    /// zero, so the earliest birth wins when the same class is offered more
-    /// than once.
+    /// ambient generator basis: each class is combined with the classes of
+    /// already-retained generators; a class that reduces to zero is dropped,
+    /// and a nonzero remainder is retained with its birth. A class matching
+    /// an earlier one always reduces to zero and is dropped.
     ///
-    /// `num_generators` is the ambient dimension every candidate class must
-    /// share; `threshold_max` is the inclusive upper end of the range this
-    /// signature answers queries for.
+    /// `num_generators` is the ambient dimension every class must share;
+    /// `threshold_max` is the inclusive upper end of the range this signature
+    /// answers queries for.
     #[must_use]
-    pub(crate) fn from_candidates(
-        mut candidates: Vec<(f64, F2Vector)>,
+    pub(crate) fn from_births(
+        mut births: Vec<(f64, F2Vector)>,
         num_generators: usize,
         threshold_max: f64,
     ) -> Self {
-        candidates.sort_by(|left, right| left.0.total_cmp(&right.0));
+        births.sort_by(|left, right| left.0.total_cmp(&right.0));
 
         let mut generators: Vec<SignatureGenerator> = Vec::new();
-        for (birth, mut class) in candidates {
+        for (birth, mut class) in births {
             for pivot in &generators {
                 let leading = pivot
                     .class
@@ -194,17 +191,17 @@ mod tests {
     use crate::{F2Subspace, F2Vector, error::Error};
 
     #[test]
-    fn from_candidates_eliminates_in_birth_order() {
+    fn from_births_eliminates_in_birth_order() {
         let e0 = F2Vector::from_nonzero(3, [0]);
         let e1 = F2Vector::from_nonzero(3, [1]);
         let e2 = F2Vector::from_nonzero(3, [2]);
         let e0_e1 = &e0 ^ &e1;
         let e0_e1_e2 = &e0_e1 ^ &e2;
 
-        // Deliberately unsorted, with a dependent candidate (0.9, the XOR of
-        // the first two pivots) and a repeated class (0.8, matching the
-        // earlier 0.2 candidate) both expected to vanish.
-        let candidates = vec![
+        // Deliberately unsorted, with a dependent class (0.9, the XOR of the
+        // first two pivots) and a repeated class (0.8, matching the earlier
+        // 0.2 entry) both expected to vanish.
+        let births = vec![
             (0.5, e0_e1.clone()),
             (0.2, e2.clone()),
             (0.9, e0_e1_e2),
@@ -212,14 +209,14 @@ mod tests {
             (0.8, e2.clone()),
         ];
 
-        let signature = CyclingSignature::from_candidates(candidates, 3, 1.0);
+        let signature = CyclingSignature::from_births(births, 3, 1.0);
 
-        let births: Vec<f64> = signature
+        let retained: Vec<f64> = signature
             .generators()
             .iter()
             .map(SignatureGenerator::birth)
             .collect();
-        assert_eq!(births, vec![0.2, 0.5, 0.7]);
+        assert_eq!(retained, vec![0.2, 0.5, 0.7]);
 
         assert_eq!(signature.rank_at(0.1).unwrap(), 0);
         assert_eq!(signature.rank_at(0.2).unwrap(), 1);

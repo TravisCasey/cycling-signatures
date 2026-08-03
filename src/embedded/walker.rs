@@ -8,20 +8,29 @@ use std::ops::Range;
 use chomp3rs::{Cube, Orthant};
 
 use super::EmbeddedTrajectory;
-use crate::error::{Error, Result};
+use crate::{
+    cover::non_adjacent_axis,
+    error::{Error, Result},
+};
 
 /// Walks the cubical path of the cycle described by `segment`, invoking
 /// `visit` once per 1-cube edge traversed.
 ///
-/// `segment` is the already-normalized half-open range of trajectory points,
-/// whose endpoint cube adjacency the caller has validated. The forward path
-/// walks consecutive points `segment.start..segment.end` in order; the closing
-/// path connects `points[segment.end - 1]` back to `points[segment.start]`.
-/// Each step, closing included, is one staircase between the cubes of its two
-/// points.
+/// `segment` is the already-normalized half-open range of trajectory points.
+/// The forward path walks consecutive points `segment.start..segment.end` in
+/// order; the closing path connects `points[segment.end - 1]` back to
+/// `points[segment.start]`. Each step, closing included, is one staircase
+/// between the cubes of its two points.
 ///
-/// Each step validates that the cube delta is in `{-1, 0, 1}` per axis,
-/// returning `ConsecutiveCubesNonAdjacent` on violation.
+/// Each step validates that the cube delta is in `{-1, 0, 1}` per axis. The
+/// closing step, whose two points are the caller's cycle endpoints, returns
+/// `CycleEndpointsNonAdjacent` when it exceeds that.
+///
+/// # Panics
+///
+/// Panics if a forward step exceeds the per-axis delta. Adjacency of
+/// consecutive points holds across the whole trajectory once an embedding
+/// exists, so this is a violated invariant rather than caller input error.
 pub(super) fn for_each_cycle_edge<F>(
     embedded: &EmbeddedTrajectory,
     segment: Range<usize>,
@@ -45,17 +54,21 @@ where
     let mut base: Orthant = start_cube.iter().map(|&value| value as i32).collect();
     let mut dual: Orthant = start_cube.iter().map(|&value| value as i32 - 1).collect();
 
-    // Forward path: each consecutive pair of points.
+    // Forward path: each consecutive pair of points. Every consecutive pair of
+    // the trajectory was shown to land in adjacent cubes before the embedding
+    // existed,.
     for point_index in segment.start..(segment.end - 1) {
         let from = point_to_cube_coords(point_index);
         let to = point_to_cube_coords(point_index + 1);
-        step_between_cubes(&from, &to, dimension, &mut base, &mut dual, &mut visit).map_err(
-            |step| Error::ConsecutiveCubesNonAdjacent {
-                point_index,
-                axis: step.axis,
-                delta: step.delta,
-            },
-        )?;
+        if let Err((axis, delta)) =
+            step_between_cubes(&from, &to, dimension, &mut base, &mut dual, &mut visit)
+        {
+            panic!(
+                "consecutive trajectory points {point_index} and {} land in cubes differing by \
+                 {delta} in axis {axis}",
+                point_index + 1
+            );
+        }
     }
 
     // Closing step: from points[end - 1] to points[start].
@@ -68,28 +81,22 @@ where
         &mut dual,
         &mut visit,
     )
-    .map_err(|step| Error::ConsecutiveCubesNonAdjacent {
-        point_index: segment.end - 1,
-        axis: step.axis,
-        delta: step.delta,
+    .map_err(|(axis, delta)| Error::CycleEndpointsNonAdjacent {
+        start: segment.start,
+        end: segment.end,
+        axis,
+        delta,
     })?;
 
     Ok(())
-}
-
-/// A step whose cube delta exceeds one unit on `axis`, with the signed delta.
-struct NonAdjacentStep {
-    axis: usize,
-    delta: i64,
 }
 
 /// Steps from `from` cube to `to` cube one axis-aligned unit at a time.
 /// Positive axis diffs are processed first (axis 0..dim), then negative diffs.
 /// Each unit step emits one 1-cube edge via `visit`.
 ///
-/// Returns a [`NonAdjacentStep`] naming the offending axis and delta if any
-/// axis diff exceeds one unit in magnitude. The caller attaches the trajectory
-/// point the step leaves from before surfacing the error.
+/// Returns the offending axis and its signed cube delta if any axis difference
+/// exceeds one unit in magnitude.
 fn step_between_cubes<F>(
     from: &[i64],
     to: &[i64],
@@ -97,15 +104,12 @@ fn step_between_cubes<F>(
     base: &mut Orthant,
     dual: &mut Orthant,
     visit: &mut F,
-) -> std::result::Result<(), NonAdjacentStep>
+) -> std::result::Result<(), (usize, i64)>
 where
     F: FnMut(&Cube),
 {
-    for axis in 0..dimension {
-        let delta = to[axis] - from[axis];
-        if delta.abs() > 1 {
-            return Err(NonAdjacentStep { axis, delta });
-        }
+    if let Some(gap) = non_adjacent_axis(from, to) {
+        return Err(gap);
     }
 
     // Positive diffs first.

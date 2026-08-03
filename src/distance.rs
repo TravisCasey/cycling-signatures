@@ -33,9 +33,21 @@ use tile_components::TileComponents;
 
 use crate::{
     error::{Error, Result},
-    metric::Metric,
-    trajectory::Trajectory,
+    metric::MetricPoints,
 };
+
+/// The number of columns each tile owns in the parallel distance
+/// computations that back cycle detection.
+///
+/// The count bounds per-tile memory at `8 * max_length * owned_columns` bytes
+/// per worker without affecting the result, and it is the largest lever on the
+/// memory a detection pass needs.
+///
+/// Lowering tends to improve results to a certain point due to cache residence
+/// and locality. There is a redundant `1 / owned_columns` portion that grows
+/// as the column count is reduced, but it is outweighed in this regime. It
+/// also sets parallel dispatch granularity; another positive of small tiles.
+pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 256;
 
 /// Partitions `range` into tiles of `owned_columns` consecutive columns, each
 /// extended by one read-ahead column where the window allows.
@@ -70,38 +82,37 @@ fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Ve
 /// Components are returned ordered by their least cycle under `(start, end)`,
 /// with each component's cycles in that order. Since no two components share a
 /// cycle, that order is total, which makes the whole returned partition a
-/// function of the trajectory, metric, range, threshold and cap alone: it
+/// function of the measured points, range, threshold and cap alone: it
 /// depends neither on `owned_columns` nor on `backend`.
 ///
 /// # Panics
 ///
-/// Panics if `owned_columns` is 0, or if the trajectory holds more than
+/// Panics if `owned_columns` is 0, or if `points` holds more than
 /// `u32::MAX` points.
 ///
 /// # Errors
 ///
-/// - [`Error::WindowOutOfBounds`] if `range` is outside the trajectory's index
+/// - [`Error::WindowOutOfBounds`] if `range` is outside the point array's index
 ///   space.
 pub(crate) fn detect_components(
-    trajectory: &Trajectory,
-    metric: Metric,
+    points: &MetricPoints<'_>,
     range: Range<usize>,
     threshold: f64,
     max_length: usize,
     owned_columns: usize,
     backend: &ExecutionBackend,
 ) -> Result<Vec<Vec<Range<usize>>>> {
-    if range.start > range.end || range.end > trajectory.len() {
+    if range.start > range.end || range.end > points.len() {
         return Err(Error::WindowOutOfBounds {
             start: range.start,
             end: range.end,
-            trajectory_length: trajectory.len(),
+            trajectory_length: points.len(),
         });
     }
     assert!(owned_columns > 0, "a tile must own at least one column");
     // Tiles report cycle endpoints as point indices narrowed to `u32`.
     assert!(
-        u32::try_from(trajectory.len()).is_ok(),
+        u32::try_from(points.len()).is_ok(),
         "trajectory point count exceeds the supported maximum"
     );
 
@@ -114,20 +125,13 @@ pub(crate) fn detect_components(
 
     let window_end = range.end;
     let tile_column_ranges = enumerate_tile_column_ranges(range, owned_columns);
-    let prepared = metric.prepare(trajectory.points());
 
     let mut per_tile: Vec<(usize, TileComponents)> = ParallelMap::new(backend).run(
         tile_column_ranges.into_iter(),
         |column_range: Range<usize>| {
             let start = column_range.start;
-            let components = detect_tile_components(
-                trajectory,
-                &prepared,
-                column_range,
-                window_end,
-                capped_length,
-                threshold,
-            );
+            let components =
+                detect_tile_components(points, column_range, window_end, capped_length, threshold);
             vec![(start, components)]
         },
     );
@@ -145,8 +149,31 @@ mod tests {
     use chomp3rs::ExecutionBackend;
     use ndarray::{Array2, array};
 
-    use super::detect_components;
-    use crate::{Trajectory, embedded::DEFAULT_OWNED_COLUMNS, error::Error, metric::Metric};
+    use super::{DEFAULT_OWNED_COLUMNS, detect_components};
+    use crate::{
+        Trajectory,
+        error::{Error, Result},
+        metric::Metric,
+    };
+
+    /// Runs detection over `trajectory` under the Euclidean metric.
+    fn detect_euclidean(
+        trajectory: &Trajectory,
+        range: Range<usize>,
+        threshold: f64,
+        max_length: usize,
+        owned_columns: usize,
+    ) -> Result<Vec<Vec<Range<usize>>>> {
+        let points = Metric::Euclidean.over(trajectory.points());
+        detect_components(
+            &points,
+            range,
+            threshold,
+            max_length,
+            owned_columns,
+            &ExecutionBackend::Sequential,
+        )
+    }
 
     fn small_trajectory() -> Trajectory {
         let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0], [2.0, 0.0]];
@@ -156,32 +183,14 @@ mod tests {
     #[test]
     fn rejects_segment_out_of_bounds() {
         let trajectory = small_trajectory();
-        let err = detect_components(
-            &trajectory,
-            Metric::Euclidean,
-            0..10,
-            0.5,
-            5,
-            5,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap_err();
+        let err = detect_euclidean(&trajectory, 0..10, 0.5, 5, 5).unwrap_err();
         assert!(matches!(err, Error::WindowOutOfBounds { .. }));
     }
 
     #[test]
     fn straight_line_trajectory_emits_no_real_recurrence() {
         let trajectory = small_trajectory();
-        let components = detect_components(
-            &trajectory,
-            Metric::Euclidean,
-            0..5,
-            0.5,
-            5,
-            5,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let components = detect_euclidean(&trajectory, 0..5, 0.5, 5, 5).unwrap();
         assert!(
             components.is_empty(),
             "expected no non-trivial components for a straight-line trajectory, got {components:?}",
@@ -208,16 +217,7 @@ mod tests {
             [0.0, 0.0],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let components = detect_components(
-            &trajectory,
-            Metric::Euclidean,
-            0..9,
-            0.6,
-            15,
-            9,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let components = detect_euclidean(&trajectory, 0..9, 0.6, 15, 9).unwrap();
 
         let found = components.iter().any(|component| {
             component
@@ -276,16 +276,7 @@ mod tests {
         let max_length = 170;
 
         let detect = |owned_columns: usize| {
-            detect_components(
-                &trajectory,
-                Metric::Euclidean,
-                0..count,
-                threshold,
-                max_length,
-                owned_columns,
-                &ExecutionBackend::Sequential,
-            )
-            .unwrap()
+            detect_euclidean(&trajectory, 0..count, threshold, max_length, owned_columns).unwrap()
         };
 
         let reference = detect(count);
@@ -347,27 +338,16 @@ mod tests {
         let threshold = 1.0;
         let range = 0..points.nrows();
 
-        let single_tile = super::detect_components(
+        let single_tile = detect_euclidean(
             &trajectory,
-            Metric::Euclidean,
             range.clone(),
             threshold,
             max_length,
             points.nrows(),
-            &ExecutionBackend::Sequential,
         )
         .unwrap();
 
-        let multi_tile = super::detect_components(
-            &trajectory,
-            Metric::Euclidean,
-            range,
-            threshold,
-            max_length,
-            8,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let multi_tile = detect_euclidean(&trajectory, range, threshold, max_length, 8).unwrap();
 
         assert_eq!(single_tile, multi_tile);
 
@@ -396,26 +376,16 @@ mod tests {
         // recurrence without making the tile expensive.
         let max_length = 45;
 
-        let split = detect_components(
+        let split = detect_euclidean(
             &trajectory,
-            Metric::Euclidean,
             0..count,
             CIRCLING_THRESHOLD,
             max_length,
             DEFAULT_OWNED_COLUMNS,
-            &ExecutionBackend::Sequential,
         )
         .unwrap();
-        let whole = detect_components(
-            &trajectory,
-            Metric::Euclidean,
-            0..count,
-            CIRCLING_THRESHOLD,
-            max_length,
-            count,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let whole =
+            detect_euclidean(&trajectory, 0..count, CIRCLING_THRESHOLD, max_length, count).unwrap();
 
         // Without this the comparison can hold vacuously on two empty
         // partitions, which is what a fold-back fixture silently produced here.
@@ -439,14 +409,12 @@ mod tests {
             [side / 2.0, side * 3.0_f64.sqrt() / 2.0],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let components = detect_components(
+        let components = detect_euclidean(
             &trajectory,
-            Metric::Euclidean,
             0..points.nrows(),
             0.9,
             points.nrows(),
             points.nrows(),
-            &ExecutionBackend::Sequential,
         )
         .unwrap();
 
@@ -483,27 +451,16 @@ mod tests {
         let threshold = 1.25;
         let range = 0..points.nrows();
 
-        let single_tile = super::detect_components(
+        let single_tile = detect_euclidean(
             &trajectory,
-            Metric::Euclidean,
             range.clone(),
             threshold,
             max_length,
             points.nrows(),
-            &ExecutionBackend::Sequential,
         )
         .unwrap();
 
-        let multi_tile = super::detect_components(
-            &trajectory,
-            Metric::Euclidean,
-            range,
-            threshold,
-            max_length,
-            6,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let multi_tile = detect_euclidean(&trajectory, range, threshold, max_length, 6).unwrap();
 
         assert_eq!(single_tile, multi_tile);
         for component in &single_tile {
@@ -530,16 +487,7 @@ mod tests {
             [0.0, 0.0],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let components = detect_components(
-            &trajectory,
-            Metric::Euclidean,
-            0..9,
-            0.6,
-            9,
-            9,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let components = detect_euclidean(&trajectory, 0..9, 0.6, 9, 9).unwrap();
 
         let found = components.iter().any(|component| {
             component

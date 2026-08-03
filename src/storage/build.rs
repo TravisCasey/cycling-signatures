@@ -12,8 +12,7 @@ use chomp3rs::ExecutionBackend;
 use super::{Component, Cycle, CycleStorage};
 use crate::{
     EmbeddedTrajectory, F2Vector,
-    distance::detect_components,
-    embedded::DEFAULT_OWNED_COLUMNS,
+    distance::{DEFAULT_OWNED_COLUMNS, detect_components},
     error::{Error, Result},
     storage::interval_subsumption::IntervalSubsumptionIndex,
     util::range::normalize_segment,
@@ -32,8 +31,8 @@ impl CycleStorage {
     /// - [`Error::WindowOutOfBounds`] if `segment` does not fit inside
     ///   `0..embedded.trajectory().len()`.
     /// - [`Error::InvalidMaxLength`] if `max_length < 2`.
-    /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
-    ///   embedded.bound()`.
+    /// - [`Error::ThresholdBelowResolution`] if `threshold <
+    ///   embedded.resolution()`.
     /// - [`Error::ThresholdAboveCubeSide`] if `threshold` is at or above the
     ///   cube side.
     pub fn build(
@@ -59,7 +58,7 @@ impl CycleStorage {
     ///
     /// `range` must already be normalized and `max_length` already validated
     /// as at least 2; `threshold` must already be at least the embedded
-    /// trajectory's consecutive-distance bound and strictly below the cube
+    /// trajectory's consecutive-point resolution and strictly below the cube
     /// side.
     #[allow(clippy::missing_panics_doc)]
     fn assemble(
@@ -69,13 +68,11 @@ impl CycleStorage {
         max_length: usize,
         backend: &ExecutionBackend,
     ) -> Result<Self> {
-        let trajectory = embedded.trajectory();
-        let metric = embedded.metric();
         let fingerprint = embedded.fingerprint();
+        let metric_points = embedded.metric_points();
 
         let raw_components = detect_components(
-            trajectory,
-            metric,
+            &metric_points,
             range.clone(),
             threshold,
             max_length,
@@ -83,17 +80,7 @@ impl CycleStorage {
             backend,
         )?;
 
-        // Walk one representative per component for its class. Every cycle in a
-        // component carries the same class, so the shortest is chosen:
-        // walk cost grows with cycle length.
-        let mut component_classes: Vec<F2Vector> = Vec::with_capacity(raw_components.len());
-        for cycles in &raw_components {
-            let representative = cycles
-                .iter()
-                .min_by_key(|cycle| cycle.end - cycle.start)
-                .expect("connected components are nonempty by construction");
-            component_classes.push(embedded.cycle_class(representative.clone())?);
-        }
+        let component_classes = embedded.component_classes(&raw_components)?;
 
         // Deduplicate classes, recording the class index for each component.
         let mut classes: Vec<F2Vector> = Vec::new();
@@ -111,14 +98,13 @@ impl CycleStorage {
         }
 
         // Compute birth and assemble Components.
-        let points = trajectory.points();
         let mut components: Vec<Component> = Vec::with_capacity(raw_components.len());
         let mut all_cycle_records: Vec<(Range<u32>, u32, f64)> = Vec::new();
 
         for (component_index, cycles) in raw_components.into_iter().enumerate() {
             let mut cycle_records: Vec<Cycle> = Vec::with_capacity(cycles.len());
             for cycle in cycles {
-                let birth = metric.distance(points.row(cycle.start), points.row(cycle.end - 1));
+                let birth = metric_points.distance(cycle.start, cycle.end - 1);
                 let range_u32 = u32::try_from(cycle.start).expect("cycle start exceeds u32::MAX")
                     ..u32::try_from(cycle.end).expect("cycle end exceeds u32::MAX");
                 cycle_records.push(Cycle {
