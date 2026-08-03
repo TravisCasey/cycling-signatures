@@ -18,10 +18,10 @@ use crate::{
 
 /// A single detected near-recurrent cycle in a trajectory.
 ///
-/// A cycle is a segment of trajectory samples whose first and last points are
+/// A cycle is a segment of trajectory points whose first and last points are
 /// within the adjacency threshold of each other. ``range`` gives the half-open
-/// sample-index span, ``birth`` gives the distance between the endpoints, and
-/// ``length`` gives the number of sample points the cycle covers.
+/// point-index span, ``birth`` gives the distance between the endpoints, and
+/// ``length`` gives the number of points the cycle covers.
 #[pyclass(name = "Cycle")]
 pub(crate) struct PyCycle {
     pub(crate) inner: Cycle,
@@ -31,7 +31,7 @@ pub(crate) struct PyCycle {
 ///
 /// The cycles in one component all contribute the same class to cover homology.
 /// ``class_id`` identifies which homology class that is within the parent
-/// ``CycleStorage``, and ``coverage`` gives the overall sample-index span that
+/// ``CycleStorage``, and ``coverage`` gives the overall point-index span that
 /// the component's cycles collectively cover.
 ///
 /// ``len`` gives the number of cycles, and indexing returns the ``Cycle`` at a
@@ -61,13 +61,13 @@ pub(crate) struct PyCycleStorage {
 
 #[pymethods]
 impl PyCycle {
-    /// Returns the half-open sample-index range ``(start, stop)`` covered by
+    /// Returns the half-open point-index range ``(start, stop)`` covered by
     /// this cycle.
     ///
     /// Returns
     /// -------
     /// tuple of int
-    ///     The ``(start, stop)`` sample indices of the cycle.
+    ///     The ``(start, stop)`` point indices of the cycle.
     #[must_use]
     fn range(&self) -> (u32, u32) {
         let range = self.inner.range();
@@ -85,7 +85,7 @@ impl PyCycle {
         self.inner.birth()
     }
 
-    /// Returns the number of sample points covered by this cycle.
+    /// Returns the number of points covered by this cycle.
     ///
     /// Returns
     /// -------
@@ -127,7 +127,7 @@ impl PyComponent {
         self.inner.class_id()
     }
 
-    /// Returns the half-open sample-index range ``(start, stop)`` collectively
+    /// Returns the half-open point-index range ``(start, stop)`` collectively
     /// covered by all cycles in this component.
     ///
     /// Returns
@@ -240,14 +240,14 @@ impl PyCycleStorage {
     /// embedded : ``EmbeddedTrajectory``
     ///     The embedded trajectory to detect cycles in.
     /// segment : range or tuple of int
-    ///     A half-open range of sample indices, given as a Python ``range`` or
+    ///     A half-open range of point indices, given as a Python ``range`` or
     ///     a ``(start, stop)`` integer tuple.
     /// max_length : int
     ///     The largest cycle point count to detect. Must be at least ``2``.
     /// threshold : float
     ///     The largest endpoint distance admitted as a cycle. Must be at
     ///     least the embedded trajectory's ``bound`` and strictly below ``1.0``
-    ///     (the unit cube side).
+    ///     (the cube side).
     ///
     /// Returns
     /// -------
@@ -286,13 +286,13 @@ impl PyCycleStorage {
         Ok(Self { inner })
     }
 
-    /// Returns the half-open sample-index range ``(start, stop)`` covered by
+    /// Returns the half-open point-index range ``(start, stop)`` covered by
     /// this storage.
     ///
     /// Returns
     /// -------
     /// tuple of int
-    ///     The ``(start, stop)`` sample indices of the analyzed extent.
+    ///     The ``(start, stop)`` point indices of the analyzed extent.
     #[must_use]
     fn extent(&self) -> (u32, u32) {
         let range = self.inner.extent();
@@ -456,7 +456,7 @@ impl PyCycleStorage {
     /// Parameters
     /// ----------
     /// segment : range or tuple of int
-    ///     A half-open range of sample indices, given as a Python ``range`` or
+    ///     A half-open range of point indices, given as a Python ``range`` or
     ///     a ``(start, stop)`` integer tuple. Must fit inside the extent.
     ///
     /// Returns
@@ -476,12 +476,12 @@ impl PyCycleStorage {
     }
 
     /// Returns the ids of all components with a stored cycle covering the
-    /// sample index ``point``, in ascending order.
+    /// point index ``point``, in ascending order.
     ///
     /// Parameters
     /// ----------
     /// point : int
-    ///     A sample index to test for coverage.
+    ///     A point index to test for coverage.
     ///
     /// Returns
     /// -------

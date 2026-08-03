@@ -1,4 +1,4 @@
-67
+72
 2D
 2Z
 Hien
@@ -43,7 +43,6 @@ collinear
 accessor
 deduplication
 subsumption
-accessors
 densify
 endianness
 structs
@@ -66,3 +65,9 @@ discriminants
 waypoint
 waypoints
 waypoint's
+resampling
+unadmitted
+parameterization
+downsampling
+deduplicating
+embeddings

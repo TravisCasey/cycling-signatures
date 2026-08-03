@@ -34,7 +34,7 @@ pub(crate) fn resolve_index(index: isize, length: usize) -> Option<usize> {
 /// - A Python `range` with `step == 1`, e.g. `range(2, 10)`.
 /// - A `(start, stop)` tuple of integers, e.g. `(2, 10)`.
 ///
-/// Both forms describe the half-open range `start..stop` of sample indices.
+/// Both forms describe the half-open range `start..stop` of point indices.
 ///
 /// # Errors
 ///

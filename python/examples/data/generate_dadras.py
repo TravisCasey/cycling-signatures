@@ -26,28 +26,30 @@ import _support
 
 # Sphere-bundle parameters are interdependent; see the SphereBundle metric
 # docs for the rationale. SPHERE_RADIUS sets the interpolator's direction
-# normalization radius, which the metric measures against directly. The
-# resample bound is the resolution chosen from below: the build detects at an
-# explicit threshold just under the unit cube side, so the stored band runs
-# from the resample bound up to that threshold. The lower bound is tuned against
-# the raw trajectory's sample spacing so resampling inserts a low number of
-# extra points. The raw samples are spaced by distance rather than time, so
-# MAX_LENGTH caps cycles by their length through state space. Boxsize is large
-# enough that recurrences are frequent while the cover still resolves the
-# attractor.
+# normalization radius, which the metric measures against directly.
+# RESAMPLE_SPACING is the dense-placement spacing that feeds the cover:
+# tuned against the raw trajectory's own sample spacing so resampling inserts
+# a low number of extra points, fine enough that the cover resolves the
+# attractor. DOWNSAMPLE_SPACING is the detection resolution: the build
+# detects at an explicit threshold just under the cube side, so the stored
+# band runs from the achieved resolution up to the threshold. The raw
+# samples are spaced by distance rather than time, so MAX_LENGTH caps cycles
+# by their length through state space. Boxsize is large enough that
+# recurrences are frequent while the cover still resolves the attractor.
 BOXSIZE = 12.0
 SPHERE_RADIUS = 3.5
-RESAMPLE_BOUND = 0.45
+RESAMPLE_SPACING = 0.45
 MAX_LENGTH = 1600
 THRESHOLD = math.nextafter(1.0, 0.0)
+DOWNSAMPLE_SPACING = THRESHOLD / 2
 
 
 def build() -> tuple[Path, float, float]:
     """Build the storage; return its path, inserted fraction, and bound.
 
-    The fraction is the share of bisection-inserted rows the resample
-    added, relative to the original sample count. The bound is the
-    trajectory's achieved resolution, the recorded band's lower end.
+    The fraction is the share of resample-inserted rows relative to the raw
+    sample count. The bound is the detection trajectory's achieved
+    resolution, the recorded band's lower end.
     """
     raw_path = _support.dadras_raw()
     points = np.load(raw_path)
@@ -56,13 +58,15 @@ def build() -> tuple[Path, float, float]:
     spline = cs.CubicSpline(np.arange(sample_count, dtype=np.float64), points / BOXSIZE)
     interpolator = cs.SphereBundleInterpolator(spline, SPHERE_RADIUS)
     metric = cs.SphereBundle()
-    trajectory = cs.Trajectory.resample(interpolator, metric, RESAMPLE_BOUND)
-    inserted_fraction = (trajectory.point_count() - sample_count) / sample_count
 
-    embedded = cs.EmbeddedTrajectory(trajectory, metric)
-    del points, spline, interpolator, trajectory
+    dense = cs.Trajectory.resample(interpolator, metric, RESAMPLE_SPACING)
+    cover = cs.CubicalCover(dense)
+    detection = dense.downsample(metric, DOWNSAMPLE_SPACING)
+    inserted_fraction = (len(dense) - sample_count) / sample_count
+    del dense, points, spline, interpolator
 
-    storage = cs.CycleStorage.build(embedded, range(0, sample_count), MAX_LENGTH, THRESHOLD)
+    embedded = cs.EmbeddedTrajectory(detection, cover, metric)
+    storage = cs.CycleStorage.build(embedded, range(0, len(detection)), MAX_LENGTH, THRESHOLD)
     target = raw_path.parent / "dadras_storage.cyc"
     storage.save(target)
     return target, inserted_fraction, embedded.bound()
@@ -77,7 +81,7 @@ def report(storage_path: Path, inserted_fraction: float, achieved_bound: float) 
         f"classes {len(storage.classes())}, components {len(storage.components())}"
     )
     print(f"band [{achieved_bound:.6f}, {storage.threshold():.6f}]")
-    print(f"inserted points {inserted_fraction:.2%} of original samples")
+    print(f"inserted points {inserted_fraction:.2%} of raw samples")
 
 
 if __name__ == "__main__":

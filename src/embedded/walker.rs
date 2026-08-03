@@ -6,25 +6,19 @@
 use std::ops::Range;
 
 use chomp3rs::{Cube, Orthant};
-use ndarray::Array2;
 
 use super::EmbeddedTrajectory;
-use crate::{
-    cover::floor_to_cube,
-    error::{Error, Result},
-    trajectory::Trajectory,
-};
+use crate::error::{Error, Result};
 
 /// Walks the cubical path of the cycle described by `segment`, invoking
 /// `visit` once per 1-cube edge traversed.
 ///
-/// `segment` is the already-normalized half-open range in **point-index
-/// space** (i.e., indices into `trajectory.points()`); the caller has
-/// translated from sample-index space if needed and validated endpoint
-/// cube adjacency. The forward path walks consecutive points
-/// `segment.start..segment.end` in order; the closing path connects
-/// `points[segment.end - 1]` back to `points[segment.start]` via direct
-/// cube-to-cube steps.
+/// `segment` is the already-normalized half-open range of trajectory points,
+/// whose endpoint cube adjacency the caller has validated. The forward path
+/// walks consecutive points `segment.start..segment.end` in order; the closing
+/// path connects `points[segment.end - 1]` back to `points[segment.start]`.
+/// Each step, closing included, is one staircase between the cubes of its two
+/// points.
 ///
 /// Each step validates that the cube delta is in `{-1, 0, 1}` per axis,
 /// returning `ConsecutiveCubesNonAdjacent` on violation.
@@ -137,50 +131,4 @@ where
     }
 
     Ok(())
-}
-
-/// Walks `trajectory.points()`, floors each row to its `i64` cube, and returns
-/// the canonical (sorted, deduplicated) cube array paired with a per-row
-/// cube-index vector. The per-row indices reference the returned canonical
-/// array.
-pub(super) fn walk_and_canonicalize(trajectory: &Trajectory) -> (Array2<i64>, Vec<usize>) {
-    let points = trajectory.points();
-    let dimension = points.ncols();
-    let num_rows = points.nrows();
-
-    let mut cube_buffer: Vec<i64> = Vec::with_capacity(dimension);
-
-    // (cube_vector, point_index) pairs.
-    let mut pairs: Vec<(Vec<i64>, usize)> = (0..num_rows)
-        .map(|point_index| {
-            floor_to_cube(points.row(point_index), &mut cube_buffer);
-            (cube_buffer.clone(), point_index)
-        })
-        .collect();
-
-    // Sort by cube vector lexicographically
-    pairs.sort_by(|left, right| left.0.cmp(&right.0));
-
-    // Build the deduplicated cube list and a point-index -> cube-index map.
-    let mut unique_cubes: Vec<Vec<i64>> = Vec::new();
-    let mut point_to_cube: Vec<usize> = vec![0; num_rows];
-    for (cube, point_index) in pairs {
-        let cube_index = match unique_cubes.last() {
-            Some(last) if *last == cube => unique_cubes.len() - 1,
-            _ => {
-                unique_cubes.push(cube);
-                unique_cubes.len() - 1
-            },
-        };
-        point_to_cube[point_index] = cube_index;
-    }
-
-    let mut canonical = Array2::<i64>::zeros((unique_cubes.len(), dimension));
-    for (cube_index, cube_vec) in unique_cubes.iter().enumerate() {
-        for (column, &value) in cube_vec.iter().enumerate() {
-            canonical[(cube_index, column)] = value;
-        }
-    }
-
-    (canonical, point_to_cube)
 }

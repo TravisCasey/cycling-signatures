@@ -56,8 +56,8 @@ impl TileComponents {
         self.offsets.len() - 1
     }
 
-    /// The cycles of the component at `index`, as `(start, end)` pairs in
-    /// original-index space.
+    /// The cycles of the component at `index`, as `(start, end)` pairs of
+    /// trajectory point indices.
     ///
     /// # Panics
     ///

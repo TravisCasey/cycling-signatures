@@ -6,7 +6,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use cycling_signatures::Trajectory;
-use numpy::{PyArray2, PyReadonlyArray2, ToPyArray};
+use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
 use pyo3::{exceptions::PyTypeError, prelude::*};
 
 use crate::{
@@ -15,22 +15,30 @@ use crate::{
     metric::metric_from_py,
 };
 
-/// A sampled trajectory, optionally with fill points inserted between samples.
+/// An ordered array of points together with a strictly increasing
+/// parameterization.
 ///
-/// Wraps a sequence of points in d-dimensional space, enforcing that all
-/// coordinates are finite. When constructed via ``resample``, additional
-/// interpolated points are inserted between consecutive samples so that no two
-/// adjacent points are more than ``bound`` apart under the given metric.
+/// Constructed directly from points, densely from an interpolator via
+/// ``resample``, or thinned from another trajectory via ``downsample``.
+/// Nothing in cube covering, cycle detection, or walking reads the
+/// parameterization: it is carried through unchanged for the caller to
+/// interpret (integration time, arc length, or a raw sample's row number).
 ///
 /// Parameters
 /// ----------
 /// points : ndarray
-///     A two-dimensional array with at least one row, each row one sample.
+///     A two-dimensional array with at least one row, each row one point.
+/// parameters : ndarray, optional
+///     A one-dimensional array of strictly increasing parameter values, one
+///     per row of ``points``. Defaults to the index parameterization
+///     ``0.0, 1.0, ...``.
 ///
 /// Raises
 /// ------
 /// ``ValueError``
-///     If ``points`` has zero rows or if any coordinate is not finite.
+///     If ``points`` has zero rows, if any coordinate is not finite, if
+///     ``parameters`` does not have one value per row, or if ``parameters``
+///     is not strictly increasing.
 #[pyclass(name = "Trajectory")]
 pub(crate) struct PyTrajectory {
     pub(crate) inner: Arc<Trajectory>,
@@ -38,62 +46,74 @@ pub(crate) struct PyTrajectory {
 
 #[pymethods]
 impl PyTrajectory {
-    /// Constructs a trajectory from a two-dimensional array of sample points.
+    /// Constructs a trajectory from a two-dimensional array of points.
     #[new]
+    #[pyo3(signature = (points, parameters=None))]
     #[allow(clippy::needless_pass_by_value)]
-    fn new(points: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
-        let inner = Trajectory::new(points.as_array()).map_err(to_pyerr)?;
+    fn new(
+        points: PyReadonlyArray2<'_, f64>,
+        parameters: Option<PyReadonlyArray1<'_, f64>>,
+    ) -> PyResult<Self> {
+        let inner = match parameters {
+            Some(parameters) => {
+                let parameters: Vec<f64> = parameters.as_array().iter().copied().collect();
+                Trajectory::with_parameters(points.as_array(), &parameters).map_err(to_pyerr)?
+            },
+            None => Trajectory::new(points.as_array()).map_err(to_pyerr)?,
+        };
         Ok(Self {
             inner: Arc::new(inner),
         })
     }
 
-    /// Constructs a trajectory by sampling an interpolator and inserting fill
-    /// points between the original samples.
-    ///
-    /// Starting from the interpolator's original sample points, bisects each
-    /// interval until consecutive points are no more than ``bound`` apart under
-    /// ``metric``. The ``original_count`` of the returned trajectory equals the
-    /// number of knots in the interpolator.
+    /// Constructs a trajectory by sampling an interpolator, inserting points
+    /// between its knots until consecutive points are no more than
+    /// ``spacing`` apart under ``metric``. Records each emitted point's
+    /// interpolation parameter.
     ///
     /// Parameters
     /// ----------
     /// interpolator : ``CubicSpline`` or ``SphereBundleInterpolator``
     ///     The interpolator to sample.
     /// metric : ``Euclidean`` or ``SphereBundle``
-    ///     The metric that measures consecutive-point spacing.
-    /// bound : float
-    ///     The largest allowed distance between consecutive points.
+    ///     The metric that measures point spacing.
+    /// spacing : float
+    ///     The largest allowed distance between consecutive points. Must be
+    ///     positive. A spacing of at most the cube side, ``1.0``, keeps
+    ///     consecutive points in intersecting cubes; a coarser spacing is
+    ///     accepted here and rejected when a cover is built from the result.
     ///
     /// Returns
     /// -------
     /// ``Trajectory``
-    ///     The resampled trajectory with fill points inserted.
+    ///     The resampled trajectory with inserted points and their recorded
+    ///     parameters.
     ///
     /// Raises
     /// ------
     /// ``ValueError``
-    ///     If the interpolator has fewer than two knots, if a sampled value is
-    ///     not finite, or if bisection cannot reach ``bound``.
+    ///     If ``spacing`` is not positive (including if it is NaN), if the
+    ///     interpolator has fewer than two knots, if a sampled value is not
+    ///     finite, or if bisection cannot reach ``spacing``.
     /// ``TypeError``
     ///     If ``interpolator`` or ``metric`` is not a recognized type.
     #[staticmethod]
     fn resample(
         interpolator: &Bound<'_, PyAny>,
         metric: &Bound<'_, PyAny>,
-        bound: f64,
+        spacing: f64,
     ) -> PyResult<Self> {
         let metric = metric_from_py(metric)?;
         if let Ok(spline) = interpolator.cast::<PyCubicSpline>() {
             let inner =
-                Trajectory::resample(&spline.borrow().inner, metric, bound).map_err(to_pyerr)?;
+                Trajectory::resample(&spline.borrow().inner, metric, spacing).map_err(to_pyerr)?;
             return Ok(Self {
                 inner: Arc::new(inner),
             });
         }
         if let Ok(bundle) = interpolator.cast::<PySphereBundleInterpolator>() {
             let inner =
-                Trajectory::resample(&bundle.borrow().inner, metric, bound).map_err(to_pyerr)?;
+                Trajectory::resample(&bundle.borrow().inner, metric, spacing).map_err(to_pyerr)?;
             return Ok(Self {
                 inner: Arc::new(inner),
             });
@@ -104,10 +124,48 @@ impl PyTrajectory {
         )))
     }
 
-    /// Returns the trajectory points as a two-dimensional array.
+    /// Returns a new trajectory thinned to a subset of this trajectory's
+    /// points at most ``spacing`` apart under ``metric``.
     ///
-    /// For a resampled trajectory, the array includes the interpolated fill
-    /// rows in addition to the original sample rows. Returns a fresh copy.
+    /// A greedy forward walk always keeps the first and last point, and
+    /// keeps an intermediate point once the next point would fall further
+    /// than ``spacing`` from the last kept point. Any spacing up to the
+    /// intended detection threshold is valid; a spacing at most half the
+    /// threshold best preserves the merges that group recurrent cycles into
+    /// components.
+    ///
+    /// Only the lower end is validated here. A spacing coarse enough to put
+    /// consecutive kept points more than one cube apart surfaces later, when
+    /// embedding, as a non-adjacent-cubes error.
+    ///
+    /// Parameters
+    /// ----------
+    /// metric : ``Euclidean`` or ``SphereBundle``
+    ///     The metric that measures point spacing.
+    /// spacing : float
+    ///     The largest allowed distance between consecutive kept points.
+    ///
+    /// Returns
+    /// -------
+    /// ``Trajectory``
+    ///     A new, thinned trajectory.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If ``spacing`` is less than this trajectory's own maximum
+    ///     consecutive-point distance (including if it is NaN).
+    /// ``TypeError``
+    ///     If ``metric`` is not a recognized type.
+    fn downsample(&self, metric: &Bound<'_, PyAny>, spacing: f64) -> PyResult<Self> {
+        let metric = metric_from_py(metric)?;
+        let inner = self.inner.downsample(metric, spacing).map_err(to_pyerr)?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
+    }
+
+    /// Returns the trajectory points as a two-dimensional array.
     ///
     /// Returns
     /// -------
@@ -118,45 +176,38 @@ impl PyTrajectory {
         self.inner.points().to_pyarray(py)
     }
 
-    /// Returns the number of points in the trajectory.
+    /// Returns the trajectory's parameterization.
     ///
-    /// This counts every row of ``points``, including the interpolated fill
-    /// rows a resampled trajectory carries. For the number of original
-    /// samples, use ``original_count``.
+    /// One value per point, strictly increasing. Defaults to the index
+    /// parameterization ``0.0, 1.0, ...`` unless supplied explicitly at
+    /// construction, recorded by ``resample`` (the interpolation parameter
+    /// each point was sampled at), or carried through by ``downsample`` (the
+    /// entries of the points it kept).
     ///
     /// Returns
     /// -------
-    /// int
-    ///     The number of trajectory points.
+    /// ndarray
+    ///     A one-dimensional array of parameter values, one per point.
     #[must_use]
-    fn point_count(&self) -> usize {
-        self.inner.len()
+    fn parameters<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        self.inner.parameters().to_pyarray(py)
     }
 
-    /// Returns the number of original sample points.
-    ///
-    /// For a trajectory built with ``Trajectory(points)``, this equals the row
-    /// count of ``points``. For a resampled trajectory, this equals the number
-    /// of knots in the interpolator.
-    ///
-    /// Returns
-    /// -------
-    /// int
-    ///     The number of original samples.
-    #[must_use]
-    fn original_count(&self) -> usize {
-        self.inner.original_count()
+    /// Returns the number of points in the trajectory.
+    fn __len__(&self) -> usize {
+        self.inner.len()
     }
 
     /// Returns a content fingerprint of the trajectory.
     ///
-    /// Two trajectories with identical point data have the same fingerprint.
-    /// Typically used to verify correct serialization and deserialization.
+    /// Two trajectories with identical point and parameter data have the
+    /// same fingerprint. Typically used to verify correct serialization and
+    /// deserialization.
     ///
     /// Returns
     /// -------
     /// int
-    ///     A fingerprint identifying the point data.
+    ///     A fingerprint identifying the trajectory's content.
     #[must_use]
     fn fingerprint(&self) -> u64 {
         self.inner.fingerprint()

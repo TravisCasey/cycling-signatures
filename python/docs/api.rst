@@ -21,10 +21,13 @@ Interpolation
 .. autoclass:: cycling_signatures.SphereBundleInterpolator
    :members:
 
-Trajectories
-------------
+Trajectories and covers
+-----------------------
 
 .. autoclass:: cycling_signatures.Trajectory
+   :members:
+
+.. autoclass:: cycling_signatures.CubicalCover
    :members:
 
 .. autoclass:: cycling_signatures.EmbeddedTrajectory

@@ -30,12 +30,12 @@ impl CycleStorage {
     /// # Errors
     ///
     /// - [`Error::WindowOutOfBounds`] if `segment` does not fit inside
-    ///   `0..embedded.trajectory().original_count()`.
+    ///   `0..embedded.trajectory().len()`.
     /// - [`Error::InvalidMaxLength`] if `max_length < 2`.
     /// - [`Error::ThresholdBelowTrajectoryBound`] if `threshold <
     ///   embedded.bound()`.
     /// - [`Error::ThresholdAboveCubeSide`] if `threshold` is at or above the
-    ///   unit cube side.
+    ///   cube side.
     pub fn build(
         embedded: &EmbeddedTrajectory,
         segment: impl RangeBounds<usize>,
@@ -43,7 +43,7 @@ impl CycleStorage {
         threshold: f64,
         backend: &ExecutionBackend,
     ) -> Result<Self> {
-        let range = normalize_segment(segment, embedded.trajectory().original_count())?;
+        let range = normalize_segment(segment, embedded.trajectory().len())?;
         if max_length < 2 {
             return Err(Error::InvalidMaxLength { max_length });
         }
@@ -59,7 +59,7 @@ impl CycleStorage {
     ///
     /// `range` must already be normalized and `max_length` already validated
     /// as at least 2; `threshold` must already be at least the embedded
-    /// trajectory's consecutive-distance bound and strictly below the unit cube
+    /// trajectory's consecutive-distance bound and strictly below the cube
     /// side.
     #[allow(clippy::missing_panics_doc)]
     fn assemble(
@@ -112,17 +112,13 @@ impl CycleStorage {
 
         // Compute birth and assemble Components.
         let points = trajectory.points();
-        let original_indices = trajectory.original_indices();
         let mut components: Vec<Component> = Vec::with_capacity(raw_components.len());
         let mut all_cycle_records: Vec<(Range<u32>, u32, f64)> = Vec::new();
 
         for (component_index, cycles) in raw_components.into_iter().enumerate() {
             let mut cycle_records: Vec<Cycle> = Vec::with_capacity(cycles.len());
             for cycle in cycles {
-                let birth = metric.distance(
-                    points.row(original_indices[cycle.start]),
-                    points.row(original_indices[cycle.end - 1]),
-                );
+                let birth = metric.distance(points.row(cycle.start), points.row(cycle.end - 1));
                 let range_u32 = u32::try_from(cycle.start).expect("cycle start exceeds u32::MAX")
                     ..u32::try_from(cycle.end).expect("cycle end exceeds u32::MAX");
                 cycle_records.push(Cycle {

@@ -4,7 +4,7 @@
 //! Component-first cycle storage.
 //!
 //! On-disk cache for all near-recurrent cycles over a trajectory extent
-//! (the range of original indices the storage was built over). Cycles are
+//! (the range of trajectory points the storage was built over). Cycles are
 //! grouped by their connected component in the below-threshold distance
 //! graph, paired with the homology class shared across the component.
 
@@ -36,7 +36,7 @@ pub struct Cycle {
 }
 
 impl Cycle {
-    /// The cycle's half-open segment in original-index space.
+    /// The cycle's half-open segment of trajectory points.
     #[must_use]
     pub fn range(&self) -> Range<u32> {
         self.range.clone()
@@ -135,7 +135,7 @@ pub struct CycleStorage {
 }
 
 impl CycleStorage {
-    /// Half-open range of original indices the storage was built over.
+    /// Half-open range of trajectory points the storage was built over.
     #[must_use]
     pub fn extent(&self) -> Range<u32> {
         self.extent.clone()
@@ -277,11 +277,10 @@ impl CycleStorage {
         ))
     }
 
-    /// Component IDs whose stored cycles cover sample index `point`.
+    /// Component IDs whose stored cycles cover the trajectory point `point`.
     ///
-    /// `point` is a sample index in original-index space, consistent with the
-    /// original indices stored in [`Self::extent`]. Returns an empty vector
-    /// when `point` is outside [`Self::extent`]. IDs are sorted ascending.
+    /// Returns an empty vector when `point` is outside [`Self::extent`]. IDs
+    /// are sorted ascending.
     #[allow(clippy::missing_panics_doc)]
     #[must_use]
     pub fn components_covering(&self, point: usize) -> Vec<u32> {
@@ -320,14 +319,24 @@ mod tests {
     use super::CycleStorage;
     #[cfg(feature = "serde")]
     use crate::serialization::{load_from_reader, save_to_writer};
-    use crate::{EmbeddedTrajectory, SignatureGenerator, Trajectory, error::Error, metric::Metric};
+    use crate::{
+        CubicalCover, EmbeddedTrajectory, SignatureGenerator, Trajectory, error::Error,
+        metric::Metric,
+    };
+
+    /// Covers `trajectory`'s own cubes and embeds it under the Euclidean
+    /// metric.
+    fn embed_euclidean(trajectory: Trajectory) -> EmbeddedTrajectory {
+        let cover = CubicalCover::build(&trajectory, &ExecutionBackend::Sequential).unwrap();
+        EmbeddedTrajectory::new(trajectory, cover, Metric::Euclidean).unwrap()
+    }
 
     /// Inserts evenly spaced intermediate points between consecutive
     /// `waypoints` so that no step's Euclidean distance exceeds `max_step`.
     ///
     /// Used to turn a short list of cube-center waypoints into a densely
     /// sampled trajectory whose consecutive-distance bound stays below the
-    /// unit cube side, while every waypoint's cube membership (its
+    /// cube side, while every waypoint's cube membership (its
     /// coordinate floors) is unaffected: only points strictly between
     /// waypoints are added.
     fn densify_path(waypoints: &[[f64; 2]], max_step: f64) -> Array2<f64> {
@@ -374,8 +383,7 @@ mod tests {
             .collect();
         let points = densify_path(&waypoints, 0.4);
         let trajectory = Trajectory::new(points.view()).unwrap();
-        EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
-            .unwrap()
+        embed_euclidean(trajectory)
     }
 
     /// Two square-annulus holes (missing centers at cube `(1, 1)` and cube
@@ -433,8 +441,7 @@ mod tests {
 
         let points = densify_path(&waypoints, 0.4);
         let trajectory = Trajectory::new(points.view()).unwrap();
-        EmbeddedTrajectory::new(trajectory, Metric::Euclidean, &ExecutionBackend::Sequential)
-            .unwrap()
+        embed_euclidean(trajectory)
     }
 
     fn cycle_set(storage: &CycleStorage) -> BTreeSet<(u32, u32)> {
@@ -458,7 +465,7 @@ mod tests {
         // reaches (its cover has rank one). Ring A's cut-corner recurrence
         // births at 0.8; ring B's offset closing births at 0.9.
         let embedded = two_hole_trajectory();
-        let max_length = embedded.trajectory().original_count();
+        let max_length = embedded.trajectory().len();
         let band_top = 0.95;
         let storage = CycleStorage::build(
             &embedded,
@@ -533,7 +540,7 @@ mod tests {
         // cycles directly at `t` through the in-memory walker, for every
         // segment and every threshold inside the valid band.
         let embedded = loop_trajectory();
-        let max_length = embedded.trajectory().original_count();
+        let max_length = embedded.trajectory().len();
         let trajectory_bound = embedded.bound();
         let band_top = 0.95;
         let storage = CycleStorage::build(
@@ -575,7 +582,7 @@ mod tests {
     fn signature_unbounded_start_resolves_to_extent_start() {
         // A storage built over a subsegment of the trajectory: `signature(..)`
         // must resolve the unbounded start to the storage's own extent start,
-        // not to sample index 0, while an explicit `0..` still falls outside
+        // not to point index 0, while an explicit `0..` still falls outside
         // the extent and errors.
         let embedded = loop_trajectory();
         let sub_segment = 4_usize..13_usize;
@@ -653,11 +660,20 @@ mod tests {
                 if (threshold - lower_threshold).abs() < 1e-12
                     && (bound - embedded.bound()).abs() < 1e-12
         ));
+
+        // A NaN threshold fails every comparison, so the band check must be
+        // written to reject it rather than let it pass both ends.
+        let nan_outcome =
+            CycleStorage::build(&embedded, .., 25, f64::NAN, &ExecutionBackend::Sequential);
+        assert!(matches!(
+            nan_outcome,
+            Err(Error::ThresholdBelowTrajectoryBound { threshold, .. }) if threshold.is_nan()
+        ));
     }
 
     #[test]
     fn threshold_at_cube_side_is_rejected() {
-        // A threshold of exactly 1.0 (the unit cube side) is never valid: the
+        // A threshold of exactly 1.0 (the cube side) is never valid: the
         // filtered-signature merge gate needs its half-threshold ball radius
         // strictly below 1/2. The largest representable value strictly below
         // it is still in-band for this fixture (bound() is far below 1) and
@@ -683,13 +699,13 @@ mod tests {
     #[test]
     fn max_length_behavior() {
         let embedded = loop_trajectory();
-        let original_count = embedded.trajectory().original_count();
+        let point_count = embedded.trajectory().len();
         let small =
             CycleStorage::build(&embedded, .., 4, 0.95, &ExecutionBackend::Sequential).unwrap();
         let medium = CycleStorage::build(
             &embedded,
             ..,
-            original_count,
+            point_count,
             0.95,
             &ExecutionBackend::Sequential,
         )
@@ -697,7 +713,7 @@ mod tests {
         let huge = CycleStorage::build(
             &embedded,
             ..,
-            10 * original_count,
+            10 * point_count,
             0.95,
             &ExecutionBackend::Sequential,
         )
@@ -719,7 +735,7 @@ mod tests {
     fn save_load_round_trip_preserves_queries() {
         let embedded = loop_trajectory();
         let threshold = 0.95;
-        let max_length = embedded.trajectory().original_count();
+        let max_length = embedded.trajectory().len();
         let storage = CycleStorage::build(
             &embedded,
             ..,
@@ -737,12 +753,8 @@ mod tests {
         // caller can confirm it against the embedded trajectory.
         assert_eq!(loaded_storage.fingerprint(), embedded.fingerprint());
 
-        let segments: &[Range<usize>] = &[
-            0..embedded.trajectory().original_count(),
-            0..8,
-            8..max_length,
-            4..13,
-        ];
+        let segments: &[Range<usize>] =
+            &[0..embedded.trajectory().len(), 0..8, 8..max_length, 4..13];
         for segment in segments {
             // `CyclingSignature` has no equality of its own, so compare its
             // full-band span, its per-generator births, and its band top
@@ -776,7 +788,7 @@ mod tests {
                 "band top differs after round-trip for segment {segment:?}",
             );
         }
-        for point in 0..embedded.trajectory().original_count() {
+        for point in 0..embedded.trajectory().len() {
             assert_eq!(
                 storage.components_covering(point),
                 loaded_storage.components_covering(point),
@@ -803,12 +815,7 @@ mod tests {
         // fingerprint, so a provenance check would reject it.
         let other_points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
         let other_trajectory = Trajectory::new(other_points.view()).unwrap();
-        let other_embedded = EmbeddedTrajectory::new(
-            other_trajectory,
-            Metric::Euclidean,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let other_embedded = embed_euclidean(other_trajectory);
         assert_ne!(loaded.fingerprint(), other_embedded.fingerprint());
     }
 }

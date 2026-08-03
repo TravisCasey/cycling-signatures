@@ -6,6 +6,7 @@ in dynamical systems.
 
 from ._core import (
     Component,
+    CubicalCover,
     CubicSpline,
     Cycle,
     CycleStorage,
@@ -23,6 +24,7 @@ from ._core import (
 __all__ = [
     "Component",
     "CubicSpline",
+    "CubicalCover",
     "Cycle",
     "CycleStorage",
     "CyclingSignature",

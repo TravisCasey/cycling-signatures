@@ -29,7 +29,9 @@ def square_loop_points():
 @pytest.fixture
 def square_loop_embedded(square_loop_points):
     """The square loop embedded under the Euclidean metric."""
-    return cs.EmbeddedTrajectory(cs.Trajectory(square_loop_points), cs.Euclidean())
+    trajectory = cs.Trajectory(square_loop_points)
+    cover = cs.CubicalCover(trajectory)
+    return cs.EmbeddedTrajectory(trajectory, cover, cs.Euclidean())
 
 
 @pytest.fixture

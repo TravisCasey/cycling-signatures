@@ -4,6 +4,8 @@
 //! Cubical cover: integer cubes with cohomology generators computed over
 //! `F_2`.
 
+mod build;
+
 use std::cmp::Ordering;
 #[cfg(feature = "serde")]
 use std::path::Path;
@@ -25,10 +27,12 @@ use crate::{
 
 /// A cubical cover with computed cohomology generators over `F_2`.
 ///
-/// Built from an explicit set of integer cube coordinates; the cube set is
+/// Built either from the cubes a trajectory visits ([`build`](Self::build)) or
+/// from an explicit set of integer cube coordinates
+/// ([`from_cubes`](Self::from_cubes)). Either way the cube set is
 /// canonicalized, so [`cubes`](Self::cubes) returns it lexicographically
-/// sorted and deduplicated. Exposes the cohomology generators and the
-/// homology class of any chain of 1-cube edges.
+/// sorted and deduplicated. Exposes the cohomology generators and the homology
+/// class of any chain of 1-cube edges.
 #[derive(Debug)]
 pub struct CubicalCover {
     cubes: Array2<i64>,

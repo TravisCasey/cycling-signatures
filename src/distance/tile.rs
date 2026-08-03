@@ -27,13 +27,12 @@ use crate::{
 /// Rows reach past the tile's own columns and stop at `window_end`. Two
 /// adjacent entries are merged into the same component if and only if balls of
 /// radius `threshold / 2` around their three involved trajectory points share
-/// a common point. Each emitted component is a list of cycle segments in
-/// original-index space.
+/// a common point. Each emitted component is a list of cycle segments.
 ///
 /// # Panics
 ///
 /// Panics if `columns` and `window_end` are not a valid nested pair of
-/// sub-ranges of `0..trajectory.original_count()`, or if `max_length` is 0.
+/// sub-ranges of `0..trajectory.len()`, or if `max_length` is 0.
 pub(super) fn detect_tile_components(
     trajectory: &Trajectory,
     prepared: &PreparedPoints,
@@ -45,25 +44,22 @@ pub(super) fn detect_tile_components(
     let base = columns.start;
     let tile = build_distance_tile(trajectory, prepared, columns, window_end, max_length)
         .expect("tile column range fits inside the validated window");
-    partition_tile(tile.view(), trajectory, prepared, base, threshold)
+    partition_tile(tile.view(), prepared, base, threshold)
 }
 
 /// Connected components of below-threshold pair-edges over a pre-built
 /// distance tile.
 ///
-/// `tile` has shape `(max_length, width)`; `base` is the original-index
-/// of the tile's first column (i.e., `tile[(row, col)]` is the distance
-/// between `points[original_indices[base + col]]` and
-/// `points[original_indices[base + col + row]]`).
+/// `tile` has shape `(max_length, width)`; `base` is the point index of the
+/// tile's first column (i.e., `tile[(row, col)]` is the distance between
+/// `points[base + col]` and `points[base + col + row]`).
 fn partition_tile(
     tile: ArrayView2<'_, f64>,
-    trajectory: &Trajectory,
     prepared: &PreparedPoints,
     base: usize,
     threshold: f64,
 ) -> TileComponents {
     let width = tile.ncols();
-    let original_indices = trajectory.original_indices();
     let ball_radius = threshold / 2.0;
 
     let mut disjoint = DisjointSet::new();
@@ -80,26 +76,25 @@ fn partition_tile(
         entry_ids.insert((row, col), id);
 
         // Shorter-by-one neighbor at (row - 1, col): same start
-        // original_indices[base + col], cycle ends one step earlier.
-        // Triple of trajectory points involved in the merge:
-        //   shared left:        original_indices[base + col]
-        //   right of shorter:   original_indices[base + col + row - 1]
-        //   right of current:   original_indices[base + col + row]
+        // `base + col`, cycle ends one step earlier. Triple of trajectory
+        // points involved in the merge:
+        //   shared left:        base + col
+        //   right of shorter:   base + col + row - 1
+        //   right of current:   base + col + row
         if row > 0
             && let Some(&shorter_id) = entry_ids.get(&(row - 1, col))
             && prepared.covers_triple(
-                original_indices[base + col],
-                original_indices[base + col + row - 1],
-                original_indices[base + col + row],
+                base + col,
+                base + col + row - 1,
+                base + col + row,
                 ball_radius,
             )
         {
             disjoint.union(id, shorter_id);
         }
 
-        // Later-start-same-end neighbor at (row - 1, col + 1): same
-        // right endpoint original_indices[base + col + row], start
-        // shifts one later.
+        // Later-start-same-end neighbor at (row - 1, col + 1): same right
+        // endpoint `base + col + row`, start shifts one later.
         //
         // The `col + 1 < width` guard decides tile ownership of this edge. A
         // tile carries one column past the ones it owns, so for an owned
@@ -110,18 +105,13 @@ fn partition_tile(
         // exactly once, and neither side is dropped at a boundary.
         //
         // Triple:
-        //   shared right:       original_indices[base + col + row]
-        //   left of later:      original_indices[base + col + 1]
-        //   left of current:    original_indices[base + col]
+        //   shared right:       base + col + row
+        //   left of later:      base + col + 1
+        //   left of current:    base + col
         if row > 0
             && col + 1 < width
             && let Some(&later_id) = entry_ids.get(&(row - 1, col + 1))
-            && prepared.covers_triple(
-                original_indices[base + col + row],
-                original_indices[base + col + 1],
-                original_indices[base + col],
-                ball_radius,
-            )
+            && prepared.covers_triple(base + col + row, base + col + 1, base + col, ball_radius)
         {
             disjoint.union(id, later_id);
         }
@@ -158,7 +148,7 @@ fn partition_tile(
             contains_trivial.push(trivial);
             grouped.len() - 1
         });
-        // Cycle segment in original-index space: length = row + 1.
+        // Cycle segment over trajectory points: length = row + 1.
         let start = base + col;
         let end = base + col + row + 1;
         grouped[component_id].push((start as u32, end as u32));
@@ -168,10 +158,9 @@ fn partition_tile(
 }
 
 /// Builds a rectangular distance tile of shape `(max_length, width)` over the
-/// original indices `columns`. Entry `tile[(row, col)]` holds the metric
-/// distance between `points[original_indices[base + col]]` and
-/// `points[original_indices[base + col + row]]`, where `base = columns.start`
-/// and `width = columns.end - columns.start`.
+/// point indices `columns`. Entry `tile[(row, col)]` holds the metric distance
+/// between `points[base + col]` and `points[base + col + row]`, where
+/// `base = columns.start` and `width = columns.end - columns.start`.
 ///
 /// Rows reach past the tile's own columns and stop at `window_end`, the end of
 /// the analysis window: a cycle starting in this tile may finish outside it.
@@ -190,7 +179,7 @@ fn partition_tile(
 /// # Errors
 ///
 /// - [`Error::WindowOutOfBounds`] if `columns` and `window_end` are not a valid
-///   nested pair of sub-ranges of `0..trajectory.original_count()`.
+///   nested pair of sub-ranges of `0..trajectory.len()`.
 fn build_distance_tile(
     trajectory: &Trajectory,
     prepared: &PreparedPoints,
@@ -198,12 +187,12 @@ fn build_distance_tile(
     window_end: usize,
     max_length: usize,
 ) -> Result<Array2<f64>> {
-    let original_count = trajectory.original_count();
-    if columns.start > columns.end || columns.end > window_end || window_end > original_count {
+    let point_count = trajectory.len();
+    if columns.start > columns.end || columns.end > window_end || window_end > point_count {
         return Err(Error::WindowOutOfBounds {
             start: columns.start,
             end: columns.end,
-            trajectory_length: original_count,
+            trajectory_length: point_count,
         });
     }
     assert!(max_length > 0, "distance tile needs at least one row");
@@ -211,20 +200,18 @@ fn build_distance_tile(
     let width = columns.end - columns.start;
     let height = max_length;
     let base = columns.start;
-    let original_indices = trajectory.original_indices();
 
     let mut tile = Array2::<f64>::from_elem((height, width), f64::INFINITY);
     for col in 0..width {
-        let start_index = original_indices[base + col];
+        let start_index = base + col;
         // Row 0: self-comparison.
         tile[(0, col)] = 0.0;
         // Rows 1..height: valid only while base + col + row < window_end.
         for row in 1..height {
-            let original_offset = base + col + row;
-            if original_offset >= window_end {
+            let end_index = base + col + row;
+            if end_index >= window_end {
                 break;
             }
-            let end_index = original_indices[original_offset];
             tile[(row, col)] = prepared.distance(start_index, end_index);
         }
     }

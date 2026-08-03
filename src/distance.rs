@@ -60,12 +60,12 @@ fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Ve
 /// # Panics
 ///
 /// Panics if `owned_columns` is 0, or if the trajectory holds more than
-/// `u32::MAX` samples.
+/// `u32::MAX` points.
 ///
 /// # Errors
 ///
-/// - [`Error::WindowOutOfBounds`] if `range` is outside the trajectory's
-///   original-index space.
+/// - [`Error::WindowOutOfBounds`] if `range` is outside the trajectory's index
+///   space.
 pub(crate) fn detect_components(
     trajectory: &Trajectory,
     metric: Metric,
@@ -75,18 +75,18 @@ pub(crate) fn detect_components(
     owned_columns: usize,
     backend: &ExecutionBackend,
 ) -> Result<Vec<Vec<Range<usize>>>> {
-    if range.start > range.end || range.end > trajectory.original_count() {
+    if range.start > range.end || range.end > trajectory.len() {
         return Err(Error::WindowOutOfBounds {
             start: range.start,
             end: range.end,
-            trajectory_length: trajectory.original_count(),
+            trajectory_length: trajectory.len(),
         });
     }
     assert!(owned_columns > 0, "a tile must own at least one column");
-    // Tiles report cycle endpoints as sample indices narrowed to `u32`.
+    // Tiles report cycle endpoints as point indices narrowed to `u32`.
     assert!(
-        u32::try_from(trajectory.original_count()).is_ok(),
-        "trajectory sample count exceeds the supported maximum"
+        u32::try_from(trajectory.len()).is_ok(),
+        "trajectory point count exceeds the supported maximum"
     );
 
     // A cycle inside the window cannot outrun the window, so rows above its
@@ -216,7 +216,7 @@ mod tests {
         for component in &components {
             for cycle in component {
                 assert!(
-                    cycle.end <= trajectory.original_count(),
+                    cycle.end <= trajectory.len(),
                     "leaked padded entry as segment {cycle:?}",
                 );
             }
@@ -254,7 +254,7 @@ mod tests {
         // trajectory and the detection parameters alone: every tiling of the same
         // window produces the same vector, not merely the same set.
         let trajectory = circling_trajectory(5);
-        let count = trajectory.original_count();
+        let count = trajectory.len();
         let threshold = CIRCLING_THRESHOLD;
         // Reaches four revolutions, so four recurrence families are detected.
         let max_length = 170;
@@ -374,7 +374,7 @@ mod tests {
         // Only a segment longer than `DEFAULT_OWNED_COLUMNS` splits, so the
         // fixture is sized past it to exercise the shipped value.
         let trajectory = circling_trajectory(31);
-        let count = trajectory.original_count();
+        let count = trajectory.len();
         assert!(count > DEFAULT_OWNED_COLUMNS, "fixture does not split");
         // One revolution plus slack, enough to admit the once-per-revolution
         // recurrence without making the tile expensive.

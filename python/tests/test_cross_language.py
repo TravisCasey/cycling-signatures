@@ -13,6 +13,15 @@ def _load(metric):
     )
 
 
+def test_fixture_carries_the_index_parameterization():
+    # The fixture is written by the Rust example under the default
+    # parameterization, so the parameters must survive the round trip as the
+    # point indices they were assigned.
+    trajectory = cs.Trajectory.load(str(FIXTURES / "trajectory.cyc"))
+    assert len(trajectory) == 201
+    assert np.array_equal(trajectory.parameters(), np.arange(201, dtype=np.float64))
+
+
 def test_load_rust_fixture_and_query():
     assert _load(cs.Euclidean()).signature(range(0, 201), 0.5).rank() == 1
 
@@ -35,6 +44,9 @@ def test_fingerprint_distinguishes_metric():
         ]
     )
     trajectory = cs.Trajectory(points)
-    euclidean = cs.EmbeddedTrajectory(trajectory, cs.Euclidean())
-    sphere = cs.EmbeddedTrajectory(trajectory, cs.SphereBundle())
+    # Cube membership depends only on point coordinates, not the metric, so
+    # one cover serves both embeddings.
+    cover = cs.CubicalCover(trajectory)
+    euclidean = cs.EmbeddedTrajectory(trajectory, cover, cs.Euclidean())
+    sphere = cs.EmbeddedTrajectory(trajectory, cover, cs.SphereBundle())
     assert euclidean.fingerprint() != sphere.fingerprint()

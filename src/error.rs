@@ -98,17 +98,66 @@ pub enum Error {
     },
 
     /// Bisection in `Trajectory::resample` could not bring consecutive
-    /// samples within the requested bound at machine precision.
-    #[error("trajectory bisection stagnated near parameter {time}")]
+    /// points within the requested spacing at machine precision.
+    #[error("trajectory bisection stagnated near parameter {parameter}")]
     ResampleStagnation {
         /// The parameter value at which bisection stagnated.
-        time: f64,
+        parameter: f64,
     },
+
+    /// An interpolator produced a non-finite coordinate while resampling.
+    /// The offending sample is identified by the parameter it was taken at,
+    /// since resampling decides how many points to emit as it goes.
+    #[error("interpolator sample at parameter {parameter} is not finite at column {column}")]
+    ResampleNonFinite {
+        /// The interpolator parameter the offending sample was taken at.
+        parameter: f64,
+        /// Column of the offending coordinate.
+        column: usize,
+    },
+
+    /// A requested point spacing is not a positive length (including when it
+    /// is NaN, which fails every comparison).
+    #[error("point spacing {spacing} is not positive")]
+    SpacingNotPositive {
+        /// The requested spacing.
+        spacing: f64,
+    },
+
+    /// A requested point spacing is below the trajectory's own maximum
+    /// consecutive-point distance (including when the spacing is NaN).
+    /// Thinning cannot place points closer together than the trajectory
+    /// already resolves them.
+    #[error(
+        "point spacing {spacing} is below the trajectory's consecutive-point resolution \
+         {resolution}"
+    )]
+    SpacingBelowResolution {
+        /// The requested spacing.
+        spacing: f64,
+        /// The trajectory's maximum consecutive-point distance.
+        resolution: f64,
+    },
+
+    /// A trajectory's parameterization has one value per point; the supplied
+    /// counts disagree.
+    #[error("trajectory has {points} points but {parameters} parameter values")]
+    TrajectoryParameterCount {
+        /// Number of parameter values supplied.
+        parameters: usize,
+        /// Number of points in the trajectory.
+        points: usize,
+    },
+
+    /// A trajectory's parameterization was not strictly increasing (including
+    /// when a parameter value is NaN).
+    #[error("trajectory parameters are not strictly increasing")]
+    TrajectoryParametersNotIncreasing,
 
     /// Consecutive trajectory points land in cubes differing by more than 1 in
     /// some axis. The cube embedding requires trajectory sampling fine enough
     /// that consecutive points stay in adjacent cubes; callers should resample
-    /// with a smaller bound or rescale coordinates.
+    /// with a smaller spacing or rescale coordinates.
     #[error(
         "consecutive trajectory points {point_index} and {} land in cubes differing by {delta} in \
         axis {axis}",
@@ -140,26 +189,26 @@ pub enum Error {
     },
 
     /// A cycle-detection threshold below the embedded trajectory's
-    /// consecutive-distance bound under its metric: cycles below this
+    /// consecutive-point distance under its metric: cycles below this
     /// resolution are not meaningfully detectable.
     #[error(
-        "adjacency threshold {threshold} is below the consecutive-distance bound \
+        "adjacency threshold {threshold} is below the consecutive-point distance \
          {trajectory_bound}"
     )]
     ThresholdBelowTrajectoryBound {
         /// The threshold the caller supplied.
         threshold: f64,
-        /// The embedded trajectory's consecutive-distance bound under its
+        /// The embedded trajectory's consecutive-point distance under its
         /// metric.
         trajectory_bound: f64,
     },
 
-    /// A cycle-detection threshold at or above the unit cube side. The merge
+    /// A cycle-detection threshold at or above the cube side, 1. The merge
     /// gate's ball radius is half the threshold, and it must stay strictly
-    /// below one half of the unit cube side: at exactly one half, thickening
-    /// a cubical complex by that radius can fill in a one-cube hole and
-    /// change its homology.
-    #[error("adjacency threshold {threshold} is not below the unit cube side")]
+    /// below one half of the cube side: at exactly one half, thickening a
+    /// cubical complex by that radius can fill in a one-cube hole and change
+    /// its homology.
+    #[error("adjacency threshold {threshold} is not below the cube side")]
     ThresholdAboveCubeSide {
         /// The threshold the caller supplied.
         threshold: f64,

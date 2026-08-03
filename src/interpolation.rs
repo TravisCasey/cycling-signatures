@@ -30,6 +30,11 @@ pub trait Interpolator {
 
     /// The parameter values at which the curve was fit, in strictly
     /// increasing order.
+    ///
+    /// Implementations must uphold that ordering: it is the order in which
+    /// the curve is traversed, and a [`Trajectory`](crate::Trajectory) built
+    /// by sampling the curve inherits it as its own parameterization, which
+    /// is required to be strictly increasing.
     #[must_use]
     fn knots(&self) -> &[f64];
 }

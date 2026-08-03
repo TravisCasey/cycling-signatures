@@ -5,36 +5,50 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use cycling_signatures::{EmbeddedTrajectory, ExecutionBackend};
+use cycling_signatures::EmbeddedTrajectory;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
-    errors::to_pyerr, homology::PyHomologyClass, metric::metric_from_py, segment::segment_from_py,
-    signature::PyCyclingSignature, trajectory::PyTrajectory,
+    cover::PyCubicalCover, errors::to_pyerr, homology::PyHomologyClass, metric::metric_from_py,
+    segment::segment_from_py, signature::PyCyclingSignature, trajectory::PyTrajectory,
 };
 
-/// A trajectory embedded in a cubical complex, ready for homological analysis.
+/// A trajectory embedded in a cubical cover, ready for homological analysis.
 ///
-/// Wraps the output of embedding a ``Trajectory`` into cubical covers and
-/// computing the cover's homology generators. The result can be saved with
-/// ``save`` and reloaded with ``load``.
+/// Pairs a ``Trajectory`` with a ``CubicalCover`` built from it (or from a
+/// denser trajectory through the same curve), validating that every point's
+/// cube is present in the cover and that consecutive points land in adjacent
+/// cubes. The result can be saved with ``save`` and reloaded with ``load``.
 ///
-/// The ``bound`` method reports the largest consecutive-point distance seen
-/// during embedding; any adjacency threshold passed to ``signature`` must be at
-/// least this value.
+/// Typical pipeline, building the cover once from a dense trajectory and
+/// embedding a thinned one against it (``resample_spacing`` and
+/// ``downsample_spacing`` are the caller's own tuned values, fine and coarse
+/// respectively)::
+///
+///     dense = cs.Trajectory.resample(interpolator, metric, resample_spacing)
+///     cover = cs.CubicalCover(dense)
+///     detection = dense.downsample(metric, downsample_spacing)
+///     embedded = cs.EmbeddedTrajectory(detection, cover, metric)
+///
+/// The ``bound`` method reports the largest distance between consecutive
+/// points; any adjacency threshold passed to ``signature`` must be at least
+/// this value.
 ///
 /// Parameters
 /// ----------
 /// trajectory : ``Trajectory``
 ///     The trajectory to embed.
+/// cover : ``CubicalCover``
+///     The cubical cover to embed it in.
 /// metric : ``Euclidean`` or ``SphereBundle``
-///     The metric used to build the cubical cover.
+///     The metric used to measure point spacing.
 ///
 /// Raises
 /// ------
 /// ``ValueError``
-///     If consecutive trajectory points fall in non-adjacent cubes, or if a
-///     coordinate lies outside the supported integer range.
+///     If the trajectory and cover disagree on dimension, if a point's cube
+///     is absent from the cover, or if consecutive points fall in
+///     non-adjacent cubes.
 /// ``TypeError``
 ///     If ``metric`` is not a recognized metric type.
 #[pyclass(name = "EmbeddedTrajectory")]
@@ -44,22 +58,23 @@ pub(crate) struct PyEmbeddedTrajectory {
 
 #[pymethods]
 impl PyEmbeddedTrajectory {
-    /// Embeds ``trajectory`` in a cubical complex under ``metric``.
+    /// Embeds ``trajectory`` in ``cover`` under ``metric``.
     ///
-    /// Builds the cubical cover for the trajectory and computes its homology
-    /// generators. For large, high-dimensional trajectories, consider saving
-    /// the result with ``save`` and reloading it later with ``load`` rather
-    /// than recomputing it.
+    /// For large, high-dimensional trajectories, consider saving the result
+    /// with ``save`` and reloading it later with ``load`` rather than
+    /// recomputing it.
     #[new]
     fn new(
         py: Python<'_>,
         trajectory: &Bound<'_, PyTrajectory>,
+        cover: &Bound<'_, PyCubicalCover>,
         metric: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let metric = metric_from_py(metric)?;
         let trajectory = Arc::clone(&trajectory.borrow().inner);
+        let cover = Arc::clone(&cover.borrow().inner);
         let inner = py
-            .detach(move || EmbeddedTrajectory::new(trajectory, metric, &ExecutionBackend::Rayon))
+            .detach(move || EmbeddedTrajectory::new(trajectory, cover, metric))
             .map_err(to_pyerr)?;
         Ok(Self { inner })
     }
@@ -74,18 +89,18 @@ impl PyEmbeddedTrajectory {
     /// ``threshold``.
     ///
     /// This is not a cheap query. A signature has no cycle-length cap, so it
-    /// evaluates the metric over every pair of samples in the segment, a cost
+    /// evaluates the metric over every pair of points in the segment, a cost
     /// growing with the square of the segment length. For a large window,
     /// prefer ``CycleStorage.build`` with an explicit ``max_length``.
     ///
     /// Parameters
     /// ----------
     /// segment : range or tuple of int
-    ///     A half-open range of sample indices, given as a Python ``range`` or
+    ///     A half-open range of point indices, given as a Python ``range`` or
     ///     a ``(start, stop)`` integer tuple.
     /// threshold : float
     ///     The largest endpoint distance admitted as a cycle. Must be at
-    ///     least ``bound`` and strictly below ``1.0`` (the unit cube side).
+    ///     least ``bound`` and strictly below ``1.0`` (the cube side).
     ///
     /// Returns
     /// -------
@@ -124,7 +139,7 @@ impl PyEmbeddedTrajectory {
     /// Parameters
     /// ----------
     /// segment : range or tuple of int
-    ///     A half-open range of sample indices, given as a Python ``range`` or
+    ///     A half-open range of point indices, given as a Python ``range`` or
     ///     a ``(start, stop)`` integer tuple. Must contain at least two points.
     ///
     /// Returns
@@ -152,8 +167,8 @@ impl PyEmbeddedTrajectory {
         })
     }
 
-    /// Returns the largest consecutive-point distance in the embedded
-    /// trajectory.
+    /// Returns the largest distance between consecutive points in the
+    /// embedded trajectory.
     ///
     /// Any adjacency threshold passed to ``signature`` must be at least this
     /// value.
@@ -161,7 +176,7 @@ impl PyEmbeddedTrajectory {
     /// Returns
     /// -------
     /// float
-    ///     The largest consecutive-point distance.
+    ///     The largest distance between consecutive points.
     #[must_use]
     fn bound(&self) -> f64 {
         self.inner.bound()
