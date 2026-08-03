@@ -182,6 +182,25 @@ impl PyEmbeddedTrajectory {
         self.inner.resolution()
     }
 
+    /// Returns the cubical cover this trajectory is embedded in.
+    ///
+    /// The returned cover shares its underlying data with this embedded
+    /// trajectory's cover rather than copying it, so it carries the exact
+    /// generator basis this embedding's homology classes were computed
+    /// against; saving it and reloading it later maintains that basis for
+    /// comparison against classes computed here.
+    ///
+    /// Returns
+    /// -------
+    /// ``CubicalCover``
+    ///     The wrapped cover.
+    #[must_use]
+    fn cover(&self) -> PyCubicalCover {
+        PyCubicalCover {
+            inner: Arc::clone(self.inner.cover()),
+        }
+    }
+
     /// Returns a content fingerprint of the embedded trajectory.
     ///
     /// Two embedded trajectories built from identical trajectory data, cover

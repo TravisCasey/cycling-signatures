@@ -3,7 +3,7 @@
 
 //! Python wrapper for the `CubicalCover` type.
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use cycling_signatures::{CubicalCover, ExecutionBackend};
 use pyo3::prelude::*;
@@ -65,6 +65,72 @@ impl PyCubicalCover {
     #[must_use]
     fn fingerprint(&self) -> u64 {
         self.inner.fingerprint()
+    }
+
+    /// Returns the number of cubes in the cover.
+    fn __len__(&self) -> usize {
+        self.inner.cubes().nrows()
+    }
+
+    /// Returns the number of cohomology generators.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The number of generators.
+    #[must_use]
+    fn num_generators(&self) -> usize {
+        self.inner.num_generators()
+    }
+
+    /// Saves the cover to a file at ``path``, including its cube set and its
+    /// exact generator basis.
+    ///
+    /// A cover loaded back from the result (via ``load``) carries this same
+    /// generator basis, so homology class vectors computed against the two
+    /// are directly comparable. A cover independently rebuilt from the same
+    /// trajectory gives no such guarantee: its fingerprint matches, but its
+    /// generator basis is not guaranteed to match, since the generator basis
+    /// is not stable across builds of the same cubes.
+    ///
+    /// Parameters
+    /// ----------
+    /// path : str or ``os.PathLike``
+    ///     The destination file path.
+    ///
+    /// Raises
+    /// ------
+    /// ``OSError``
+    ///     If the file cannot be written.
+    fn save(&self, path: PathBuf) -> PyResult<()> {
+        self.inner.save(path).map_err(to_pyerr)
+    }
+
+    /// Loads a cover from the file at ``path``.
+    ///
+    /// Parameters
+    /// ----------
+    /// path : str or ``os.PathLike``
+    ///     The source file path.
+    ///
+    /// Returns
+    /// -------
+    /// ``CubicalCover``
+    ///     The reloaded cover, carrying the exact generator basis it was
+    ///     saved with.
+    ///
+    /// Raises
+    /// ------
+    /// ``OSError``
+    ///     If the file cannot be read.
+    /// ``FormatVersionMismatchError``
+    ///     If the file was written by an incompatible version of the library.
+    #[staticmethod]
+    fn load(path: PathBuf) -> PyResult<Self> {
+        let inner = CubicalCover::load(path).map_err(to_pyerr)?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 }
 

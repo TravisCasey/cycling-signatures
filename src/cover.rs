@@ -190,7 +190,16 @@ impl CubicalCover {
         Ok(indices)
     }
 
-    /// Writes this cover to `path` in the crate's binary format.
+    /// Writes this cover to `path` in the crate's binary format, including
+    /// its cube set and its exact generator basis.
+    ///
+    /// A cover loaded back from the result (via [`load`](Self::load)) carries
+    /// this same generator basis, so homology class vectors computed against
+    /// the two are directly comparable. A cover independently rebuilt from
+    /// the same cubes gives no such guarantee: its fingerprint matches (the
+    /// fingerprint depends on the cube set alone), but its generator basis is
+    /// not guaranteed to match, since the generator basis is not stable
+    /// across builds of the same cubes.
     ///
     /// # Errors
     ///
@@ -200,7 +209,8 @@ impl CubicalCover {
         crate::serialization::save_to_path(path, self)
     }
 
-    /// Reads a cover written by [`save`](Self::save).
+    /// Reads a cover written by [`save`](Self::save), reconstructing the
+    /// exact cube set and generator basis it was saved with.
     ///
     /// # Errors
     ///
@@ -284,6 +294,8 @@ mod tests {
     use ndarray::{Array2, array};
 
     use super::CubicalCover;
+    #[cfg(feature = "serde")]
+    use crate::serialization::{load_from_reader, save_to_writer};
     use crate::{error::Error, f2_vector::F2Vector};
 
     #[test]
@@ -397,6 +409,36 @@ mod tests {
 
         let class = cover.chain_class(std::iter::once(first_edge));
         assert_eq!(class, F2Vector::from_nonzero(1, [0]));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn generators_match_after_save_load_roundtrip() {
+        // 4x4 with hole: one generator. A cover loaded from a save carries the
+        // exact generator chains it was saved with, not merely chains
+        // spanning the same cohomology class.
+        let cubes = array![
+            [0_i64, 0],
+            [1, 0],
+            [2, 0],
+            [3, 0],
+            [3, 1],
+            [3, 2],
+            [3, 3],
+            [2, 3],
+            [1, 3],
+            [0, 3],
+            [0, 2],
+            [0, 1]
+        ];
+        let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
+        assert_eq!(cover.num_generators(), 1);
+
+        let mut buffer = Vec::new();
+        save_to_writer(&mut buffer, &cover).unwrap();
+        let reloaded: CubicalCover = load_from_reader(&buffer[..]).unwrap();
+
+        assert_eq!(cover.generators(), reloaded.generators());
     }
 
     #[test]

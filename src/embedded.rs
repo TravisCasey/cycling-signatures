@@ -173,8 +173,11 @@ impl EmbeddedTrajectory {
     }
 
     /// The wrapped trajectory.
+    ///
+    /// Cloning the returned `Arc` shares the trajectory without copying its
+    /// points or parameters.
     #[must_use]
-    pub fn trajectory(&self) -> &Trajectory {
+    pub fn trajectory(&self) -> &Arc<Trajectory> {
         &self.trajectory
     }
 
@@ -218,8 +221,11 @@ impl EmbeddedTrajectory {
     }
 
     /// The wrapped cover.
+    ///
+    /// Cloning the returned `Arc` shares the cover without duplicating its
+    /// cube set or generator basis.
     #[must_use]
-    pub fn cover(&self) -> &CubicalCover {
+    pub fn cover(&self) -> &Arc<CubicalCover> {
         &self.cover
     }
 
@@ -677,8 +683,8 @@ mod tests {
         let embedded = euclidean_square_loop();
         let mut trajectory_buffer = Vec::new();
         let mut cover_buffer = Vec::new();
-        save_to_writer(&mut trajectory_buffer, embedded.trajectory()).unwrap();
-        save_to_writer(&mut cover_buffer, embedded.cover()).unwrap();
+        save_to_writer(&mut trajectory_buffer, embedded.trajectory().as_ref()).unwrap();
+        save_to_writer(&mut cover_buffer, embedded.cover().as_ref()).unwrap();
 
         let trajectory: Trajectory = load_from_reader(&trajectory_buffer[..]).unwrap();
         let cover: CubicalCover = load_from_reader(&cover_buffer[..]).unwrap();
@@ -693,8 +699,8 @@ mod tests {
         let embedded = euclidean_square_loop();
         let mut trajectory_buffer = Vec::new();
         let mut cover_buffer = Vec::new();
-        save_to_writer(&mut trajectory_buffer, embedded.trajectory()).unwrap();
-        save_to_writer(&mut cover_buffer, embedded.cover()).unwrap();
+        save_to_writer(&mut trajectory_buffer, embedded.trajectory().as_ref()).unwrap();
+        save_to_writer(&mut cover_buffer, embedded.cover().as_ref()).unwrap();
 
         let trajectory: Trajectory = load_from_reader(&trajectory_buffer[..]).unwrap();
         let cover: CubicalCover = load_from_reader(&cover_buffer[..]).unwrap();
@@ -723,8 +729,8 @@ mod tests {
 
         let mut trajectory_buffer = Vec::new();
         let mut cover_buffer = Vec::new();
-        save_to_writer(&mut trajectory_buffer, embedded.trajectory()).unwrap();
-        save_to_writer(&mut cover_buffer, embedded.cover()).unwrap();
+        save_to_writer(&mut trajectory_buffer, embedded.trajectory().as_ref()).unwrap();
+        save_to_writer(&mut cover_buffer, embedded.cover().as_ref()).unwrap();
         let trajectory: Trajectory = load_from_reader(&trajectory_buffer[..]).unwrap();
         let cover: CubicalCover = load_from_reader(&cover_buffer[..]).unwrap();
         let reassembled = EmbeddedTrajectory::new(trajectory, cover, Metric::Euclidean).unwrap();
