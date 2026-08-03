@@ -126,11 +126,18 @@ impl CubicalCover {
     {
         let mut accumulator = F2Vector::zeros(self.generators.len());
         for edge in edges {
-            if let Some(class) = self.edge_classes.get(edge) {
+            if let Some(class) = self.edge_class(edge) {
                 accumulator ^= class;
             }
         }
         accumulator
+    }
+
+    /// The `F_2` homology class of the single 1-cube `edge`, or `None` when
+    /// the edge lies in no generator chain and so contributes nothing.
+    #[must_use]
+    pub(crate) fn edge_class(&self, edge: &Cube) -> Option<&F2Vector> {
+        self.edge_classes.get(edge)
     }
 
     /// A stable 64-bit fingerprint of this cover's content.

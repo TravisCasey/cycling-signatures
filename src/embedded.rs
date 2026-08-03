@@ -9,13 +9,9 @@ mod walker;
 
 #[cfg(feature = "serde")]
 use std::path::Path;
-use std::{
-    ops::{Range, RangeBounds},
-    sync::Arc,
-};
+use std::{ops::Range, sync::Arc};
 
-use chomp3rs::{Cube, ExecutionBackend};
-use walker::for_each_cycle_edge;
+use chomp3rs::ExecutionBackend;
 
 use crate::{
     F2Vector,
@@ -24,7 +20,7 @@ use crate::{
     interpolation::Interpolator,
     metric::{Metric, MetricPoints},
     trajectory::Trajectory,
-    util::{fingerprint::Fingerprint, range::normalize_segment},
+    util::fingerprint::Fingerprint,
 };
 
 /// Pairs a [`Trajectory`] with a [`CubicalCover`], the metric used for queries,
@@ -268,65 +264,6 @@ impl EmbeddedTrajectory {
             classes.push(self.cycle_class(representative.clone())?);
         }
         Ok(classes)
-    }
-
-    /// The sequence of 1-cube edges traversed when walking the cycle
-    /// described by `segment`: forward along the trajectory from the point at
-    /// `segment.start` to the point at `segment.end - 1`, then a closing
-    /// cube-to-cube path back to the point at `segment.start`.
-    ///
-    /// Every step, the closing one included, is realized as one axis-aligned
-    /// staircase between the cubes of its two points.
-    ///
-    /// Useful for visualizing the cubical representation of a particular cycle.
-    /// For the homology class alone, call [`cycle_class`](Self::cycle_class)
-    /// instead.
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
-    ///   valid sub-range.
-    /// - [`Error::CycleEndpointsNonAdjacent`] if the cubes of the trajectory
-    ///   points at `segment.start` and `segment.end - 1` differ by more than 1
-    ///   in some axis.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the normalized segment contains fewer than 2 points, or if a
-    /// forward step inside the segment lands in cubes differing by more than 1
-    /// in some axis.
-    pub fn walk_cycle(&self, segment: impl RangeBounds<usize>) -> Result<Vec<Cube>> {
-        let segment = normalize_segment(segment, self.trajectory.len())?;
-        assert!(
-            segment.end > segment.start + 1,
-            "cycle segment {}..{} must contain at least two points",
-            segment.start,
-            segment.end
-        );
-
-        let mut edges = Vec::new();
-        for_each_cycle_edge(self, segment, |edge| {
-            edges.push(edge.clone());
-        })?;
-        Ok(edges)
-    }
-
-    /// The `F_2` homology class of the cycle described by `segment`,
-    /// expressed in the cover's generator basis.
-    ///
-    /// Use this when only the class is needed. To inspect the underlying
-    /// cubical edge sequence, call [`walk_cycle`](Self::walk_cycle) instead.
-    ///
-    /// # Errors
-    ///
-    /// Same as [`walk_cycle`](Self::walk_cycle).
-    ///
-    /// # Panics
-    ///
-    /// Same as [`walk_cycle`](Self::walk_cycle).
-    pub fn cycle_class(&self, segment: impl RangeBounds<usize>) -> Result<F2Vector> {
-        let edges = self.walk_cycle(segment)?;
-        Ok(self.cover.chain_class(edges.iter()))
     }
 
     /// A stable 64-bit fingerprint combining the trajectory, the cover, and the

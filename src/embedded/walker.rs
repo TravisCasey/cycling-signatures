@@ -3,15 +3,102 @@
 
 //! Cube-path traversal for cycle segments.
 
-use std::ops::Range;
+use std::ops::{Range, RangeBounds};
 
 use chomp3rs::{Cube, Orthant};
 
 use super::EmbeddedTrajectory;
 use crate::{
+    F2Vector,
     cover::non_adjacent_axis,
     error::{Error, Result},
+    util::range::normalize_segment,
 };
+
+impl EmbeddedTrajectory {
+    /// The sequence of 1-cube edges traversed when walking the cycle
+    /// described by `segment`: forward along the trajectory from the point at
+    /// `segment.start` to the point at `segment.end - 1`, then a closing
+    /// cube-to-cube path back to the point at `segment.start`.
+    ///
+    /// Every step, the closing one included, is realized as one axis-aligned
+    /// staircase between the cubes of its two points.
+    ///
+    /// Useful for visualizing the cubical representation of a particular cycle.
+    /// For the homology class alone, call [`cycle_class`](Self::cycle_class)
+    /// instead.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
+    ///   valid sub-range.
+    /// - [`Error::CycleEndpointsNonAdjacent`] if the cubes of the trajectory
+    ///   points at `segment.start` and `segment.end - 1` differ by more than 1
+    ///   in some axis.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the normalized segment contains fewer than 2 points, or if a
+    /// forward step inside the segment lands in cubes differing by more than 1
+    /// in some axis.
+    pub fn walk_cycle(&self, segment: impl RangeBounds<usize>) -> Result<Vec<Cube>> {
+        let segment = self.cycle_segment(segment)?;
+        let mut edges = Vec::new();
+        for_each_cycle_edge(self, segment, |edge| {
+            edges.push(edge.clone());
+        })?;
+        Ok(edges)
+    }
+
+    /// The `F_2` homology class of the cycle described by `segment`,
+    /// expressed in the cover's generator basis.
+    ///
+    /// Use this when only the class is needed. To inspect the underlying
+    /// cubical edge sequence, call [`walk_cycle`](Self::walk_cycle) instead.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`walk_cycle`](Self::walk_cycle).
+    ///
+    /// # Panics
+    ///
+    /// Same as [`walk_cycle`](Self::walk_cycle).
+    pub fn cycle_class(&self, segment: impl RangeBounds<usize>) -> Result<F2Vector> {
+        let segment = self.cycle_segment(segment)?;
+        // Accumulated as the walk proceeds rather than over a collected edge
+        // list: `F_2` addition is commutative, so the sum does not depend on
+        // the order the edges arrive in.
+        let mut accumulator = F2Vector::zeros(self.cover().num_generators());
+        for_each_cycle_edge(self, segment, |edge| {
+            if let Some(class) = self.cover().edge_class(edge) {
+                accumulator ^= class;
+            }
+        })?;
+        Ok(accumulator)
+    }
+
+    /// Normalizes `segment` against the trajectory and checks that it holds
+    /// enough points to describe a cycle.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
+    ///   valid sub-range.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the normalized segment contains fewer than 2 points.
+    fn cycle_segment(&self, segment: impl RangeBounds<usize>) -> Result<Range<usize>> {
+        let segment = normalize_segment(segment, self.trajectory().len())?;
+        assert!(
+            segment.end > segment.start + 1,
+            "cycle segment {}..{} must contain at least two points",
+            segment.start,
+            segment.end
+        );
+        Ok(segment)
+    }
+}
 
 /// Walks the cubical path of the cycle described by `segment`, invoking
 /// `visit` once per 1-cube edge traversed.
@@ -40,15 +127,18 @@ where
     F: FnMut(&Cube),
 {
     let cubes = embedded.cover().cubes();
-    let point_to_cube_coords = |point_index: usize| -> Vec<i64> {
+    let dimension = cubes.ncols();
+    // Infallible: a cover owns its cube array and every way of producing one
+    // leaves it in the standard row-major layout, so the view is contiguous.
+    let coordinates = cubes
+        .to_slice()
+        .expect("cover cubes are held as one contiguous row-major block");
+    let point_cube_coordinates = |point_index: usize| {
         let cube_index = embedded.point_to_cube(point_index);
-        (0..cubes.ncols())
-            .map(|axis| cubes[(cube_index, axis)])
-            .collect()
+        &coordinates[cube_index * dimension..][..dimension]
     };
 
-    let dimension = cubes.ncols();
-    let start_cube = point_to_cube_coords(segment.start);
+    let start_cube = point_cube_coordinates(segment.start);
     // Cube coordinates fit in i32: CubicalCover::from_cubes enforces the
     // [i32::MIN, i32::MAX - 1] range for all coordinates.
     let mut base: Orthant = start_cube.iter().map(|&value| value as i32).collect();
@@ -56,12 +146,12 @@ where
 
     // Forward path: each consecutive pair of points. Every consecutive pair of
     // the trajectory was shown to land in adjacent cubes before the embedding
-    // existed,.
+    // existed.
     for point_index in segment.start..(segment.end - 1) {
-        let from = point_to_cube_coords(point_index);
-        let to = point_to_cube_coords(point_index + 1);
+        let from = point_cube_coordinates(point_index);
+        let to = point_cube_coordinates(point_index + 1);
         if let Err((axis, delta)) =
-            step_between_cubes(&from, &to, dimension, &mut base, &mut dual, &mut visit)
+            step_between_cubes(from, to, dimension, &mut base, &mut dual, &mut visit)
         {
             panic!(
                 "consecutive trajectory points {point_index} and {} land in cubes differing by \
@@ -72,14 +162,9 @@ where
     }
 
     // Closing step: from points[end - 1] to points[start].
-    let end_cube = point_to_cube_coords(segment.end - 1);
+    let end_cube = point_cube_coordinates(segment.end - 1);
     step_between_cubes(
-        &end_cube,
-        &start_cube,
-        dimension,
-        &mut base,
-        &mut dual,
-        &mut visit,
+        end_cube, start_cube, dimension, &mut base, &mut dual, &mut visit,
     )
     .map_err(|(axis, delta)| Error::CycleEndpointsNonAdjacent {
         start: segment.start,
