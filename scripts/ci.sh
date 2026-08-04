@@ -9,12 +9,12 @@ YELLOW='\033[0;33m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-with_gallery=0
+with_gallery=1
 for argument in "$@"; do
     case "$argument" in
-        --with-gallery) with_gallery=1 ;;
+        --skip-gallery) with_gallery=0 ;;
         *)
-            echo "usage: ${0##*/} [--with-gallery]" >&2
+            echo "usage: ${0##*/} [--skip-gallery]" >&2
             exit 2
             ;;
     esac
@@ -117,9 +117,12 @@ gallery_stamp_path="docs/auto_examples/.gallery-data-stamp"
 
 gallery_input_stamp() {
     for data_file in examples/lorenz/data/lorenz_storage.cyc \
+                     examples/lorenz/data/lorenz_trajectory.cyc \
                      examples/lorenz/data/lorenz_raw.npy \
                      examples/dadras/data/dadras_storage.cyc \
-                     examples/dadras/data/dadras_raw.npy; do
+                     examples/dadras/data/dadras_trajectory.cyc \
+                     examples/dadras/data/dadras_raw.npy \
+                     examples/dadras/data/dadras_times.npy; do
         if [ -f "$data_file" ]; then
             stat -c '%n %s %Y' "$data_file"
         else
@@ -133,7 +136,7 @@ gallery_input_stamp() {
 
 if [ "$with_gallery" -eq 0 ]; then
     skip_step "Gallery build" \
-        "published storages predate the current wire format; re-enable with --with-gallery once data is republished"
+        "--skip-gallery passed"
 else
     if ! current_stamp=$(gallery_input_stamp); then
         echo -e "${RED}  could not stamp the gallery inputs${RESET}" >&2

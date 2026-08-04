@@ -16,8 +16,12 @@ depending on which part of the trajectory it covers.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the published example data, fetched
-# and cached on first use.
+# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
+# published example data, fetched and cached on first use. The storage's
+# sample indices are positions in the detection trajectory, and that
+# trajectory's ``parameters()`` give the integration time of each sample: they
+# place every window on the time axis below and turn a window length in
+# samples into a duration.
 
 from collections import Counter
 
@@ -28,7 +32,9 @@ from matplotlib.colors import ListedColormap
 import _support
 import cycling_signatures as cs
 
+TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
+PARAMETERS = TRAJECTORY.parameters()
 
 # %%
 # **Canonical class colors.** A rank-1 signature is the span of a single
@@ -76,23 +82,43 @@ library = [subspace for subspace, _ in ordered[:LIBRARY_SIZE]]
 # members.
 
 WINDOW_LENGTHS = (230, 330, 430)
-TIME_WINDOW_START = 0
-TIME_WINDOW_STOP = 8600
+SAMPLE_WINDOW_START = 0
+SAMPLE_WINDOW_STOP = 8600
 COLUMN_STEP = 7
 
-column_times = list(range(TIME_WINDOW_START, TIME_WINDOW_STOP, COLUMN_STEP))
+column_starts = np.arange(SAMPLE_WINDOW_START, SAMPLE_WINDOW_STOP, COLUMN_STEP)
 num_rows = len(WINDOW_LENGTHS)
-num_cols = len(column_times)
+num_cols = len(column_starts)
 
 library_index = {subspace: index for index, subspace in enumerate(library)}
 labels = np.full((num_rows, num_cols), -1, dtype=np.int8)
 
 for row_index, length in enumerate(WINDOW_LENGTHS):
-    for col_index, time in enumerate(column_times):
-        if time + length > extent_stop:
+    for col_index, start in enumerate(column_starts):
+        if start + length > extent_stop:
             continue
-        subspace = STORAGE.signature(range(time, time + length)).span()
+        subspace = STORAGE.signature(range(int(start), int(start) + length)).span()
         labels[row_index, col_index] = library_index.get(subspace, -1)
+
+# %%
+# **Place the columns and rows in time.** Columns step a fixed number of
+# detection samples, which is not a fixed amount of time: the sampling follows
+# the trajectory's geometry, so a sample spans more time where the flow runs
+# slowly. Each column therefore runs from its window's start time to the next
+# column's start time, tiling the axis with no gaps; the column marks where
+# its window begins, not the time its window covers.
+
+column_edges = np.append(
+    PARAMETERS[column_starts],
+    PARAMETERS[min(int(column_starts[-1]) + COLUMN_STEP, len(PARAMETERS) - 1)],
+)
+
+
+def median_window_duration(length: int) -> float:
+    """Return the median time a window of ``length`` samples spans."""
+    starts = np.arange(extent_start, extent_stop - length + 1)
+    return float(np.median(PARAMETERS[starts + length - 1] - PARAMETERS[starts]))
+
 
 # %%
 # **Render the heatmap.** The colormap puts trivial (white) at index 0 and
@@ -126,20 +152,25 @@ def build_figure() -> plt.Figure:
     colormap = ListedColormap(colors)
 
     figure, axes = plt.subplots(figsize=(14, 5))
-    image = axes.imshow(
+    image = axes.pcolormesh(
+        column_edges,
+        np.arange(num_rows + 1) - 0.5,
         labels + 1,
-        aspect="auto",
-        interpolation="nearest",
         cmap=colormap,
         vmin=-0.5,
         vmax=len(library) + 0.5,
-        extent=(TIME_WINDOW_START, TIME_WINDOW_STOP, len(WINDOW_LENGTHS) - 0.5, -0.5),
     )
+    axes.invert_yaxis()
 
     axes.set_yticks(range(len(WINDOW_LENGTHS)))
-    axes.set_yticklabels([str(length) for length in WINDOW_LENGTHS])
-    axes.set_xlabel("Time (sample index)")
-    axes.set_ylabel("Window length (samples)")
+    axes.set_yticklabels(
+        [
+            f"{length} samples\n({median_window_duration(length):.2f} time)"
+            for length in WINDOW_LENGTHS
+        ]
+    )
+    axes.set_xlabel("Time")
+    axes.set_ylabel("Window length")
     axes.set_title("Signature indicator: Lorenz attractor")
 
     colorbar = figure.colorbar(image, ax=axes, pad=0.02)

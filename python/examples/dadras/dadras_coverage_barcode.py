@@ -6,20 +6,23 @@
 
 Three barcodes stacked by the birth cap each panel admits. Every row tracks
 one frequent homology class of the Dadras attractor over time, colored where
-some cycle of that class born by the panel's threshold has a sample range
-covering the time. A cycle's birth is the metric distance between its
-endpoint samples, so low caps admit only the tightest recurrences; raising
-the cap toward the top of the stored detection band fills the rows in. All
-panels admit only cycles up to one fixed length, so coverage always means
-participation in a recurrence at that declared time scale.
+some cycle of that class born by the panel's threshold spans the time. A
+cycle's birth is the metric distance between its endpoint samples, so low caps
+admit only the tightest recurrences; raising the cap toward the top of the
+stored detection band fills the rows in. All panels admit only cycles up to
+one fixed length, counted in detection samples rather than in time, so
+coverage always means participation in a recurrence at that declared sampling
+scale.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the published example data, fetched
-# and cached on first use.
-# ``extent()`` gives the half-open sample range covered by all stored
-# components, and ``threshold()`` is the top of the stored detection band;
-# the per-panel birth caps below sit at or under it.
+# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
+# published example data, fetched and cached on first use. ``extent()`` gives
+# the half-open sample range covered by all stored components, in indices into
+# the detection trajectory, and that trajectory's ``parameters()`` give the
+# integration time of each sample, which turns a cycle's sample range into the
+# span of time it covers. ``threshold()`` is the top of the stored detection
+# band; the per-panel birth caps below sit at or under it.
 
 import math
 from collections import Counter
@@ -31,7 +34,9 @@ from matplotlib.colors import ListedColormap
 import _support
 import cycling_signatures as cs
 
+TRAJECTORY = cs.Trajectory.load(_support.dadras_trajectory())
 STORAGE = cs.CycleStorage.load(_support.dadras_storage())
+PARAMETERS = TRAJECTORY.parameters()
 BAND_TOP = STORAGE.threshold()
 assert math.isfinite(BAND_TOP)
 EXTENT_START, EXTENT_STOP = STORAGE.extent()
@@ -71,35 +76,45 @@ CLASS_COLORS = _support.class_color_map([class_keys[class_id] for class_id in or
 # %%
 # **Collect the cycles in the time window.** Each ``Component`` exposes its
 # cycles through ``cycles()``, and every ``Cycle`` carries its sample
-# ``range()`` and ``birth()``. Filtering cycles by birth matches the cycles a
-# detection capped at that threshold would admit. Cycles longer than
-# ``LENGTH_CAP`` are excluded. The window restricts the figure to a legible
-# slice of the full extent.
+# ``range()`` and ``birth()``. A cycle's sample range becomes the closed span
+# of time between its first and last sample. Filtering cycles by birth matches
+# the cycles a detection capped at that threshold would admit. Cycles longer
+# than ``LENGTH_CAP`` detection samples are excluded; that cap is a sample
+# count, not a duration, so the time a capped cycle covers varies with the
+# local speed of the flow. The window restricts the figure to a legible span
+# of the full extent, and its columns are a uniform width in time.
 
 LENGTH_CAP = 800
-COLUMN_STEP = 25
-TIME_WINDOW_START = EXTENT_START
-TIME_WINDOW_STOP = min(EXTENT_START + 30000, EXTENT_STOP)
+WINDOW_DURATION = 192.0
+COLUMN_DURATION = 0.16
 
-column_times = np.arange(TIME_WINDOW_START, TIME_WINDOW_STOP, COLUMN_STEP)
+TIME_WINDOW_START = float(PARAMETERS[EXTENT_START])
+TIME_WINDOW_STOP = min(TIME_WINDOW_START + WINDOW_DURATION, float(PARAMETERS[EXTENT_STOP - 1]))
+
+column_times = np.arange(TIME_WINDOW_START, TIME_WINDOW_STOP, COLUMN_DURATION)
 num_cols = len(column_times)
 
-windowed_cycles: list[tuple[int, int, int, float]] = []
+windowed_cycles: list[tuple[int, float, float, float]] = []
 for component in COMPONENTS:
     class_id = component.class_id()
     if class_id not in row_by_class_id:
         continue
     coverage_start, coverage_stop = component.coverage()
-    if coverage_stop <= TIME_WINDOW_START or coverage_start >= TIME_WINDOW_STOP:
+    if (
+        PARAMETERS[coverage_stop - 1] <= TIME_WINDOW_START
+        or PARAMETERS[coverage_start] >= TIME_WINDOW_STOP
+    ):
         continue
     row_index = row_by_class_id[class_id]
     for cycle in component.cycles():
         if cycle.length() > LENGTH_CAP:
             continue
         cycle_start, cycle_stop = cycle.range()
-        if cycle_stop <= TIME_WINDOW_START or cycle_start >= TIME_WINDOW_STOP:
+        first_time = float(PARAMETERS[cycle_start])
+        last_time = float(PARAMETERS[cycle_stop - 1])
+        if last_time <= TIME_WINDOW_START or first_time >= TIME_WINDOW_STOP:
             continue
-        windowed_cycles.append((row_index, cycle_start, cycle_stop, cycle.birth()))
+        windowed_cycles.append((row_index, first_time, last_time, cycle.birth()))
 
 # %%
 # **Build one label array per birth cap.** A cell is its class row index plus
@@ -120,12 +135,12 @@ BIRTH_CAPS = (
 def coverage_labels(max_birth: float) -> np.ndarray:
     """Return the label array for cycles born by ``max_birth``."""
     labels = np.zeros((num_rows, num_cols), dtype=np.int8)
-    for row_index, cycle_start, cycle_stop, cycle_birth in windowed_cycles:
+    for row_index, first_time, last_time, cycle_birth in windowed_cycles:
         if cycle_birth > max_birth:
             continue
-        # Columns inside the half-open range [cycle_start, cycle_stop).
-        first_column = int(np.searchsorted(column_times, cycle_start))
-        last_column = int(np.searchsorted(column_times, cycle_stop))
+        # Columns whose time falls in the closed span [first_time, last_time].
+        first_column = int(np.searchsorted(column_times, first_time, side="left"))
+        last_column = int(np.searchsorted(column_times, last_time, side="right"))
         labels[row_index, first_column:last_column] = row_index + 1
     return labels
 
@@ -158,9 +173,11 @@ def build_figure() -> plt.Figure:
         panel.set_yticklabels([f"class {row_index + 1}" for row_index in range(num_rows)])
         panel.set_title(f"cycles born by t <= {cap:.3f}", loc="left")
 
-    panels[-1].set_xlabel("Time (sample index)")
+    panels[-1].set_xlabel("Time")
     figure.supylabel("Homology class (by frequency)")
-    figure.suptitle(f"Coverage barcode: Dadras attractor (cycles up to length {LENGTH_CAP})")
+    figure.suptitle(
+        f"Coverage barcode: Dadras attractor (cycles up to {LENGTH_CAP} detection samples)"
+    )
     figure.tight_layout()
     return figure
 

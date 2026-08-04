@@ -7,7 +7,9 @@
 This example assigns every query point on the Lorenz attractor a *dominant*
 signature: the library signature most common among the point's spatial
 neighbors. It also measures the assigned signature's *purity*: the fraction of
-neighbors that share that signature.
+neighbors that share that signature. Signatures are computed on the detection
+samples the storage indexes; the query points the result is drawn at are raw
+trajectory samples, which trace the attractor more finely.
 
 The first figure colors the attractor by dominant signature. The two wings of
 the Lorenz butterfly are each dominated by a single-wing rank-1 signature (the
@@ -21,9 +23,16 @@ they overlap.
 """
 
 # %%
-# Load the raw trajectory and the prebuilt ``CycleStorage`` from the published
-# example data, fetched and cached on first use. The raw positions are in
-# native Lorenz coordinates.
+# Load the raw trajectory, the detection trajectory, and the prebuilt
+# ``CycleStorage`` from the published example data, fetched and cached on first
+# use. A storage sample index is an index into the detection trajectory, so its
+# points are what the signature queries and neighborhood tallies below need.
+# Each detection point holds a position half followed by a direction half of
+# the same width; the position half is divided by the box size, so multiplying
+# it back gives native Lorenz coordinates, the coordinates the raw rows are
+# already in. The detection trajectory's ``parameters()`` are the integration
+# time of each sample, and a raw row is a fixed ``LORENZ_DT`` apart from the
+# next, which is how the two samplings are aligned.
 
 import math
 from collections import Counter
@@ -36,24 +45,32 @@ import _support
 import cycling_signatures as cs
 
 RAW = np.load(_support.lorenz_raw())
+TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
+PARAMETERS = TRAJECTORY.parameters()
+
+sphere_bundle_points = TRAJECTORY.points()
+POSITION_DIMENSION = sphere_bundle_points.shape[1] // 2
+POSITIONS = sphere_bundle_points[:, :POSITION_DIMENSION] * _support.LORENZ_BOXSIZE
 
 # %%
 # Constants that control the analysis. ``WINDOW_LENGTH`` is the number of
-# trajectory samples in each signature query. ``EPSILON`` is the neighborhood
+# detection samples in each signature query. ``EPSILON`` is the neighborhood
 # radius in native Lorenz coordinates. ``MIN_NEIGHBORS`` is the minimum count
 # of labeled neighbors to trust a dominance reading; points with fewer are
-# skipped. ``QUERY_STEP`` and ``BACKGROUND_STEP`` downsample the scatter
-# for a legible figure. ``LIBRARY_SIZE`` caps the number of distinct
-# signatures shown.
+# skipped. ``QUERY_STEP`` and ``BACKGROUND_STEP`` stride the raw rows the two
+# scatters draw, keeping the figures legible; the raw sampling is about 1.8
+# times as dense as the detection sampling, so both are wider than a stride
+# over detection samples would be for the same number of drawn points.
+# ``LIBRARY_SIZE`` caps the number of distinct signatures shown.
 
-WINDOW_LENGTH = 330
+WINDOW_LENGTH = 180
 EPSILON = 3.0
 MIN_NEIGHBORS = 20
-QUERY_STEP = 1
+QUERY_STEP = 2
 BACKGROUND_STEP = 40
 LIBRARY_SIZE = 4
-LIBRARY_SCAN_STEP = 25
+LIBRARY_SCAN_STEP = 14
 
 # %%
 # **Canonical class colors.** Rank-1 signatures each span a single homology
@@ -121,18 +138,26 @@ labeled_values = np.array(
 
 # %%
 # **Compute neighborhood dominance and purity.** Build one KD-tree per library
-# signature, holding the labeled samples that carry it. For each query sample
-# (stepped by ``QUERY_STEP`` over the labeled prefix), count each signature's
-# labeled samples within ``EPSILON``. The dominant signature is the most
-# common, and purity is the per-signature fraction of the labeled neighbors.
-# Query points with fewer than ``MIN_NEIGHBORS`` labeled neighbors are
-# dropped.
+# signature, holding the labeled detection samples that carry it. The query
+# points are raw rows instead, taken every ``QUERY_STEP`` rows and restricted
+# to the stretch of time the labeling covers, so the result is drawn at the raw
+# sampling density rather than the thinned one.
+# For each query point, count each signature's labeled samples within
+# ``EPSILON``. The dominant signature is the most common, and purity is the
+# per-signature fraction of the labeled neighbors. Query points with fewer than
+# ``MIN_NEIGHBORS`` labeled neighbors are dropped.
 
 member_trees = [
-    KDTree(RAW[labeled_samples[labeled_values == position]]) for position in range(len(library))
+    KDTree(POSITIONS[labeled_samples[labeled_values == position]])
+    for position in range(len(library))
 ]
 
-query_points = RAW[np.arange(extent_start, labeled_stop, QUERY_STEP)]
+candidate_rows = np.arange(0, len(RAW), QUERY_STEP)
+candidate_times = candidate_rows * _support.LORENZ_DT
+inside_labeled = (candidate_times >= PARAMETERS[extent_start]) & (
+    candidate_times <= PARAMETERS[labeled_stop - 1]
+)
+query_points = RAW[candidate_rows[inside_labeled]]
 label_counts = np.stack(
     [
         member_tree.query_ball_point(query_points, EPSILON, return_length=True, workers=-1)

@@ -1,22 +1,25 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Cycle birth and length population
-====================================
+"""Cycle birth and duration population
+======================================
 
 Every stored cycle binned by its birth (the metric distance between its
-endpoint samples) and its length in samples, colored by homology class:
-cell intensity grows with the number of cycles, and a blended hue marks a
-cell several classes share. The dashed line marks the top of the stored
-detection band. A vertical cut at any threshold keeps exactly the cycles a
-detection capped there would admit, so the plot shows what each threshold
-choice trades away.
+endpoint samples) and its duration (the integration time from its first sample
+to its last), colored by homology class: cell intensity grows with the number
+of cycles, and a blended hue marks a cell several classes share. The dashed
+line marks the top of the stored detection band. A vertical cut at any
+threshold keeps exactly the cycles a detection capped there would admit, so the
+plot shows what each threshold choice trades away.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the published example data, fetched
-# and cached on first use. ``threshold()`` is the top of the stored detection
-# band; every stored birth lies at or under it.
+# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
+# published example data, fetched and cached on first use. A cycle's
+# ``range()`` indexes the detection trajectory, whose ``parameters()`` give
+# the integration time of each sample and so turn that range into a duration.
+# ``threshold()`` is the top of the stored detection band; every stored birth
+# lies at or under it.
 
 import math
 
@@ -27,7 +30,9 @@ from matplotlib.lines import Line2D
 import _support
 import cycling_signatures as cs
 
+TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
+PARAMETERS = TRAJECTORY.parameters()
 BAND_TOP = STORAGE.threshold()
 assert math.isfinite(BAND_TOP)
 
@@ -45,52 +50,55 @@ CLASS_COLORS = _support.class_color_map(class_keys)
 nonzero_keys = sorted(key for key in set(class_keys) if any(key))
 
 # %%
-# **Collect every cycle's birth and length per class.** Each ``Component``
+# **Collect every cycle's birth and duration per class.** Each ``Component``
 # exposes its cycles through ``cycles()``, and every ``Cycle`` carries its
-# ``birth()`` and ``length()``.
+# ``birth()`` and its sample ``range()``; the duration is the time between the
+# parameters of the range's first and last sample.
 
 births_by_key: dict[tuple[int, ...], list[float]] = {key: [] for key in class_keys}
-lengths_by_key: dict[tuple[int, ...], list[int]] = {key: [] for key in class_keys}
+durations_by_key: dict[tuple[int, ...], list[float]] = {key: [] for key in class_keys}
 for component in STORAGE.components():
     key = class_keys[component.class_id()]
     for cycle in component.cycles():
+        cycle_start, cycle_stop = cycle.range()
         births_by_key[key].append(cycle.birth())
-        lengths_by_key[key].append(cycle.length())
+        durations_by_key[key].append(float(PARAMETERS[cycle_stop - 1] - PARAMETERS[cycle_start]))
 
 # %%
-# **Bin and composite the population.** One image row per integer cycle
-# length and a fixed grid of birth bins, so the banded length structure
-# renders exactly. Each cell's color is the count-weighted mix of the class
-# colors present, its intensity grows with the logarithm of the cell's weighted
-# count, and empty cells stay white; a blended hue therefore means several
-# classes genuinely share that cell. Trivial cycles enter at reduced weight, so
-# they read as background where classes overlap them.
+# **Bin and composite the population.** A uniform grid of duration bins by
+# birth bins, fine enough that the recurrence time scales read as distinct
+# bands. Cycles of one sample count do not all last the same time. Each cell's
+# color is the count-weighted mix of the class colors present, its intensity
+# grows with the logarithm of the cell's weighted count, and empty cells stay
+# white; a blended hue therefore means several classes share that cell.
+# Trivial cycles are drawn with reduced weight, so they read as background
+# where classes overlap them.
 
 BIRTH_BIN_COUNT = 500
-LENGTH_BIN_SIZE = 1
+DURATION_BIN_COUNT = 400
 
 
 def build_figure() -> plt.Figure:
     """Return the cycle population composite."""
-    groups: list[tuple[tuple[float, float, float], float, list[float], list[int], str]] = []
+    groups: list[tuple[tuple[float, float, float], float, list[float], list[float], str]] = []
     trivial_key = next((key for key in class_keys if not any(key)), None)
     if trivial_key is not None and births_by_key[trivial_key]:
         gray = (0.75, 0.75, 0.75)
         groups.append(
-            (gray, 0.2, births_by_key[trivial_key], lengths_by_key[trivial_key], "trivial class")
+            (gray, 0.2, births_by_key[trivial_key], durations_by_key[trivial_key], "trivial class")
         )
     for key in nonzero_keys:
         if not births_by_key[key]:
             continue
         label = f"[{' '.join(map(str, key))}]"
-        groups.append((CLASS_COLORS[key], 1.0, births_by_key[key], lengths_by_key[key], label))
+        groups.append((CLASS_COLORS[key], 1.0, births_by_key[key], durations_by_key[key], label))
 
-    length_max = max(max(lengths) for _, _, _, lengths, _ in groups)
-    length_edges = np.arange(-0.5, length_max + 0.5 + LENGTH_BIN_SIZE, LENGTH_BIN_SIZE)
+    duration_max = max(max(durations) for _, _, _, durations, _ in groups)
+    duration_edges = np.linspace(0.0, duration_max, DURATION_BIN_COUNT + 1)
     birth_edges = np.linspace(0.0, BAND_TOP, BIRTH_BIN_COUNT + 1)
     weighted_counts = [
-        weight * np.histogram2d(lengths, births, bins=(length_edges, birth_edges))[0]
-        for _, weight, births, lengths, _ in groups
+        weight * np.histogram2d(durations, births, bins=(duration_edges, birth_edges))[0]
+        for _, weight, births, durations, _ in groups
     ]
 
     total_counts = np.sum(weighted_counts, axis=0)
@@ -111,7 +119,7 @@ def build_figure() -> plt.Figure:
         origin="lower",
         aspect="auto",
         interpolation="nearest",
-        extent=(0.0, BAND_TOP, -0.5, length_edges[-1]),
+        extent=(0.0, BAND_TOP, 0.0, duration_edges[-1]),
     )
     axes.set_xlim(0.0, BAND_TOP * 1.04)
 
@@ -121,7 +129,7 @@ def build_figure() -> plt.Figure:
         for color, _, _, _, label in groups
     ]
     axes.set_xlabel("Birth (metric distance)")
-    axes.set_ylabel("Cycle length (samples)")
+    axes.set_ylabel("Cycle duration (time)")
     axes.set_title("Cycle births: Lorenz attractor")
     axes.legend(handles=[*swatches, band_line], loc="upper left", fontsize=9)
     figure.tight_layout()

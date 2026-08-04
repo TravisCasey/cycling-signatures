@@ -3,6 +3,14 @@
 
 """Shared helpers for the gallery examples: data fetching and color constants.
 
+Each system publishes the raw position trajectory as ``.npy``, the detection
+trajectory the storage was built over, and the cycle storage itself; Dadras
+adds the integration time of each raw sample, since its raw samples are spaced
+by distance rather than by time. A storage sample index is an index into the
+detection trajectory, and that trajectory's ``parameters()`` carry the
+integration time each detection point was sampled at, in the system's own time
+units.
+
 Raw color values are written as RGB triples in the 0-255 range and normalized
 to the [0, 1] floats matplotlib expects through ``_normalized``.
 """
@@ -56,17 +64,43 @@ def _download_verified(remote: _RemoteFile, target: Path) -> None:
         raise
 
 
+# The Zenodo record holding the published example data:
+# https://zenodo.org/records/21794612
+_ZENODO_RECORD = "21794612"
+
+
+def _published(name: str, sha256: str) -> _RemoteFile:
+    """Return the published example-data file `name` and its expected digest."""
+    return _RemoteFile(
+        url=f"https://zenodo.org/records/{_ZENODO_RECORD}/files/{name}?download=1",
+        sha256=sha256,
+    )
+
+
 _LORENZ_CACHE = Path(__file__).resolve().parent / "lorenz" / "data"
 
-# Published example data on Zenodo.
-_LORENZ_STORAGE = _RemoteFile(
-    url="https://zenodo.org/records/21711622/files/lorenz_storage.cyc?download=1",
-    sha256="74b5f6102853f38458acb513d3481b4d8683da9dfb1245c32499bd54d28f4bd9",
+_LORENZ_STORAGE = _published(
+    "lorenz_storage.cyc",
+    "b10bcd42eed48fc27b774274c254012017a613bcbced8e60198218d0fa9dfc0e",
 )
-_LORENZ_RAW = _RemoteFile(
-    url="https://zenodo.org/records/21711622/files/lorenz_raw.npy?download=1",
-    sha256="74103f830bfc532f91a0a999a805b835f2444ed799de73ae631b372036993101",
+_LORENZ_TRAJECTORY = _published(
+    "lorenz_trajectory.cyc",
+    "31312068c1112b8fa3a20bec2f8593dbc89f23cd97566ee63e181ff58e550da1",
 )
+_LORENZ_RAW = _published(
+    "lorenz_raw.npy",
+    "74103f830bfc532f91a0a999a805b835f2444ed799de73ae631b372036993101",
+)
+
+# Real position units per cube: the divisor `data/generate_lorenz.py` scales
+# the raw positions by. Multiplying a detection trajectory's position half by
+# it recovers native Lorenz coordinates.
+LORENZ_BOXSIZE = 5.0
+
+# Time units per raw row: the fixed sampling interval `data/integrate_lorenz.py`
+# recorded the raw trajectory at. Lorenz raw row `i` is time `i * LORENZ_DT`, so
+# dividing a detection parameter by it gives the raw row coordinate.
+LORENZ_DT = 0.007
 
 
 def _file_digest(path: Path) -> str:
@@ -101,24 +135,52 @@ def lorenz_storage() -> Path:
     return _cached(_LORENZ_STORAGE, _LORENZ_CACHE / "lorenz_storage.cyc")
 
 
-def lorenz_raw() -> Path:
-    """Return the local path to the Lorenz trajectory, fetching it if absent.
+def lorenz_trajectory() -> Path:
+    """Return the local path to the Lorenz detection trajectory.
 
-    The trajectory is cached under the gallery's `lorenz/data/` directory.
+    The trajectory is fetched if absent and cached under the gallery's
+    `lorenz/data/` directory. It is the point sequence the published storage
+    indexes: storage sample `i` is its point `i`, and its `parameters()` are
+    integration times in Lorenz time units.
+    """
+    return _cached(_LORENZ_TRAJECTORY, _LORENZ_CACHE / "lorenz_trajectory.cyc")
+
+
+def lorenz_raw() -> Path:
+    """Return the local path to the raw Lorenz trajectory.
+
+    The trajectory is fetched if absent and cached under the gallery's
+    `lorenz/data/` directory. Its rows are the integrator's samples, taken
+    `LORENZ_DT` time units apart, which the storage does not index; dividing a
+    detection parameter by `LORENZ_DT` gives the raw row coordinate of that
+    storage sample.
     """
     return _cached(_LORENZ_RAW, _LORENZ_CACHE / "lorenz_raw.npy")
 
 
 _DADRAS_CACHE = Path(__file__).resolve().parent / "dadras" / "data"
 
-_DADRAS_STORAGE = _RemoteFile(
-    url="https://zenodo.org/records/21711622/files/dadras_storage.cyc?download=1",
-    sha256="8b3cf2bd76f27adf4611eba7b75e85a35a385859b2ae0add46883ba89f11cf3d",
+_DADRAS_STORAGE = _published(
+    "dadras_storage.cyc",
+    "e76209b00569adeae47474a7fcfa8f04c54cfbef06018c45963fa3f574de9521",
 )
-_DADRAS_RAW = _RemoteFile(
-    url="https://zenodo.org/records/21711622/files/dadras_raw.npy?download=1",
-    sha256="d9a57917ff8e44e2a9ca4b9879af3eedaf9b0c37aeb2ea4e5facd715d806e61e",
+_DADRAS_TRAJECTORY = _published(
+    "dadras_trajectory.cyc",
+    "6383726fd32b833353051572ee9b904c65c146673f164c8618969b9b6c5d18ae",
 )
+_DADRAS_RAW = _published(
+    "dadras_raw.npy",
+    "d9a57917ff8e44e2a9ca4b9879af3eedaf9b0c37aeb2ea4e5facd715d806e61e",
+)
+_DADRAS_TIMES = _published(
+    "dadras_times.npy",
+    "f3449347349c9015c0d8a46a262ca48c028fc8bf91123e283b5a9a6ffcb38972",
+)
+
+# Real position units per cube: the divisor `data/generate_dadras.py` scales
+# the raw positions by. Multiplying a detection trajectory's position half by
+# it recovers native Dadras coordinates.
+DADRAS_BOXSIZE = 12.0
 
 
 def dadras_storage() -> Path:
@@ -129,14 +191,39 @@ def dadras_storage() -> Path:
     return _cached(_DADRAS_STORAGE, _DADRAS_CACHE / "dadras_storage.cyc")
 
 
-def dadras_raw() -> Path:
-    """Return the local path to the Dadras trajectory, fetching it if absent.
+def dadras_trajectory() -> Path:
+    """Return the local path to the Dadras detection trajectory.
 
-    The trajectory is cached under the gallery's `dadras/data/` directory. Its
-    rows are the exact samples the published storage indexes, so row `i` is
-    storage sample `i`.
+    The trajectory is fetched if absent and cached under the gallery's
+    `dadras/data/` directory. It is the point sequence the published storage
+    indexes: storage sample `i` is its point `i`, and its `parameters()` are
+    integration times in Dadras time units.
+    """
+    return _cached(_DADRAS_TRAJECTORY, _DADRAS_CACHE / "dadras_trajectory.cyc")
+
+
+def dadras_raw() -> Path:
+    """Return the local path to the raw Dadras trajectory.
+
+    The trajectory is fetched if absent and cached under the gallery's
+    `dadras/data/` directory. Its rows are the integrator's samples, spaced by
+    distance travelled rather than by time, which the storage does not index;
+    `dadras_times()` gives the time of each raw row, and interpolating a
+    detection parameter back through it gives the raw row coordinate of that
+    storage sample.
     """
     return _cached(_DADRAS_RAW, _DADRAS_CACHE / "dadras_raw.npy")
+
+
+def dadras_times() -> Path:
+    """Return the local path to the raw Dadras trajectory's sample times.
+
+    The file is fetched if absent and cached under the gallery's
+    `dadras/data/` directory. It holds one strictly increasing integration
+    time per row of the raw trajectory, in Dadras time units measured from the
+    first raw row, so its first entry is zero.
+    """
+    return _cached(_DADRAS_TIMES, _DADRAS_CACHE / "dadras_times.npy")
 
 
 def _normalized(red: int, green: int, blue: int) -> tuple[float, float, float]:

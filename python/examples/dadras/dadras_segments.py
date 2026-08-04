@@ -12,16 +12,20 @@ representative of each frequent cycle class, then overlays those loops, in
 their class colors (shared with the other gallery examples), on a longer
 stretch of trajectory that traces out the attractor shape, projected onto the
 first three of the four state coordinates. The second figure shows the
-analysis window as coordinate-versus-sample traces for all four coordinates,
-with each representative cycle's sample range shaded, locating the loops in
-time.
+analysis window as coordinate-versus-time traces for all four coordinates,
+with each representative cycle's time span shaded.
 """
 
 # %%
-# Load the raw trajectory and the prebuilt ``CycleStorage`` from the published
-# example data, fetched and cached on first use. The published raw trajectory
-# holds exactly the samples the storage indexes, so the positions are
-# sample-indexed and a cycle's sample range slices them directly.
+# Load the raw trajectory and its sample times, the detection trajectory, and
+# the prebuilt ``CycleStorage`` from the published example data, fetched and
+# cached on first use. A cycle's sample range indexes the detection
+# trajectory, which is thinned relative to the raw samples, so drawing a loop
+# as a smooth curve means crossing back to the raw rows. The detection
+# trajectory's ``parameters()`` are that bridge: each entry is the integration
+# time its point was sampled at. Raw rows are spaced by distance travelled
+# rather than by time, so recovering a row from a time is a search through the
+# raw sample times rather than a division.
 
 from collections import Counter
 
@@ -32,8 +36,25 @@ import _support
 import cycling_signatures as cs
 
 RAW = np.load(_support.dadras_raw())
+TIMES = np.load(_support.dadras_times())
+TRAJECTORY = cs.Trajectory.load(_support.dadras_trajectory())
 STORAGE = cs.CycleStorage.load(_support.dadras_storage())
 COMPONENTS = STORAGE.components()
+PARAMETERS = TRAJECTORY.parameters()
+
+
+def raw_rows(start: int, stop: int) -> tuple[int, int]:
+    """Return the raw row range the sample range ``[start, stop)`` spans.
+
+    Searching the raw sample times to the right of a sample's time gives the
+    first row past it. One less is the row the start sample sits at or just
+    after; taken at the last sample it is one past that sample's row, so
+    slicing the raw positions with the pair covers every sample in the range.
+    """
+    first = int(np.searchsorted(TIMES, PARAMETERS[start], side="right")) - 1
+    last = int(np.searchsorted(TIMES, PARAMETERS[stop - 1], side="right"))
+    return first, last
+
 
 # %%
 # **Rank the classes by frequency and assign canonical colors.** The Dadras
@@ -67,8 +88,8 @@ CLASS_LABELS = {key: f"class {position}" for position, key in enumerate(frequent
 # representative. Each ``Cycle`` reports its sample ``range()``, so a
 # representative is just a sample interval.
 
-WINDOW_LENGTH = 1000
-WINDOW_SCAN_STEP = 200
+WINDOW_LENGTH = 400
+WINDOW_SCAN_STEP = 80
 
 representative_class = []
 start_values: list[int] = []
@@ -152,11 +173,12 @@ window_stop = window_start + WINDOW_LENGTH
 # %%
 # **Overlay the loops on the trajectory.** A longer stretch of the trajectory is
 # drawn in faint gray to trace the attractor shape, and each representative
-# cycle is overdrawn in its class color. ``RAW[start:stop]`` is the loop, a
-# direct slice of the sample-indexed positions. The drawing projects the
-# four-dimensional state onto the first three coordinates.
+# cycle is overdrawn in its class color. Each sample range is carried through
+# ``raw_rows`` and the raw positions sliced with the result, so the loops draw
+# at the raw sampling density rather than the detection one. The drawing
+# projects the four-dimensional state onto the first three coordinates.
 
-CONTEXT_LENGTH = 20000
+CONTEXT_LENGTH = 8000
 
 context_center = (window_start + window_stop) // 2
 context_start = max(extent_start, context_center - CONTEXT_LENGTH // 2)
@@ -167,7 +189,8 @@ def build_overlay_figure() -> plt.Figure:
     """Return the 3-D trajectory overlay."""
     figure = plt.figure(figsize=(9, 8))
     axes = figure.add_subplot(projection="3d")
-    context_path = RAW[context_start:context_stop]
+    first_row, last_row = raw_rows(context_start, context_stop)
+    context_path = RAW[first_row:last_row]
     axes.plot(
         context_path[:, 0],
         context_path[:, 1],
@@ -182,8 +205,8 @@ def build_overlay_figure() -> plt.Figure:
         reverse=True,
     )
     for key in draw_keys:
-        cycle_start, cycle_stop = representatives[key]
-        loop = RAW[cycle_start:cycle_stop]
+        cycle_first_row, cycle_last_row = raw_rows(*representatives[key])
+        loop = RAW[cycle_first_row:cycle_last_row]
         axes.plot(
             loop[:, 0],
             loop[:, 1],
@@ -204,25 +227,32 @@ def build_overlay_figure() -> plt.Figure:
 overlay_figure = build_overlay_figure()
 
 # %%
-# **Locate the loops in time.** The same window as coordinate-versus-sample
-# traces. Each representative cycle's sample range is shaded in its class color,
-# showing when along the trajectory the loop happens.
+# **Locate the loops in time.** The same window as coordinate-versus-time
+# traces, drawn at the raw sampling density. Each representative cycle's time
+# span is shaded in its class color, showing when along the trajectory the loop
+# happens.
 
 
 def build_timeseries_figure() -> plt.Figure:
-    """Return the coordinate-versus-sample traces with cycle ranges shaded."""
-    samples = np.arange(window_start, window_stop)
-    window_path = RAW[window_start:window_stop]
+    """Return the coordinate-versus-time traces with cycle spans shaded."""
+    first_row, last_row = raw_rows(window_start, window_stop)
+    row_times = TIMES[first_row:last_row]
+    window_path = RAW[first_row:last_row]
 
     figure, panels = plt.subplots(4, 1, sharex=True, figsize=(11, 9))
     for panel, coordinate, axis_label in zip(panels, range(4), ("x", "y", "z", "w"), strict=True):
-        panel.plot(samples, window_path[:, coordinate], color="0.4", linewidth=0.9)
+        panel.plot(row_times, window_path[:, coordinate], color="0.4", linewidth=0.9)
         for key in frequent_keys:
             cycle_start, cycle_stop = representatives[key]
-            panel.axvspan(cycle_start, cycle_stop, color=CLASS_COLORS[key], alpha=0.25)
+            panel.axvspan(
+                PARAMETERS[cycle_start],
+                PARAMETERS[cycle_stop - 1],
+                color=CLASS_COLORS[key],
+                alpha=0.25,
+            )
         panel.set_ylabel(axis_label)
 
-    panels[-1].set_xlabel("Sample index")
+    panels[-1].set_xlabel("Time")
     handles = [
         plt.Line2D([0], [0], color=CLASS_COLORS[key], linewidth=6, alpha=0.5)
         for key in frequent_keys

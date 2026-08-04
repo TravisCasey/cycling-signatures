@@ -6,22 +6,28 @@
 
 Frequency of appearance of each signature rank as a function of window length.
 For the Lorenz attractor, longer windows capture more of the two independent
-cycles, so rank-2 windows become dominant as the length grows.
+cycles, so rank-2 windows become dominant as the length grows. Windows are
+swept in detection samples, and each length is presented at the median time
+its windows span.
 """
 
 # %%
-# Load the prebuilt ``CycleStorage`` from the published example data, fetched
-# and cached on first use. No raw trajectory data is needed; the storage
-# already encodes the homological information.
+# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
+# published example data, fetched and cached on first use. The trajectory
+# contributes only its ``parameters()``, the integration time of each sample,
+# which turn a window length in samples into a duration.
 
 from collections import Counter
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 import _support
 import cycling_signatures as cs
 
+TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
+PARAMETERS = TRAJECTORY.parameters()
 
 # %%
 # Sweep over window lengths and tally rank occurrences. For each length the
@@ -49,6 +55,26 @@ for length in window_lengths:
 all_ranks = sorted({rank for counter in rank_counts for rank in counter})
 
 # %%
+# Place each window length on a time axis. A length is a sample count, and the
+# time such a window spans varies along the trajectory, so a length is drawn at
+# the median time spanned by exactly the windows tallied above. Consecutive
+# medians are not evenly spaced, so each bar runs from the midpoint before its
+# median to the midpoint after: the bars tile the axis and their widths show
+# how much time each step in window length buys.
+
+duration_values: list[float] = []
+for length in window_lengths:
+    starts = np.arange(extent_start, extent_stop - length + 1, SCAN_STEP)
+    duration_values.append(float(np.median(PARAMETERS[starts + length - 1] - PARAMETERS[starts])))
+median_durations = np.array(duration_values)
+
+bar_boundaries = np.empty(len(median_durations) + 1)
+bar_boundaries[1:-1] = (median_durations[:-1] + median_durations[1:]) / 2
+bar_boundaries[0] = 2 * median_durations[0] - bar_boundaries[1]
+bar_boundaries[-1] = 2 * median_durations[-1] - bar_boundaries[-2]
+bar_widths = np.diff(bar_boundaries)
+
+# %%
 # Build a stacked bar chart. Each bar represents one window length; the stacked
 # segments show how many windows produced each rank. Viridis maps low ranks
 # (cold, near-zero) to high ranks (warm).
@@ -68,20 +94,21 @@ def build_figure() -> plt.Figure:
     for rank in all_ranks:
         heights = [counter.get(rank, 0) for counter in rank_counts]
         axes.bar(
-            window_lengths,
+            bar_boundaries[:-1],
             heights,
             bottom=bar_bottoms,
-            width=LENGTH_STEP,
+            width=bar_widths,
+            align="edge",
             color=rank_colors[rank],
             label=f"rank {rank}",
             linewidth=0,
         )
         bar_bottoms = [bottom + height for bottom, height in zip(bar_bottoms, heights, strict=True)]
 
-    axes.set_xlabel("Window length (samples)")
+    axes.set_xlabel("Median window duration")
     axes.set_ylabel("Number of windows")
     axes.set_title("Signature rank frequency vs. window length (Lorenz)")
-    axes.set_xlim(window_lengths[0] - LENGTH_STEP / 2, window_lengths[-1] + LENGTH_STEP / 2)
+    axes.set_xlim(bar_boundaries[0], bar_boundaries[-1])
     axes.legend(title="Rank", loc="upper right")
     figure.tight_layout()
     return figure

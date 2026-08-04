@@ -172,16 +172,15 @@ jobs:
       - run: uv run --group examples ty check
       - run: uv run codespell cycling_signatures tests
       - run: uv run pytest
-      # Temporarily disabled due to published storage predating current format.
       - name: Cache example data
-        if: false && matrix.python-version == '3.14'
+        if: matrix.python-version == '3.14'
         uses: actions/cache@v4
         with:
           path: |
             python/examples/lorenz/data
             python/examples/dadras/data
           key: example-data-${{ hashFiles('python/examples/_support.py') }}
-      - if: false && matrix.python-version == '3.14'
+      - if: matrix.python-version == '3.14'
         run: uv run --group docs --group examples sphinx-build -E -W -b html docs docs/_build/html
 
   success:

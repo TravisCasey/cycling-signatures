@@ -3,17 +3,23 @@
 
 """Integrate the Dadras trajectory the gallery's example data derives from.
 
-Writes ``dadras/data/dadras_raw.npy``: position samples of the four-wing
-hyperchaotic Dadras system (parameters a 8, b 40, c 14.9), recorded after a
-discarded transient. Integration uses fixed fourth-order Runge-Kutta steps with
-size adapted to the local speed of the flow; identical arguments
-deterministically reproduce the trajectory.
+Writes two files under ``dadras/data``: ``dadras_raw.npy``, the position
+samples of the four-wing chaotic Dadras system (parameters a 8, b 40, c 14.9)
+recorded after a discarded transient, and ``dadras_times.npy``, the integration
+time each of those samples was recorded at. Integration uses fourth-order
+Runge-Kutta steps with size adapted to the local speed of the flow.
 
 A sample is recorded whenever the trajectory has moved a fixed Euclidean
 distance from the previously recorded sample. The spacing controls how densely
 the attractor is sampled relative to the downstream cubical cover: tighter
 spacing shrinks the metric distance between consecutive samples, which
 reduces the resample densification the embedding pipeline needs.
+
+Because the samples are spaced by distance, the time between consecutive samples
+varies with the local speed of the flow. The times array carries that
+information: it holds one strictly increasing entry per saved sample,
+measured in the system's own time units from the first saved sample, so its
+first entry is zero and the discarded transient contributes nothing to it.
 """
 
 import argparse
@@ -38,7 +44,9 @@ STEP_LIMIT = 0.002
 DEFAULT_SAMPLE_SPACING = 1.0
 DEFAULT_SAMPLE_COUNT = 1_500_000
 DEFAULT_TRANSIENT_TIME = 10_000.0
-DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "dadras" / "data" / "dadras_raw.npy"
+_DATA_DIRECTORY = Path(__file__).resolve().parent.parent / "dadras" / "data"
+DEFAULT_OUTPUT = _DATA_DIRECTORY / "dadras_raw.npy"
+DEFAULT_TIMES_OUTPUT = _DATA_DIRECTORY / "dadras_times.npy"
 
 State = tuple[float, float, float, float]
 
@@ -99,13 +107,19 @@ def adaptive_step(state: State) -> float:
     return ARC_TARGET / speed
 
 
-def integrate(sample_spacing: float, sample_count: int, transient_time: float) -> np.ndarray:
-    """Return ``sample_count`` samples about ``sample_spacing`` apart.
+def integrate(
+    sample_spacing: float, sample_count: int, transient_time: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``sample_count`` spaced samples, with the time of each.
 
     The trajectory starts from a fixed initial state and discards
     ``transient_time`` time units before recording, so the samples lie on the
     attractor. Each subsequent sample is the first integration state at least
     ``sample_spacing`` away from its predecessor in Euclidean distance.
+
+    The second array holds the integration time of each sample, measured from
+    the first saved sample, so its first entry is zero and it increases
+    strictly.
     """
     state = INITIAL_STATE
     elapsed = 0.0
@@ -115,12 +129,17 @@ def integrate(sample_spacing: float, sample_count: int, transient_time: float) -
         elapsed += step
 
     samples = np.empty((sample_count, 4))
+    times = np.empty(sample_count)
     samples[0] = state
+    times[0] = 0.0
+    elapsed = 0.0
     previous = state
     spacing_squared = sample_spacing * sample_spacing
     for sample_index in range(1, sample_count):
         while True:
-            state = runge_kutta_step(state, adaptive_step(state))
+            step = adaptive_step(state)
+            state = runge_kutta_step(state, step)
+            elapsed += step
             gap = (
                 (state[0] - previous[0]) ** 2
                 + (state[1] - previous[1]) ** 2
@@ -130,8 +149,22 @@ def integrate(sample_spacing: float, sample_count: int, transient_time: float) -
             if gap >= spacing_squared:
                 break
         samples[sample_index] = state
+        times[sample_index] = elapsed
         previous = state
-    return samples
+    return samples, times
+
+
+def save_atomic(array: np.ndarray, target: Path) -> None:
+    """Save ``array`` to ``target`` so the file appears whole or not at all."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=target.parent, suffix=".npy")
+    try:
+        with os.fdopen(handle, "wb") as sink:
+            np.save(sink, array)
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def main() -> None:
@@ -159,22 +192,23 @@ def main() -> None:
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT,
-        help="output .npy path (default %(default)s)",
+        help="output .npy path for the position samples (default %(default)s)",
+    )
+    parser.add_argument(
+        "--times-output",
+        type=Path,
+        default=DEFAULT_TIMES_OUTPUT,
+        help="output .npy path for the sample times (default %(default)s)",
     )
     arguments = parser.parse_args()
 
-    samples = integrate(arguments.sample_spacing, arguments.sample_count, arguments.transient_time)
-    arguments.output.parent.mkdir(parents=True, exist_ok=True)
-    # Write through a temporary file so the output appears atomically.
-    handle, temporary = tempfile.mkstemp(dir=arguments.output.parent, suffix=".npy")
-    try:
-        with os.fdopen(handle, "wb") as sink:
-            np.save(sink, samples)
-        os.replace(temporary, arguments.output)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    samples, times = integrate(
+        arguments.sample_spacing, arguments.sample_count, arguments.transient_time
+    )
+    save_atomic(samples, arguments.output)
+    save_atomic(times, arguments.times_output)
     print(f"{arguments.output}  {samples.shape[0]} samples")
+    print(f"{arguments.times_output}  {times[-1]:.1f} time units")
 
 
 if __name__ == "__main__":
