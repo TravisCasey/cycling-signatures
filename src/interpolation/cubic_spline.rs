@@ -193,7 +193,7 @@ fn compute_coefficients(knots: &[f64], values: ArrayView2<'_, f64>) -> Array3<f6
 
     for index in 1..num_intervals {
         let diagonal = 2.0 * (widths[index - 1] + widths[index]);
-        let factor = widths[index - 1] / (diagonal - widths[index - 1] * forward_coeff[index - 1]);
+        let factor = 1.0 / (diagonal - widths[index - 1] * forward_coeff[index - 1]);
         forward_coeff[index] = widths[index] * factor;
 
         for axis in 0..dimension {
@@ -400,5 +400,21 @@ mod tests {
     fn sample_outside_domain_panics() {
         let spline = linear_spline();
         let _ = spline.sample(-0.001);
+    }
+
+    #[test]
+    fn matches_hand_solved_system_at_non_uniform_non_unit_knots() {
+        let knots = array![0.0, 1.0, 4.0, 6.0];
+        let values = array![[0.0], [1.0], [0.0], [2.0]];
+        let spline = CubicSpline::new(knots, values.view()).unwrap();
+
+        let references = [(0.5, 42.0 / 71.0), (2.0, 66.0 / 71.0), (5.0, 49.0 / 71.0)];
+        for (parameter, expected) in references {
+            let sample = spline.sample(parameter)[0];
+            assert!(
+                (sample - expected).abs() < 1e-12,
+                "sample at {parameter} was {sample}, expected {expected}",
+            );
+        }
     }
 }
