@@ -129,10 +129,17 @@ impl PyEuclidean {
 /// Operates on even-length coordinate vectors whose first half is a spatial
 /// position and whose second half is a direction (velocity) vector. Neither
 /// half is normalized: the distance is the maximum of the two halves'
-/// Euclidean distances, measured directly on the given coordinates. This
-/// metric is calibrated against ``SphereBundleInterpolator``, which stores
-/// each direction half as the unit tangent scaled to its configured direction
-/// radius.
+/// Euclidean distances, measured directly on the given coordinates. The
+/// maximum, rather than a Euclidean combination of the two halves, is what
+/// gives a distance of at most ``t`` its reading: within ``t`` in position
+/// *and* within ``t`` in direction. A combination would let the two trade,
+/// admitting a pair far apart in space merely because it is well aligned,
+/// which is not a recurrence.
+///
+/// This metric is calibrated against ``SphereBundleInterpolator``, which
+/// stores each direction half as the unit tangent scaled to its configured
+/// direction radius. That radius does double duty: it is the resolution of
+/// the direction half and the exchange rate between position and direction.
 #[pyclass(name = "SphereBundle", frozen)]
 pub(crate) struct PySphereBundle;
 

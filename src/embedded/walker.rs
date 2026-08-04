@@ -176,9 +176,21 @@ where
     Ok(())
 }
 
-/// Steps from `from` cube to `to` cube one axis-aligned unit at a time.
-/// Positive axis diffs are processed first (axis 0..dim), then negative diffs.
-/// Each unit step emits one 1-cube edge via `visit`.
+/// Steps from `from` cube to `to` cube one axis-aligned unit at a time,
+/// emitting one 1-cube edge per step.
+///
+/// The two passes are ordered so that every emitted edge lies in one of the
+/// two endpoint cubes: every axis whose cube coordinate increases is stepped
+/// first, then every axis whose coordinate decreases. In the rising pass, the
+/// axis being stepped is still at its `from` coordinate and every other axis
+/// lies within one unit above its `from` coordinate, so the edge lies in the
+/// closed `from` cube; in the falling pass, the axis being stepped has
+/// already reached its `to` coordinate and the others lie within one unit
+/// above theirs, so the edge lies in the closed `to` cube. The whole
+/// staircase is therefore trapped in the union of two cubes that meet, which
+/// is contractible, and any two staircases obeying this ordering are
+/// homotopic there: every 1-cocycle scores them identically, so the class a
+/// cycle walk reports does not depend on which staircase was taken.
 ///
 /// Returns the offending axis and its signed cube delta if any axis difference
 /// exceeds one unit in magnitude.
@@ -197,7 +209,7 @@ where
         return Err(gap);
     }
 
-    // Positive diffs first.
+    // Rising axes first: their edges lie in the `from` cube.
     for axis in 0..dimension {
         if to[axis] - from[axis] != 1 {
             continue;
@@ -208,7 +220,7 @@ where
         base[axis] += 1;
     }
 
-    // Negative diffs second.
+    // Falling axes second: their edges lie in the `to` cube.
     for axis in 0..dimension {
         if to[axis] - from[axis] != -1 {
             continue;

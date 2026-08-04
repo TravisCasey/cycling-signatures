@@ -275,6 +275,8 @@ impl PyTrajectory {
     ///     If the file cannot be read.
     /// ``FormatVersionMismatchError``
     ///     If the file was written by an incompatible version of the library.
+    /// ``ValueError``
+    ///     If the stored data cannot be decoded.
     #[staticmethod]
     fn load(path: PathBuf) -> PyResult<Self> {
         let inner = Trajectory::load(path).map_err(to_pyerr)?;

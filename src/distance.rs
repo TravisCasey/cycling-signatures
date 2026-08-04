@@ -16,9 +16,10 @@
 //! the block of cubes spanned by their three distinct endpoints, and those
 //! three points are pairwise within the threshold: two by admission, the
 //! consecutive pair because a valid threshold clears the trajectory's own
-//! resolution. A threshold below the cube side then puts the three cubes
-//! within one position per axis of each other, so every cube of the block
-//! they span meets in a common vertex and any loop confined to it contracts.
+//! resolution. A valid threshold also stays below the cube side, which puts
+//! the three cubes within one position per axis of each other, so every cube
+//! of the block they span meets in a common vertex and any loop confined to
+//! it contracts.
 
 mod stitch;
 mod tile;

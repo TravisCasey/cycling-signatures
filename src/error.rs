@@ -211,11 +211,13 @@ pub enum Error {
         resolution: f64,
     },
 
-    /// A cycle-detection threshold at or above the cube side, 1. Detection
-    /// justifies a cycle's homology class through a thickening of the cover
-    /// by half the threshold, and that radius must stay strictly below one
-    /// half of the cube side: at exactly one half, the thickening can fill in
-    /// a one-cube hole and change the homology it is meant to preserve.
+    /// A cycle-detection threshold at or above the cube side, 1.
+    ///
+    /// Points within the cube side of each other land in cubes differing by
+    /// at most one position per axis, so those cubes meet: a cycle's closing
+    /// step is then a well-defined staircase, and the cubes of mutually
+    /// admitted points span a block sharing a common vertex, which is what
+    /// makes the cycles of one component homologous.
     #[error("adjacency threshold {threshold} is not below the cube side")]
     ThresholdAboveCubeSide {
         /// The threshold the caller supplied.

@@ -40,12 +40,18 @@ pub enum Metric {
     /// )
     /// ```
     ///
+    /// The maximum, rather than a Euclidean combination of the two halves,
+    /// is what gives `distance <= t` its reading: within `t` in position
+    /// *and* within `t` in direction. A combination would let the two trade,
+    /// admitting a pair far apart in space merely because it is well aligned,
+    /// which is not a recurrence.
+    ///
     /// This metric is calibrated against
     /// [`SphereBundleInterpolator`](crate::interpolation::SphereBundleInterpolator),
     /// which stores each direction half as the unit tangent scaled to its
-    /// configured direction radius. That radius plays two roles: it is the
-    /// direction cover's cube resolution and the position/direction exchange
-    /// rate.
+    /// configured direction radius. That radius does double duty: it is the
+    /// resolution of the direction half and the exchange rate between
+    /// position and direction.
     ///
     /// ```
     /// use cycling_signatures::{

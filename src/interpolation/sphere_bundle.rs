@@ -16,11 +16,12 @@ use crate::interpolation::{DerivativeInterpolator, Interpolator};
 /// sample has length twice that of the inner interpolator: the first half is
 /// the position, the second half is the scaled direction.
 ///
-/// `direction_radius` is the L2 norm of every stored direction; it sets the
-/// angular resolution scale `1 / direction_radius`. A half-integer radius
-/// gives every extremal, axis-aligned direction coordinate maximal clearance
-/// from a cube boundary, but no particular value is required. The parameter
-/// is only meaningful when it exceeds half the detection threshold.
+/// `direction_radius` is the L2 norm of every stored direction, and it sets
+/// the angular resolution of the embedding. Two directions separated by an
+/// angle `theta` are stored `2 * direction_radius * sin(theta / 2)` apart, so
+/// a cycle-detection threshold `t` admits directions within
+/// `2 * arcsin(t / (2 * direction_radius))` of each other: a larger radius
+/// distinguishes directions more finely at the same threshold.
 #[derive(Debug, Clone)]
 pub struct SphereBundleInterpolator<Inner> {
     inner: Inner,
