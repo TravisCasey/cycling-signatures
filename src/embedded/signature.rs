@@ -59,6 +59,11 @@ impl EmbeddedTrajectory {
         let metric_points = self.metric_points();
         // A signature has no length cap, so every pair inside the segment is
         // admitted; detection clamps the cap to the segment's own length.
+        //
+        // Detection runs on the calling thread by design: a signature is a
+        // one-off query over one segment. A caller wanting dispatched work
+        // builds a `CycleStorage`, which takes a backend and caches its
+        // result.
         let components = detect_components(
             &metric_points,
             range,
