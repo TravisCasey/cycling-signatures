@@ -16,17 +16,5 @@ cycling_signatures = { path = "..", features = ["serde", "rayon"] }
 pyo3 = { version = "0.28", features = ["abi3-py311", "extension-module"] }
 numpy = "0.28"
 
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-cast_lossless = "allow"
-cast_possible_truncation = "allow"
-cast_possible_wrap = "allow"
-cast_precision_loss = "allow"
-cast_sign_loss = "allow"
-len_without_is_empty = "allow"
-unreadable_literal = "allow"
-# Doc comments here are Python numpydoc docstrings (they become the bindings'
-# __doc__). numpydoc requires bare snake_case parameter names on its parameter
-# lines, which doc_markdown would otherwise flag as needing backticks.
-doc_markdown = "allow"
+[lints]
+workspace = true

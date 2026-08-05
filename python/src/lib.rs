@@ -3,6 +3,11 @@
 
 //! Python bindings for the cycling-signatures core pipeline.
 
+// Doc comments in this crate are Python numpydoc docstrings; numpydoc requires
+// snake_case parameter names on its parameter lines, which are flagged by
+// `clippy::doc_markdown`.
+#![allow(clippy::doc_markdown)]
+
 mod cover;
 mod embedded;
 mod errors;

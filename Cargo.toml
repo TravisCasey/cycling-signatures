@@ -20,17 +20,8 @@ rustc-hash = "2.1.2"
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 thiserror = "2.0.18"
 
-[lints.clippy]
-all = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-cast_lossless = "allow"
-cast_possible_truncation = "allow"
-cast_possible_wrap = "allow"
-cast_precision_loss = "allow"
-cast_sign_loss = "allow"
-len_without_is_empty = "allow"
-needless_pass_by_value = "allow"
-unreadable_literal = "allow"
+[lints]
+workspace = true
 
 [features]
 serde = ["dep:serde", "chomp3rs/serde", "dep:rmp-serde", "dep:ndarray-npy"]
@@ -50,3 +41,18 @@ members = ["python"]
 
 [workspace.dependencies]
 ndarray = "0.17.2"
+
+[workspace.lints.rust]
+missing_docs = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+cast_lossless = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+len_without_is_empty = "allow"
+needless_pass_by_value = "allow"
+unreadable_literal = "allow"
