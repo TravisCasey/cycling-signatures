@@ -75,7 +75,7 @@ impl PyCubicalCover {
 
     /// Returns the cover's cubes as a two-dimensional array.
     ///
-    /// Each row holds the integer coordinates of one cube, the componentwise
+    /// Each row holds the integer coordinates of one cube, the component-wise
     /// floor of the trajectory points that landed in it. Rows are deduplicated
     /// and in lexicographic order.
     ///
