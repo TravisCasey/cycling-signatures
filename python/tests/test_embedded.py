@@ -89,6 +89,15 @@ def test_cover_len_and_num_generators_match_visited_cubes():
     assert cover.num_generators() == 1
 
 
+def test_cover_cubes_are_the_deduplicated_visited_cubes():
+    # The four cubes of the unit square are visited in an order that is not
+    # lexicographic, and the first is revisited at the end, so the accessor
+    # has to deduplicate and sort.
+    points = np.array([[1.5, 0.5], [1.5, 1.5], [0.5, 1.5], [0.5, 0.5], [1.5, 0.5]])
+    cover = cs.CubicalCover(cs.Trajectory(points))
+    assert np.array_equal(cover.cubes(), np.array([[0, 0], [0, 1], [1, 0], [1, 1]]))
+
+
 def test_cover_save_load_roundtrip(tmp_path, square_loop_points):
     cover = cs.CubicalCover(cs.Trajectory(square_loop_points))
     path = str(tmp_path / "cover.cyc")

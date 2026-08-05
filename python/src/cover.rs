@@ -6,6 +6,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use cycling_signatures::{CubicalCover, ExecutionBackend};
+use numpy::{PyArray2, ToPyArray};
 use pyo3::prelude::*;
 
 use crate::{errors::to_pyerr, trajectory::PyTrajectory};
@@ -70,6 +71,21 @@ impl PyCubicalCover {
     /// Returns the number of cubes in the cover.
     fn __len__(&self) -> usize {
         self.inner.cubes().nrows()
+    }
+
+    /// Returns the cover's cubes as a two-dimensional array.
+    ///
+    /// Each row holds the integer coordinates of one cube, the componentwise
+    /// floor of the trajectory points that landed in it. Rows are deduplicated
+    /// and in lexicographic order.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray
+    ///     A two-dimensional array whose rows are the cover's cubes.
+    #[must_use]
+    fn cubes<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<i64>> {
+        self.inner.cubes().to_pyarray(py)
     }
 
     /// Returns the number of cohomology generators.
