@@ -5,6 +5,8 @@
 //! [`Array2<f64>`](ndarray::Array2).
 
 use ndarray::{ArrayView1, ArrayView2};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 mod sphere_bundle;
 
@@ -18,6 +20,7 @@ use sphere_bundle::sphere_bundle_distance;
 /// half is a direction vector; see the variant documentation for the distance
 /// formula and its calibration with the cubical cover.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
 pub enum Metric {
     /// The standard Euclidean metric.

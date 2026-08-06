@@ -66,6 +66,38 @@ impl<T: DerivativeInterpolator + ?Sized> DerivativeInterpolator for Arc<T> {
     }
 }
 
+impl<T: Interpolator + ?Sized> Interpolator for &T {
+    fn sample(&self, parameter: f64) -> Array1<f64> {
+        (**self).sample(parameter)
+    }
+
+    fn knots(&self) -> &[f64] {
+        (**self).knots()
+    }
+}
+
+impl<T: DerivativeInterpolator + ?Sized> DerivativeInterpolator for &T {
+    fn derivative(&self, parameter: f64) -> Array1<f64> {
+        (**self).derivative(parameter)
+    }
+}
+
+impl<T: Interpolator + ?Sized> Interpolator for Box<T> {
+    fn sample(&self, parameter: f64) -> Array1<f64> {
+        (**self).sample(parameter)
+    }
+
+    fn knots(&self) -> &[f64] {
+        (**self).knots()
+    }
+}
+
+impl<T: DerivativeInterpolator + ?Sized> DerivativeInterpolator for Box<T> {
+    fn derivative(&self, parameter: f64) -> Array1<f64> {
+        (**self).derivative(parameter)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -96,5 +128,22 @@ mod tests {
         assert_eq!(shared.knots(), spline.knots());
         assert_eq!(shared.sample(1.5), spline.sample(1.5));
         assert_eq!(shared.derivative(1.5), spline.derivative(1.5));
+    }
+
+    #[test]
+    fn boxed_dyn_interpolator_satisfies_the_bound() {
+        let spline = CubicSpline::new(
+            array![0.0, 1.0, 2.0, 3.0],
+            array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]].view(),
+        )
+        .unwrap();
+        let boxed: Box<dyn Interpolator> = Box::new(spline.clone());
+
+        // `Box<dyn Interpolator>` unifies with the same generic `&I`
+        // parameter that a concrete interpolator does, confirming the
+        // forwarding impl is what makes a runtime-chosen curve usable here.
+        let boxed_resample = Trajectory::resample(&boxed, Metric::Euclidean, 0.5).unwrap();
+        let direct_resample = Trajectory::resample(&spline, Metric::Euclidean, 0.5).unwrap();
+        assert_eq!(boxed_resample.fingerprint(), direct_resample.fingerprint());
     }
 }

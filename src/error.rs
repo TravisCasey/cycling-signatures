@@ -21,6 +21,17 @@ pub enum Error {
         expected: usize,
     },
 
+    /// Two subspaces passed to [`crate::F2Subspace::inclusion`] have
+    /// different generator counts, so they lie in different ambient spaces
+    /// and no comparison between them is defined.
+    #[error("subspaces lie in different ambient spaces: generator counts {first} and {second}")]
+    F2SubspaceGeneratorCountMismatch {
+        /// The first subspace's generator count.
+        first: usize,
+        /// The second subspace's generator count.
+        second: usize,
+    },
+
     /// An interpolator was constructed with fewer than two knots.
     #[error("interpolation requires at least two knots, got {knots}")]
     InterpolationKnotCount {

@@ -3,14 +3,17 @@
 
 //! Vector type over the field with two elements.
 
-use std::ops::{BitXor, BitXorAssign};
+use std::{
+    fmt,
+    ops::{BitXor, BitXorAssign},
+};
 
 use chomp3rs::{F2, Ring};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// A vector over the field with two elements.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct F2Vector {
     // The external interface uses `F2` from the `chomp3rs` crate, but the
@@ -70,6 +73,15 @@ impl F2Vector {
     #[must_use]
     pub fn is_zero(&self) -> bool {
         self.bits.iter().all(|word| *word == 0)
+    }
+
+    /// The number of nonzero entries.
+    #[must_use]
+    pub fn weight(&self) -> usize {
+        self.bits
+            .iter()
+            .map(|word| word.count_ones() as usize)
+            .sum()
     }
 
     /// The entry at `index`.
@@ -191,6 +203,24 @@ impl BitXorAssign<&F2Vector> for F2Vector {
         for (left, right) in self.bits.iter_mut().zip(other.bits.iter()) {
             *left ^= *right;
         }
+    }
+}
+
+impl fmt::Display for F2Vector {
+    /// Renders the entries as a string of `0`/`1` glyphs, one per entry, in
+    /// index order.
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for entry in self {
+            let glyph = if entry == F2::one() { '1' } else { '0' };
+            write!(formatter, "{glyph}")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for F2Vector {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "F2Vector({self})")
     }
 }
 
@@ -338,6 +368,14 @@ mod tests {
     fn get_out_of_bounds_panics() {
         let vector = F2Vector::zeros(10);
         _ = vector.get(10);
+    }
+
+    #[test]
+    fn display_and_debug_show_the_entry_string() {
+        let vector = F2Vector::from_nonzero(5, [1, 3]);
+        assert_eq!(vector.to_string(), "01010");
+        assert_eq!(format!("{vector:?}"), "F2Vector(01010)");
+        assert_eq!(vector.weight(), 2);
     }
 
     #[test]

@@ -165,17 +165,26 @@ impl F2Subspace {
         }
         residual.is_zero()
     }
-}
 
-impl PartialOrd for F2Subspace {
-    /// Subspace inclusion partial order.
+    /// Compares this subspace and `other` under the subspace inclusion order.
     ///
-    /// Returns `Less`, `Equal`, or `Greater` for comparable subspaces and
-    /// `None` for incomparable ones.
+    /// Returns `Ok(Some(..))` when one subspace includes the other, and
+    /// `Ok(None)` when the two subspaces share an ambient space but neither
+    /// includes the other. An `Err` result says only that the two subspaces'
+    /// ambient dimensions differ, which is necessary but not sufficient for a
+    /// comparison between them to be meaningful; comparing cover fingerprints
+    /// is how a caller establishes that two subspaces come from the same cover.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::F2SubspaceGeneratorCountMismatch`] if `self` and
+    /// `other` have different generator counts.
     ///
     /// # Examples
     ///
     /// ```
+    /// use std::cmp::Ordering;
+    ///
     /// use cycling_signatures::{F2Subspace, F2Vector};
     ///
     /// let small =
@@ -189,29 +198,26 @@ impl PartialOrd for F2Subspace {
     /// )
     /// .unwrap();
     ///
-    /// assert!(small < big);
-    /// assert!(big > small);
+    /// assert_eq!(small.inclusion(&big).unwrap(), Some(Ordering::Less));
+    /// assert_eq!(big.inclusion(&small).unwrap(), Some(Ordering::Greater));
     ///
     /// // Two 1-dim subspaces along different axes are incomparable.
     /// let other =
     ///     F2Subspace::new(vec![F2Vector::from_nonzero(3, [2])], 3).unwrap();
-    /// assert_eq!(small.partial_cmp(&other), None);
+    /// assert_eq!(small.inclusion(&other).unwrap(), None);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// Panics if the two subspaces have different generator counts.
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        assert_eq!(
-            self.num_generators, other.num_generators,
-            "comparing subspaces with different generator counts: first {}, second {}",
-            self.num_generators, other.num_generators
-        );
+    pub fn inclusion(&self, other: &Self) -> Result<Option<Ordering>> {
+        if self.num_generators != other.num_generators {
+            return Err(Error::F2SubspaceGeneratorCountMismatch {
+                first: self.num_generators,
+                second: other.num_generators,
+            });
+        }
 
         // Different ranks rule out equality and one inclusion direction; only
         // the larger-ranked side can possibly contain the smaller, so we test
         // a single direction.
-        match self.rank().cmp(&other.rank()) {
+        let ordering = match self.rank().cmp(&other.rank()) {
             Ordering::Less => self
                 .basis
                 .iter()
@@ -227,7 +233,8 @@ impl PartialOrd for F2Subspace {
                 .iter()
                 .all(|vector| other.contains(vector))
                 .then_some(Ordering::Equal),
-        }
+        };
+        Ok(ordering)
     }
 }
 
@@ -240,11 +247,7 @@ impl fmt::Display for F2Subspace {
             self.num_generators(),
         )?;
         for basis_vector in &self.basis {
-            writeln!(formatter)?;
-            for entry in basis_vector {
-                let glyph = if entry == F2::one() { '1' } else { '0' };
-                write!(formatter, "{glyph}")?;
-            }
+            write!(formatter, "\n{basis_vector}")?;
         }
         Ok(())
     }
@@ -262,9 +265,11 @@ impl fmt::Display for F2Subspace {
 fn rref_f2(mut rows: Vec<F2Vector>, num_generators: usize) -> Vec<F2Vector> {
     let mut pivot_row = 0;
     for column in 0..num_generators {
-        let candidate = (pivot_row..rows.len()).find(|&row| rows[row].get(column) == F2::one());
-        let Some(found) = candidate else { continue };
-        rows.swap(pivot_row, found);
+        let pivot_search = (pivot_row..rows.len()).find(|&row| rows[row].get(column) == F2::one());
+        let Some(pivot_row_index) = pivot_search else {
+            continue;
+        };
+        rows.swap(pivot_row, pivot_row_index);
 
         let pivot = rows[pivot_row].clone();
         let (head, tail) = rows.split_at_mut(pivot_row + 1);
@@ -327,24 +332,22 @@ mod tests {
     }
 
     #[test]
-    fn partial_ord_inclusion() {
-        let small = F2Subspace::new(vec![vector(3, &[0])], 3).unwrap();
-        let large = F2Subspace::new(vec![vector(3, &[0]), vector(3, &[1])], 3).unwrap();
-        assert!(small < large);
-        assert!(large > small);
+    fn inclusion_generator_count_mismatch_returns_err() {
+        // Differing ranks and generator counts, with a non-empty basis on the
+        // smaller-ranked side, are required here so the comparison actually
+        // reaches `contains`'s generator-count assertion instead of
+        // short-circuiting on an empty basis.
+        let left = F2Subspace::new(vec![vector(3, &[0])], 3).unwrap();
+        let right = F2Subspace::new(vec![vector(4, &[0]), vector(4, &[1])], 4).unwrap();
 
-        let other = F2Subspace::new(vec![vector(3, &[2])], 3).unwrap();
-        assert_eq!(small.partial_cmp(&other), None);
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "comparing subspaces with different generator counts: first 3, second 4"
-    )]
-    fn partial_ord_dimension_mismatch_panics() {
-        let left = F2Subspace::trivial(3);
-        let right = F2Subspace::trivial(4);
-        let _ = left.partial_cmp(&right);
+        let err = left.inclusion(&right).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::F2SubspaceGeneratorCountMismatch {
+                first: 3,
+                second: 4
+            }
+        ));
     }
 
     #[test]
