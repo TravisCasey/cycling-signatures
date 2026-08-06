@@ -93,8 +93,8 @@ fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Ve
 ///
 /// # Errors
 ///
-/// - [`Error::WindowOutOfBounds`] if `range` is outside the point array's index
-///   space.
+/// - [`Error::SegmentOutOfBounds`] if `range` is outside the point array's
+///   index space.
 pub(crate) fn detect_components(
     points: &MetricPoints<'_>,
     range: Range<usize>,
@@ -104,10 +104,10 @@ pub(crate) fn detect_components(
     backend: &ExecutionBackend,
 ) -> Result<Vec<Vec<Range<usize>>>> {
     if range.start > range.end || range.end > points.len() {
-        return Err(Error::WindowOutOfBounds {
+        return Err(Error::SegmentOutOfBounds {
             start: range.start,
             end: range.end,
-            trajectory_length: points.len(),
+            point_count: points.len(),
         });
     }
     assert!(owned_columns > 0, "a tile must own at least one column");
@@ -185,7 +185,7 @@ mod tests {
     fn rejects_segment_out_of_bounds() {
         let trajectory = small_trajectory();
         let err = detect_euclidean(&trajectory, 0..10, 0.5, 5, 5).unwrap_err();
-        assert!(matches!(err, Error::WindowOutOfBounds { .. }));
+        assert!(matches!(err, Error::SegmentOutOfBounds { .. }));
     }
 
     #[test]

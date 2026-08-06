@@ -213,7 +213,7 @@ impl CycleStorage {
     ///
     /// # Errors
     ///
-    /// [`Error::WindowOutOfBounds`] if `segment` does not fit inside
+    /// [`Error::SegmentOutOfBounds`] if `segment` does not fit inside
     /// [`Self::extent`].
     #[allow(clippy::missing_panics_doc)]
     pub fn signature(&self, segment: impl RangeBounds<usize>) -> Result<CyclingSignature> {
@@ -229,10 +229,10 @@ impl CycleStorage {
         };
         let range = normalize_segment((start_bound, end_bound), self.extent.end as usize)?;
         if (range.start as u32) < self.extent.start {
-            return Err(Error::WindowOutOfBounds {
+            return Err(Error::SegmentOutOfBounds {
                 start: range.start,
                 end: range.end,
-                trajectory_length: self.extent.end as usize,
+                point_count: self.extent.end as usize,
             });
         }
         let query = (range.start as u32)..(range.end as u32);
@@ -607,7 +607,7 @@ mod tests {
         assert_eq!(unbounded_births, explicit_births);
 
         let error = storage.signature(0..sub_segment.end).unwrap_err();
-        assert!(matches!(error, Error::WindowOutOfBounds { start: 0, .. }));
+        assert!(matches!(error, Error::SegmentOutOfBounds { start: 0, .. }));
     }
 
     #[test]
@@ -634,7 +634,7 @@ mod tests {
         let outcome = CycleStorage::build(&embedded, .., 1, 0.95, &ExecutionBackend::Sequential);
         assert!(matches!(
             outcome,
-            Err(Error::InvalidMaxLength { max_length: 1 })
+            Err(Error::MaxLengthBelowMinimum { max_length: 1 })
         ));
     }
 

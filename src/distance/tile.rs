@@ -174,8 +174,8 @@ fn partition_tile(tile: ArrayView2<'_, f64>, base: usize, threshold: f64) -> Til
 ///
 /// # Errors
 ///
-/// - [`Error::WindowOutOfBounds`] if `columns` and `window_end` are not a valid
-///   nested pair of sub-ranges of `0..points.len()`.
+/// - [`Error::SegmentOutOfBounds`] if `columns` and `window_end` are not a
+///   valid nested pair of sub-ranges of `0..points.len()`.
 fn build_distance_tile(
     points: &MetricPoints<'_>,
     columns: Range<usize>,
@@ -184,10 +184,10 @@ fn build_distance_tile(
 ) -> Result<Array2<f64>> {
     let point_count = points.len();
     if columns.start > columns.end || columns.end > window_end || window_end > point_count {
-        return Err(Error::WindowOutOfBounds {
+        return Err(Error::SegmentOutOfBounds {
             start: columns.start,
             end: columns.end,
-            trajectory_length: point_count,
+            point_count,
         });
     }
     assert!(max_length > 0, "distance tile needs at least one row");

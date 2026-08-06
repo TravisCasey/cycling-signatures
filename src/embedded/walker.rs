@@ -30,7 +30,7 @@ impl EmbeddedTrajectory {
     ///
     /// # Errors
     ///
-    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
+    /// - [`Error::SegmentOutOfBounds`] if `segment` does not normalize to a
     ///   valid sub-range.
     /// - [`Error::CycleEndpointsNonAdjacent`] if the cubes of the trajectory
     ///   points at `segment.start` and `segment.end - 1` differ by more than 1
@@ -82,7 +82,7 @@ impl EmbeddedTrajectory {
     ///
     /// # Errors
     ///
-    /// - [`Error::WindowOutOfBounds`] if `segment` does not normalize to a
+    /// - [`Error::SegmentOutOfBounds`] if `segment` does not normalize to a
     ///   valid sub-range.
     ///
     /// # Panics

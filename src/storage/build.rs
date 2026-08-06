@@ -28,9 +28,9 @@ impl CycleStorage {
     ///
     /// # Errors
     ///
-    /// - [`Error::WindowOutOfBounds`] if `segment` does not fit inside
+    /// - [`Error::SegmentOutOfBounds`] if `segment` does not fit inside
     ///   `0..embedded.trajectory().len()`.
-    /// - [`Error::InvalidMaxLength`] if `max_length < 2`.
+    /// - [`Error::MaxLengthBelowMinimum`] if `max_length < 2`.
     /// - [`Error::ThresholdBelowResolution`] if `threshold <
     ///   embedded.resolution()`.
     /// - [`Error::ThresholdAboveCubeSide`] if `threshold` is at or above the
@@ -44,7 +44,7 @@ impl CycleStorage {
     ) -> Result<Self> {
         let range = normalize_segment(segment, embedded.trajectory().len())?;
         if max_length < 2 {
-            return Err(Error::InvalidMaxLength { max_length });
+            return Err(Error::MaxLengthBelowMinimum { max_length });
         }
         embedded.check_threshold(threshold)?;
 

@@ -17,7 +17,7 @@ use crate::error::{Error, Result};
 ///
 /// # Errors
 ///
-/// [`Error::WindowOutOfBounds`] if the normalized range does not satisfy
+/// [`Error::SegmentOutOfBounds`] if the normalized range does not satisfy
 /// `start <= end <= length`.
 pub(crate) fn normalize_segment(
     segment: impl RangeBounds<usize>,
@@ -34,10 +34,10 @@ pub(crate) fn normalize_segment(
         Bound::Unbounded => length,
     };
     if start > end || end > length {
-        return Err(Error::WindowOutOfBounds {
+        return Err(Error::SegmentOutOfBounds {
             start,
             end,
-            trajectory_length: length,
+            point_count: length,
         });
     }
     Ok(start..end)
@@ -64,24 +64,24 @@ mod tests {
 
     #[test]
     #[allow(clippy::reversed_empty_ranges)]
-    fn out_of_range_returns_window_out_of_bounds() {
+    fn out_of_range_returns_segment_out_of_bounds() {
         let err = normalize_segment(2..15, 10).unwrap_err();
         assert!(matches!(
             err,
-            Error::WindowOutOfBounds {
+            Error::SegmentOutOfBounds {
                 start: 2,
                 end: 15,
-                trajectory_length: 10
+                point_count: 10
             }
         ));
 
         let err = normalize_segment(8..3, 10).unwrap_err();
         assert!(matches!(
             err,
-            Error::WindowOutOfBounds {
+            Error::SegmentOutOfBounds {
                 start: 8,
                 end: 3,
-                trajectory_length: 10
+                point_count: 10
             }
         ));
     }

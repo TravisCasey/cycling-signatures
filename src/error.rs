@@ -2,6 +2,8 @@
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
 //! Crate-level error-handling and reporting.
+//!
+//! A NaN value fails every comparison, and so fails whichever guard checks it.
 
 /// Error type specific to the cycling-signatures crate.
 #[derive(Debug, thiserror::Error)]
@@ -107,7 +109,10 @@ pub enum Error {
 
     /// Bisection in `Trajectory::resample` could not bring consecutive
     /// points within the requested spacing at machine precision.
-    #[error("trajectory bisection stagnated near parameter {parameter}")]
+    #[error(
+        "the curve cannot be sampled finely enough near parameter {parameter} to reach the \
+         requested spacing"
+    )]
     ResampleStagnation {
         /// The parameter value at which bisection stagnated.
         parameter: f64,
@@ -124,8 +129,7 @@ pub enum Error {
         column: usize,
     },
 
-    /// A requested point spacing is not a positive length (including when it
-    /// is NaN, which fails every comparison).
+    /// A requested point spacing is not a positive length.
     #[error("point spacing {spacing} is not positive")]
     SpacingNotPositive {
         /// The requested spacing.
@@ -133,9 +137,8 @@ pub enum Error {
     },
 
     /// A requested point spacing is below the trajectory's own maximum
-    /// consecutive-point distance (including when the spacing is NaN).
-    /// Thinning cannot place points closer together than the trajectory
-    /// already resolves them.
+    /// consecutive-point distance. Thinning cannot place points closer
+    /// together than the trajectory already resolves them.
     #[error(
         "point spacing {spacing} is below the trajectory's consecutive-point resolution \
          {resolution}"
@@ -157,8 +160,7 @@ pub enum Error {
         points: usize,
     },
 
-    /// A trajectory's parameterization was not strictly increasing (including
-    /// when a parameter value is NaN).
+    /// A trajectory's parameterization was not strictly increasing.
     #[error("trajectory parameters are not strictly increasing")]
     TrajectoryParametersNotIncreasing,
 
@@ -183,17 +185,14 @@ pub enum Error {
 
     /// A trajectory segment passed to a window or cycle query falls outside
     /// the valid range of the trajectory.
-    #[error(
-        "trajectory segment {start}..{end} does not lie within a trajectory of length \
-         {trajectory_length}"
-    )]
-    WindowOutOfBounds {
+    #[error("segment {start}..{end} does not lie within {point_count} points")]
+    SegmentOutOfBounds {
         /// Start of the offending range.
         start: usize,
         /// End (exclusive) of the offending range.
         end: usize,
         /// Number of points in the trajectory.
-        trajectory_length: usize,
+        point_count: usize,
     },
 
     /// A cycle-detection threshold below the embedded trajectory's
@@ -255,8 +254,8 @@ pub enum Error {
     },
 
     /// A `max_length` value below the structure's minimum.
-    #[error("cycle length cap {max_length} is invalid")]
-    InvalidMaxLength {
+    #[error("cycle length cap {max_length} is below the minimum of 2 points")]
+    MaxLengthBelowMinimum {
         /// The rejected length cap.
         max_length: usize,
     },

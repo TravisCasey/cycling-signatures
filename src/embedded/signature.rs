@@ -41,7 +41,7 @@ impl EmbeddedTrajectory {
     ///
     /// # Errors
     ///
-    /// - [`Error::WindowOutOfBounds`](crate::Error::WindowOutOfBounds) if
+    /// - [`Error::SegmentOutOfBounds`](crate::Error::SegmentOutOfBounds) if
     ///   `segment` does not normalize to a valid sub-range of the trajectory.
     /// - [`Error::ThresholdBelowResolution`](crate::Error::ThresholdBelowResolution)
     ///   if `threshold < self.resolution()`.
