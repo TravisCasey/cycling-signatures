@@ -5,7 +5,7 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use cycling_signatures::EmbeddedTrajectory;
+use cycling_signatures::{EmbeddedTrajectory, ExecutionBackend};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
@@ -124,7 +124,7 @@ impl PyEmbeddedTrajectory {
         let range = segment_from_py(segment)?;
         let embedded = &self.inner;
         let cycling_signature = py
-            .detach(move || embedded.signature(range, threshold))
+            .detach(move || embedded.signature(range, threshold, &ExecutionBackend::Rayon))
             .map_err(to_pyerr)?;
         Ok(PyCyclingSignature {
             inner: cycling_signature,

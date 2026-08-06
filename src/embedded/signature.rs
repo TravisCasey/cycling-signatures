@@ -31,7 +31,7 @@ impl EmbeddedTrajectory {
     ///
     /// `threshold` is the adjacency threshold for cycle detection: pairs of
     /// trajectory points with metric distance `<= threshold` are admitted as
-    /// cycle endpoints.
+    /// cycle endpoints. Detection is dispatched across `backend`.
     ///
     /// This is not a cheap query. A signature has no cycle-length cap, so it
     /// evaluates the metric over every pair of points in the segment, a cost
@@ -52,6 +52,7 @@ impl EmbeddedTrajectory {
         &self,
         segment: impl RangeBounds<usize>,
         threshold: f64,
+        backend: &ExecutionBackend,
     ) -> Result<CyclingSignature> {
         let trajectory = self.trajectory();
         let range = normalize_segment(segment, trajectory.len())?;
@@ -59,18 +60,13 @@ impl EmbeddedTrajectory {
         let metric_points = self.metric_points();
         // A signature has no length cap, so every pair inside the segment is
         // admitted; detection clamps the cap to the segment's own length.
-        //
-        // Detection runs on the calling thread by design: a signature is a
-        // one-off query over one segment. A caller wanting dispatched work
-        // builds a `CycleStorage`, which takes a backend and caches its
-        // result.
         let components = detect_components(
             &metric_points,
             range,
             threshold,
             trajectory.len(),
             DEFAULT_OWNED_COLUMNS,
-            &ExecutionBackend::Sequential,
+            backend,
         )?;
 
         let classes = self.component_classes(&components)?;

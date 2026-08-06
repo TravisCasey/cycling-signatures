@@ -514,7 +514,9 @@ mod tests {
             [(birth_one, 1), (birth_two.next_down(), 1), (birth_two, 2)]
         {
             let storage_signature = storage.signature(..).unwrap();
-            let embedded_signature = embedded.signature(.., threshold).unwrap();
+            let embedded_signature = embedded
+                .signature(.., threshold, &ExecutionBackend::Sequential)
+                .unwrap();
             assert_eq!(
                 storage_signature.rank_at(threshold).unwrap(),
                 expected_rank,
@@ -529,6 +531,29 @@ mod tests {
                 storage_signature.span_at(threshold).unwrap(),
                 *embedded_signature.span(),
                 "span mismatch at threshold {threshold}"
+            );
+        }
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn signature_agrees_between_rayon_and_sequential_backends() {
+        let embedded = two_hole_trajectory();
+        let band_top = 0.95;
+
+        let sequential = embedded
+            .signature(.., band_top, &ExecutionBackend::Sequential)
+            .unwrap();
+        let rayon = embedded
+            .signature(.., band_top, &ExecutionBackend::Rayon)
+            .unwrap();
+
+        assert_eq!(sequential.span(), rayon.span());
+        for threshold in [0.8, 0.9_f64.next_down(), 0.9] {
+            assert_eq!(
+                sequential.rank_at(threshold).unwrap(),
+                rayon.rank_at(threshold).unwrap(),
+                "rank mismatch at threshold {threshold}"
             );
         }
     }
@@ -558,7 +583,9 @@ mod tests {
         for segment in segments {
             let storage_signature = storage.signature(segment.clone()).unwrap();
             for &threshold in &thresholds {
-                let embedded_signature = embedded.signature(segment.clone(), threshold).unwrap();
+                let embedded_signature = embedded
+                    .signature(segment.clone(), threshold, &ExecutionBackend::Sequential)
+                    .unwrap();
                 assert_eq!(
                     storage_signature.rank_at(threshold).unwrap(),
                     embedded_signature.rank(),

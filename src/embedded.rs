@@ -649,7 +649,9 @@ mod tests {
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
-        let signature = embedded.signature(.., 0.6).unwrap();
+        let signature = embedded
+            .signature(.., 0.6, &ExecutionBackend::Sequential)
+            .unwrap();
         assert_eq!(signature.rank(), 0);
     }
 
@@ -663,7 +665,9 @@ mod tests {
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
-        let signature = embedded.signature(.., 0.6).unwrap();
+        let signature = embedded
+            .signature(.., 0.6, &ExecutionBackend::Sequential)
+            .unwrap();
         assert_eq!(signature.rank(), 1);
     }
 
