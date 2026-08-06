@@ -257,11 +257,12 @@ impl PyCycleStorage {
     /// Raises
     /// ------
     /// ``ValueError``
-    ///     If ``segment`` is not a valid range, if the segment indices are out
-    ///     of bounds, if ``max_length`` is less than ``2``, if ``threshold``
-    ///     is below the embedded trajectory's ``resolution`` or not below
-    ///     ``1.0``, or if a detected cycle's endpoint points fall in
-    ///     non-adjacent cubes.
+    ///     If ``segment`` is not a valid range, if ``max_length`` is less
+    ///     than ``2``, if ``threshold`` is below the embedded trajectory's
+    ///     ``resolution`` or not below ``1.0``, or if a detected cycle's
+    ///     endpoint points fall in non-adjacent cubes.
+    /// ``IndexError``
+    ///     If the segment indices are out of bounds.
     #[staticmethod]
     fn build(
         py: Python<'_>,
@@ -467,8 +468,9 @@ impl PyCycleStorage {
     /// Raises
     /// ------
     /// ``ValueError``
-    ///     If ``segment`` is not a valid range or if it falls outside the
-    ///     stored extent.
+    ///     If ``segment`` is not a valid range.
+    /// ``IndexError``
+    ///     If ``segment`` falls outside the stored extent.
     fn signature(&self, segment: &Bound<'_, PyAny>) -> PyResult<PyCyclingSignature> {
         let range = segment_from_py(segment)?;
         let signature = self.inner.signature(range).map_err(to_pyerr)?;

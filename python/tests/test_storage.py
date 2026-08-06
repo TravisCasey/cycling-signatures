@@ -33,6 +33,14 @@ def test_component_index_out_of_bounds_raises(square_loop_embedded, square_loop_
         storage.component(9999)
 
 
+def test_signature_out_of_range_raises_index_error_not_value_error(square_loop_storage):
+    with pytest.raises(IndexError):
+        square_loop_storage.signature((0, 9999))
+    # A malformed segment (start past stop) raises ValueError.
+    with pytest.raises(ValueError):
+        square_loop_storage.signature((5, 2))
+
+
 def test_build_records_the_threshold_passed(square_loop_embedded, square_loop_points):
     count = square_loop_points.shape[0]
     storage = cs.CycleStorage.build(square_loop_embedded, range(0, count), count, threshold=0.5)

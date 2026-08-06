@@ -41,3 +41,10 @@ def test_sphere_bundle_distance_matrix_uses_its_own_metric():
 def test_distance_rejects_dimension_mismatch():
     with pytest.raises(ValueError):
         cs.Euclidean().distance(np.array([0.0, 0.0]), np.array([0.0]))
+
+
+def test_sphere_bundle_distance_rejects_odd_length():
+    metric = cs.SphereBundle()
+    point = np.array([0.0, 0.0, 0.0])
+    with pytest.raises(ValueError):
+        metric.distance(point, point)

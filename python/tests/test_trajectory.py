@@ -65,6 +65,13 @@ def test_resolution_reports_the_largest_consecutive_gap():
     assert trajectory.resolution(cs.Euclidean()) == pytest.approx(5.0)
 
 
+def test_resolution_rejects_odd_dimension_under_sphere_bundle():
+    points = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])
+    trajectory = cs.Trajectory(points)
+    with pytest.raises(ValueError):
+        trajectory.resolution(cs.SphereBundle())
+
+
 def test_save_load_roundtrip(tmp_path):
     trajectory = cs.Trajectory(np.array([[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]]))
     path = str(tmp_path / "trajectory.cyc")

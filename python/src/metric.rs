@@ -11,6 +11,18 @@ use pyo3::{
     prelude::*,
 };
 
+/// Rejects an odd coordinate count under the sphere-bundle metric, which
+/// requires an even count to split into a position half and a direction
+/// half. A no-op under the Euclidean metric.
+pub(crate) fn check_even_dimension(metric: Metric, coordinate_count: usize) -> PyResult<()> {
+    if metric == Metric::SphereBundle && !coordinate_count.is_multiple_of(2) {
+        return Err(PyValueError::new_err(format!(
+            "sphere-bundle metric requires an even coordinate count, got {coordinate_count}"
+        )));
+    }
+    Ok(())
+}
+
 /// Computes the scalar distance between two coordinate vectors.
 ///
 /// Returns an error if the vectors differ in length.
@@ -26,6 +38,7 @@ fn scalar_distance(
             other.as_array().len()
         )));
     }
+    check_even_dimension(metric, point.as_array().len())?;
     Ok(metric.distance(point.as_array(), other.as_array()))
 }
 
@@ -35,8 +48,9 @@ fn pairwise_matrix<'py>(
     metric: Metric,
     points: &PyReadonlyArray2<'_, f64>,
     py: Python<'py>,
-) -> Bound<'py, PyArray2<f64>> {
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
     let array = points.as_array();
+    check_even_dimension(metric, array.ncols())?;
     let count = array.nrows();
     let pairs: Vec<(usize, usize)> = (0..count)
         .flat_map(|left| (left + 1..count).map(move |right| (left, right)))
@@ -49,7 +63,7 @@ fn pairwise_matrix<'py>(
         matrix[[left, right]] = distances[index];
         matrix[[right, left]] = distances[index];
     }
-    matrix.to_pyarray(py)
+    Ok(matrix.to_pyarray(py))
 }
 
 /// The standard Euclidean metric.
@@ -106,14 +120,13 @@ impl PyEuclidean {
     /// ndarray
     ///     A square symmetric matrix whose entry ``(i, j)`` is the distance
     ///     between row ``i`` and row ``j``. The diagonal is zero.
-    #[must_use]
     #[allow(clippy::needless_pass_by_value)]
     #[allow(clippy::unused_self)]
     fn distance_matrix<'py>(
         &self,
         py: Python<'py>,
         points: PyReadonlyArray2<'_, f64>,
-    ) -> Bound<'py, PyArray2<f64>> {
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
         pairwise_matrix(Metric::Euclidean, &points, py)
     }
 
@@ -169,7 +182,8 @@ impl PySphereBundle {
     /// Raises
     /// ------
     /// ``ValueError``
-    ///     If the two vectors differ in length.
+    ///     If the two vectors differ in length, or if their common length is
+    ///     odd.
     #[allow(clippy::needless_pass_by_value)]
     #[allow(clippy::unused_self)]
     fn distance(
@@ -193,14 +207,18 @@ impl PySphereBundle {
     /// ndarray
     ///     A square symmetric matrix whose entry ``(i, j)`` is the distance
     ///     between row ``i`` and row ``j``. The diagonal is zero.
-    #[must_use]
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If ``points`` has an odd number of columns.
     #[allow(clippy::needless_pass_by_value)]
     #[allow(clippy::unused_self)]
     fn distance_matrix<'py>(
         &self,
         py: Python<'py>,
         points: PyReadonlyArray2<'_, f64>,
-    ) -> Bound<'py, PyArray2<f64>> {
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
         pairwise_matrix(Metric::SphereBundle, &points, py)
     }
 

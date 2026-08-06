@@ -111,9 +111,10 @@ impl PyEmbeddedTrajectory {
     /// ------
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if ``threshold`` is below
-    ///     ``resolution`` or not below ``1.0``, if the segment indices are
-    ///     out of range, or if a detected cycle's endpoint points fall in
-    ///     non-adjacent cubes.
+    ///     ``resolution`` or not below ``1.0``, or if a detected cycle's
+    ///     endpoint points fall in non-adjacent cubes.
+    /// ``IndexError``
+    ///     If the segment indices are out of range.
     fn signature(
         &self,
         py: Python<'_>,
@@ -151,8 +152,10 @@ impl PyEmbeddedTrajectory {
     /// ------
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if it contains fewer than two
-    ///     points, if the segment indices are out of bounds, or if the
-    ///     segment's endpoint points fall in non-adjacent cubes.
+    ///     points, or if the segment's endpoint points fall in non-adjacent
+    ///     cubes.
+    /// ``IndexError``
+    ///     If the segment indices are out of bounds.
     fn cycle_class(&self, segment: &Bound<'_, PyAny>) -> PyResult<PyHomologyClass> {
         let range = segment_from_py(segment)?;
         if range.end < range.start + 2 {
