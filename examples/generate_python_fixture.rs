@@ -2,8 +2,8 @@
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
 //! Writes a square-loop `EmbeddedTrajectory` to disk under the `Euclidean`
-//! metric, as a trajectory file and a cover file. The output directory is the
-//! single command-line argument.
+//! metric, as a trajectory file, a cover file, and an embedded-trajectory
+//! envelope. The output directory is the single command-line argument.
 
 use std::{error::Error, path::Path};
 
@@ -51,6 +51,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cover = CubicalCover::build(&trajectory, &ExecutionBackend::default())?;
     let embedded = EmbeddedTrajectory::new(trajectory, cover, Metric::Euclidean)?;
     embedded.save(
+        output_directory.join("embedded.cyc"),
         output_directory.join("trajectory.cyc"),
         output_directory.join("cover.cyc"),
     )?;

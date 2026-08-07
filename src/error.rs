@@ -105,6 +105,36 @@ pub enum Error {
         point_index: usize,
     },
 
+    /// A trajectory loaded alongside an
+    /// [`EmbeddedTrajectory`](crate::EmbeddedTrajectory) envelope does not
+    /// match the fingerprint the envelope recorded, so the trajectory file is
+    /// not the one the envelope was saved with.
+    #[error(
+        "trajectory fingerprint {found} does not match the fingerprint {expected} recorded in the \
+         embedded trajectory envelope"
+    )]
+    EmbeddedTrajectoryFingerprintMismatch {
+        /// The fingerprint recorded in the envelope.
+        expected: u64,
+        /// The fingerprint of the loaded trajectory.
+        found: u64,
+    },
+
+    /// A cover loaded alongside an
+    /// [`EmbeddedTrajectory`](crate::EmbeddedTrajectory) envelope does not
+    /// match the fingerprint the envelope recorded, so the cover file is not
+    /// the one the envelope was saved with.
+    #[error(
+        "cover fingerprint {found} does not match the fingerprint {expected} recorded in the \
+         embedded trajectory envelope"
+    )]
+    EmbeddedCoverFingerprintMismatch {
+        /// The fingerprint recorded in the envelope.
+        expected: u64,
+        /// The fingerprint of the loaded cover.
+        found: u64,
+    },
+
     /// Trajectory input had zero rows.
     #[error("trajectory input has zero rows")]
     TrajectoryEmpty,

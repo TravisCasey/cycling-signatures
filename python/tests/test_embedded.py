@@ -24,10 +24,11 @@ def test_threshold_below_resolution_raises(square_loop_embedded, square_loop_poi
 
 
 def test_save_load_roundtrip(tmp_path, square_loop_embedded):
+    embedded_path = str(tmp_path / "embedded.cyc")
     trajectory_path = str(tmp_path / "trajectory.cyc")
     cover_path = str(tmp_path / "cover.cyc")
-    square_loop_embedded.save(trajectory_path, cover_path)
-    reloaded = cs.EmbeddedTrajectory.load(trajectory_path, cover_path, cs.Euclidean())
+    square_loop_embedded.save(embedded_path, trajectory_path, cover_path)
+    reloaded = cs.EmbeddedTrajectory.load(embedded_path, trajectory_path, cover_path)
     assert reloaded.fingerprint() == square_loop_embedded.fingerprint()
 
 

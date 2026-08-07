@@ -219,14 +219,17 @@ impl PyEmbeddedTrajectory {
         self.inner.fingerprint()
     }
 
-    /// Saves the embedded trajectory to a pair of files.
+    /// Saves the embedded trajectory to three files.
     ///
-    /// The trajectory data is written to ``trajectory_path`` and the cubical
-    /// cover data to ``cover_path``. Both files must be loaded together via
-    /// ``load``.
+    /// The trajectory data is written to ``trajectory_path``, the cubical
+    /// cover data to ``cover_path``, and an envelope recording this
+    /// embedding's metric and both files' fingerprints to ``embedded_path``.
+    /// All three files must be loaded together via ``load``.
     ///
     /// Parameters
     /// ----------
+    /// embedded_path : str or ``os.PathLike``
+    ///     The destination for the envelope.
     /// trajectory_path : str or ``os.PathLike``
     ///     The destination for the trajectory data.
     /// cover_path : str or ``os.PathLike``
@@ -235,27 +238,34 @@ impl PyEmbeddedTrajectory {
     /// Raises
     /// ------
     /// ``OSError``
-    ///     If either file cannot be written.
-    fn save(&self, trajectory_path: PathBuf, cover_path: PathBuf) -> PyResult<()> {
+    ///     If any of the three files cannot be written.
+    fn save(
+        &self,
+        embedded_path: PathBuf,
+        trajectory_path: PathBuf,
+        cover_path: PathBuf,
+    ) -> PyResult<()> {
         self.inner
-            .save(trajectory_path, cover_path)
+            .save(embedded_path, trajectory_path, cover_path)
             .map_err(to_pyerr)
     }
 
-    /// Loads an embedded trajectory from a pair of previously saved files.
+    /// Loads an embedded trajectory from three previously saved files.
     ///
-    /// Reads the trajectory from ``trajectory_path`` and the cubical cover from
-    /// ``cover_path``, then reconstructs the embedded trajectory using
-    /// ``metric``.
+    /// Reads the envelope from ``embedded_path``, the trajectory from
+    /// ``trajectory_path``, and the cubical cover from ``cover_path``, then
+    /// reconstructs the embedded trajectory using the metric recorded in the
+    /// envelope, after verifying that the loaded trajectory and cover match
+    /// the fingerprints the envelope recorded.
     ///
     /// Parameters
     /// ----------
+    /// embedded_path : str or ``os.PathLike``
+    ///     The source of the envelope.
     /// trajectory_path : str or ``os.PathLike``
     ///     The source of the trajectory data.
     /// cover_path : str or ``os.PathLike``
     ///     The source of the cubical cover data.
-    /// metric : ``Euclidean`` or ``SphereBundle``
-    ///     The metric the embedding was built with.
     ///
     /// Returns
     /// -------
@@ -265,22 +275,20 @@ impl PyEmbeddedTrajectory {
     /// Raises
     /// ------
     /// ``OSError``
-    ///     If either file cannot be read.
+    ///     If any of the three files cannot be read.
     /// ``FormatVersionMismatchError``
     ///     If a file was written by an incompatible version of the library.
     /// ``ValueError``
-    ///     If the stored data is inconsistent.
-    /// ``TypeError``
-    ///     If ``metric`` is not a recognized metric type.
+    ///     If the stored data is inconsistent, or if the loaded trajectory or
+    ///     cover does not match the fingerprint the envelope recorded.
     #[staticmethod]
     fn load(
+        embedded_path: PathBuf,
         trajectory_path: PathBuf,
         cover_path: PathBuf,
-        metric: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
-        let metric = metric_from_py(metric)?;
-        let inner =
-            EmbeddedTrajectory::load(trajectory_path, cover_path, metric).map_err(to_pyerr)?;
+        let inner = EmbeddedTrajectory::load(embedded_path, trajectory_path, cover_path)
+            .map_err(to_pyerr)?;
         Ok(Self { inner })
     }
 }

@@ -4,11 +4,11 @@
 //! Embedded trajectory: a `Trajectory` paired with a `CubicalCover` and the
 //! mapping from trajectory point to cube index.
 
+#[cfg(feature = "serde")]
+mod serialization;
 mod signature;
 mod walker;
 
-#[cfg(feature = "serde")]
-use std::path::Path;
 use std::{ops::Range, sync::Arc};
 
 use chomp3rs::ExecutionBackend;
@@ -285,58 +285,6 @@ impl EmbeddedTrajectory {
         hasher.write(&self.cover.fingerprint().to_le_bytes());
         hasher.write(&[self.metric as u8]);
         hasher.finish()
-    }
-
-    /// Writes the trajectory and cover to separate paths in the crate's binary
-    /// format.
-    ///
-    /// The metric itself is not saved; supply it again when calling
-    /// [`load`](Self::load).
-    ///
-    /// This is a convenience method, paired with [`load`](Self::load) which
-    /// bundles the save methods on [`Trajectory`] and [`CubicalCover`].
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::Io`] on file or serialization failure.
-    #[cfg(feature = "serde")]
-    pub fn save<P: AsRef<Path>, Q: AsRef<Path>>(
-        &self,
-        trajectory_path: P,
-        cover_path: Q,
-    ) -> Result<()> {
-        self.trajectory.save(trajectory_path)?;
-        self.cover.save(cover_path)
-    }
-
-    /// Reads a trajectory and cover and reassembles an [`EmbeddedTrajectory`]
-    /// using the supplied `metric`.
-    ///
-    /// This is a convenience method, paired with [`save`](Self::save) which
-    /// bundles the load methods on [`Trajectory`] and [`CubicalCover`].
-    ///
-    /// # Errors
-    ///
-    /// - [`Error::EmbeddedDimensionMismatch`] if the loaded trajectory and
-    ///   cover disagree on spatial dimension.
-    /// - [`Error::EmbeddedCubeNotInCover`] if a trajectory point maps to a cube
-    ///   absent from the loaded cover.
-    /// - [`Error::ConsecutiveCubesNonAdjacent`] if consecutive points of the
-    ///   loaded trajectory land in cubes differing by more than 1 in some axis.
-    /// - [`Error::FormatVersionMismatch`] if either file's format version
-    ///   differs.
-    /// - [`Error::Io`] if either file could not be opened.
-    /// - [`Error::Deserialize`] if either file's contents could not be read and
-    ///   decoded.
-    #[cfg(feature = "serde")]
-    pub fn load<P: AsRef<Path>, Q: AsRef<Path>>(
-        trajectory_path: P,
-        cover_path: Q,
-        metric: Metric,
-    ) -> Result<Self> {
-        let trajectory = Trajectory::load(trajectory_path)?;
-        let cover = CubicalCover::load(cover_path)?;
-        Self::new(trajectory, cover, metric)
     }
 }
 
@@ -740,5 +688,68 @@ mod tests {
         let reassembled = EmbeddedTrajectory::new(trajectory, cover, Metric::Euclidean).unwrap();
 
         assert_eq!(loaded_storage.fingerprint(), reassembled.fingerprint());
+    }
+
+    /// A square loop at a different position than [`euclidean_square_loop`],
+    /// so its cover visits a disjoint cube set and carries a different
+    /// fingerprint.
+    #[cfg(feature = "serde")]
+    fn displaced_square_loop() -> EmbeddedTrajectory {
+        let waypoints = [
+            [10.5, 10.5],
+            [11.5, 10.5],
+            [11.5, 11.5],
+            [10.5, 11.5],
+            [10.5, 10.5],
+        ];
+        let points = densify_path(&waypoints, 0.4);
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        embed_euclidean(trajectory).unwrap()
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn envelope_save_then_load_round_trips() {
+        let embedded = euclidean_square_loop();
+        let directory = tempfile::tempdir().unwrap();
+        let embedded_path = directory.path().join("embedded.cyc");
+        let trajectory_path = directory.path().join("trajectory.cyc");
+        let cover_path = directory.path().join("cover.cyc");
+
+        embedded
+            .save(&embedded_path, &trajectory_path, &cover_path)
+            .unwrap();
+        let reloaded =
+            EmbeddedTrajectory::load(&embedded_path, &trajectory_path, &cover_path).unwrap();
+
+        assert_eq!(reloaded.fingerprint(), embedded.fingerprint());
+        assert_eq!(reloaded.metric(), embedded.metric());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn envelope_load_rejects_cover_fingerprint_mismatch() {
+        // The trajectory-fingerprint check runs the same comparison against
+        // the same envelope one field earlier, so it is not exercised by a
+        // second, otherwise-identical test.
+        let embedded = euclidean_square_loop();
+        let other = displaced_square_loop();
+        let directory = tempfile::tempdir().unwrap();
+        let embedded_path = directory.path().join("embedded.cyc");
+        let trajectory_path = directory.path().join("trajectory.cyc");
+        let cover_path = directory.path().join("cover.cyc");
+        let other_cover_path = directory.path().join("other_cover.cyc");
+
+        embedded
+            .save(&embedded_path, &trajectory_path, &cover_path)
+            .unwrap();
+        other.cover().save(&other_cover_path).unwrap();
+
+        let outcome = EmbeddedTrajectory::load(&embedded_path, &trajectory_path, &other_cover_path);
+
+        assert!(matches!(
+            outcome.unwrap_err(),
+            Error::EmbeddedCoverFingerprintMismatch { .. }
+        ));
     }
 }

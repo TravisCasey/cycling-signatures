@@ -56,3 +56,6 @@ cast_sign_loss = "allow"
 len_without_is_empty = "allow"
 needless_pass_by_value = "allow"
 unreadable_literal = "allow"
+
+[dev-dependencies]
+tempfile = "3.27.0"

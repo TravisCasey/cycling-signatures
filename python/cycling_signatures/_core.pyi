@@ -100,13 +100,16 @@ class EmbeddedTrajectory:
     def cover(self) -> CubicalCover: ...
     def fingerprint(self) -> int: ...
     def save(
-        self, trajectory_path: str | os.PathLike[str], cover_path: str | os.PathLike[str]
+        self,
+        embedded_path: str | os.PathLike[str],
+        trajectory_path: str | os.PathLike[str],
+        cover_path: str | os.PathLike[str],
     ) -> None: ...
     @staticmethod
     def load(
+        embedded_path: str | os.PathLike[str],
         trajectory_path: str | os.PathLike[str],
         cover_path: str | os.PathLike[str],
-        metric: Metric,
     ) -> EmbeddedTrajectory: ...
 
 class Cycle:

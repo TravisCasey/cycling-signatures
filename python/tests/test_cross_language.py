@@ -7,9 +7,11 @@ import cycling_signatures as cs
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 
-def _load(metric):
+def _load():
     return cs.EmbeddedTrajectory.load(
-        str(FIXTURES / "trajectory.cyc"), str(FIXTURES / "cover.cyc"), metric
+        str(FIXTURES / "embedded.cyc"),
+        str(FIXTURES / "trajectory.cyc"),
+        str(FIXTURES / "cover.cyc"),
     )
 
 
@@ -23,11 +25,11 @@ def test_fixture_carries_the_index_parameterization():
 
 
 def test_load_rust_fixture_and_query():
-    assert _load(cs.Euclidean()).signature(range(0, 201), 0.5).rank() == 1
+    assert _load().signature(range(0, 201), 0.5).rank() == 1
 
 
 def test_provenance_fingerprint_comparison():
-    euclidean = _load(cs.Euclidean())
+    euclidean = _load()
     storage = cs.CycleStorage.build(euclidean, range(0, 201), 201, threshold=0.5)
     assert storage.fingerprint() == euclidean.fingerprint()
 
