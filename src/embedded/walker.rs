@@ -139,8 +139,8 @@ where
     };
 
     let start_cube = point_cube_coordinates(segment.start);
-    // Cube coordinates fit in i32: CubicalCover::from_cubes enforces the
-    // [i32::MIN, i32::MAX - 1] range for all coordinates.
+    // Cube coordinates fit in i32: every way of obtaining a cover, building
+    // one or decoding a saved one, enforces the [i32::MIN, i32::MAX - 1] range.
     let mut base: Orthant = start_cube.iter().map(|&value| value as i32).collect();
     let mut dual: Orthant = start_cube.iter().map(|&value| value as i32 - 1).collect();
 

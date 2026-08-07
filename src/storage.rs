@@ -215,7 +215,6 @@ impl CycleStorage {
     ///
     /// [`Error::SegmentOutOfBounds`] if `segment` does not fit inside
     /// [`Self::extent`].
-    #[allow(clippy::missing_panics_doc)]
     pub fn signature(&self, segment: impl RangeBounds<usize>) -> Result<CyclingSignature> {
         let start_bound = match segment.start_bound() {
             Bound::Unbounded => Bound::Included(self.extent.start as usize),
@@ -278,7 +277,10 @@ impl CycleStorage {
     ///
     /// Returns an empty vector when `point` is outside [`Self::extent`]. IDs
     /// are sorted ascending.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "internal panic call is guarded, so the method advertises no panic"
+    )]
     #[must_use]
     pub fn components_covering(&self, point: usize) -> Vec<u32> {
         let Ok(point_u32) = u32::try_from(point) else {

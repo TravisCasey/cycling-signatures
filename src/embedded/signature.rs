@@ -47,7 +47,6 @@ impl EmbeddedTrajectory {
     ///   if `threshold < self.resolution()`.
     /// - [`Error::ThresholdAboveCubeSide`](crate::Error::ThresholdAboveCubeSide)
     ///   if `threshold` is at or above the cube side.
-    #[allow(clippy::missing_panics_doc)]
     pub fn signature(
         &self,
         segment: impl RangeBounds<usize>,

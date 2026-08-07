@@ -257,7 +257,10 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::float_cmp)]
+    #[expect(
+        clippy::float_cmp,
+        reason = "bit-for-bit agreement between the two paths is explicitly under test"
+    )]
     fn indexed_distance_matches_metric_distance_bit_for_bit() {
         let euclidean_points = array![[0.0, 0.0], [3.0, 4.0], [1.0, 1.0]];
         let euclidean_view = Metric::Euclidean.over(euclidean_points.view());

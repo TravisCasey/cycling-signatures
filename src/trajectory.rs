@@ -32,10 +32,29 @@ use crate::{
 /// carries the surviving points' entries through unchanged.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "TrajectoryData"))]
 pub struct Trajectory {
     #[cfg_attr(feature = "serde", serde(with = "crate::serialization::npy_field"))]
     points: Array2<f64>,
     parameters: Vec<f64>,
+}
+
+/// The wire form of a [`Trajectory`], decoded before validation.
+#[cfg(feature = "serde")]
+#[derive(Deserialize)]
+struct TrajectoryData {
+    #[serde(with = "crate::serialization::npy_field")]
+    points: Array2<f64>,
+    parameters: Vec<f64>,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<TrajectoryData> for Trajectory {
+    type Error = Error;
+
+    fn try_from(data: TrajectoryData) -> Result<Self> {
+        Self::from_parts(data.points, data.parameters)
+    }
 }
 
 impl Trajectory {
@@ -87,7 +106,14 @@ impl Trajectory {
     /// - [`Error::TrajectoryParametersNotIncreasing`] if `parameters` is not
     ///   strictly increasing (including when a value is NaN).
     pub fn with_parameters(points: ArrayView2<'_, f64>, parameters: &[f64]) -> Result<Self> {
-        check_points(points)?;
+        Self::from_parts(points.to_owned(), parameters.to_vec())
+    }
+
+    /// Builds a trajectory from owned points and an owned parameterization,
+    /// applying the validation [`with_parameters`](Self::with_parameters)
+    /// documents.
+    fn from_parts(points: Array2<f64>, parameters: Vec<f64>) -> Result<Self> {
+        check_points(points.view())?;
         if parameters.len() != points.nrows() {
             return Err(Error::TrajectoryParameterCount {
                 parameters: parameters.len(),
@@ -98,15 +124,11 @@ impl Trajectory {
             // Negated form (rather than `pair[1] <= pair[0]`) so a NaN
             // parameter fails loudly instead of silently passing the
             // comparison.
-            #[allow(clippy::neg_cmp_op_on_partial_ord)]
             if !(pair[0] < pair[1]) {
                 return Err(Error::TrajectoryParametersNotIncreasing);
             }
         }
-        Ok(Self {
-            points: points.to_owned(),
-            parameters: parameters.to_vec(),
-        })
+        Ok(Self { points, parameters })
     }
 
     /// The point array as a 2D view, one row per point.
@@ -220,6 +242,8 @@ mod tests {
 
     use super::Trajectory;
     use crate::error::Error;
+    #[cfg(feature = "serde")]
+    use crate::serialization::{load_from_reader, save_to_writer};
 
     #[test]
     fn with_parameters_records_the_supplied_parameterization() {
@@ -272,6 +296,25 @@ mod tests {
         assert!(matches!(
             outcome.unwrap_err(),
             Error::TrajectoryNonFinite { row: 1, column: 1 },
+        ));
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn deserialize_rejects_non_increasing_parameters() {
+        // Built field by field so the payload carries a parameterization no
+        // constructor would have accepted, which is the shape a corrupted or
+        // hand-built file arrives in.
+        let unchecked = Trajectory {
+            points: array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]],
+            parameters: vec![0.0, 2.0, 1.0],
+        };
+        let mut buffer: Vec<u8> = Vec::new();
+        save_to_writer(&mut buffer, &unchecked).unwrap();
+
+        assert!(matches!(
+            load_from_reader::<Trajectory, _>(&buffer[..]).unwrap_err(),
+            Error::Deserialize { .. }
         ));
     }
 }

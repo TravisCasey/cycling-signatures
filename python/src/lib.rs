@@ -6,7 +6,10 @@
 // Doc comments in this crate are Python numpydoc docstrings; numpydoc requires
 // snake_case parameter names on its parameter lines, which are flagged by
 // `clippy::doc_markdown`.
-#![allow(clippy::doc_markdown)]
+#![expect(
+    clippy::doc_markdown,
+    reason = "numpydoc parameter lines are snake_case names, not code spans"
+)]
 
 mod convert;
 mod cover;

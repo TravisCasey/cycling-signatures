@@ -52,7 +52,10 @@ impl CubicSpline {
     ///   `values` does not match the number of knots.
     /// - [`Error::InterpolationKnotsNotIncreasing`] if `knots` is not strictly
     ///   increasing.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "internal panic call is guarded, so the method advertises no panic"
+    )]
     pub fn new(knots: Array1<f64>, values: ArrayView2<'_, f64>) -> Result<Self> {
         let num_knots = knots.len();
         if num_knots < 2 {

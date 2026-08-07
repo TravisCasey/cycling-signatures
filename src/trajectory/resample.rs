@@ -74,7 +74,6 @@ impl Trajectory {
     ) -> Result<Self> {
         // Negated form (rather than `spacing <= 0.0`) so a NaN spacing fails
         // loudly instead of silently passing the comparison.
-        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         if !(spacing > 0.0) {
             return Err(Error::SpacingNotPositive { spacing });
         }
@@ -156,7 +155,10 @@ impl Interval {
         self.parameter_lower.midpoint(self.parameter_upper)
     }
 
-    #[allow(clippy::float_cmp)]
+    #[expect(
+        clippy::float_cmp,
+        reason = "stagnation is where bisection produces identical values"
+    )]
     fn is_stagnant(&self, parameter_mid: f64) -> bool {
         parameter_mid == self.parameter_lower
             || parameter_mid == self.parameter_upper
@@ -291,7 +293,6 @@ mod tests {
         impl Interpolator for PathologicalInterpolator {
             fn sample(&self, parameter: f64) -> Array1<f64> {
                 // Return [0, 0] at the first knot; [1000, 0] everywhere else.
-                #[allow(clippy::float_cmp)]
                 if parameter == 0.0 {
                     array![0.0, 0.0]
                 } else {
@@ -344,7 +345,7 @@ mod tests {
 
         impl Interpolator for NonFiniteInterpolator {
             fn sample(&self, parameter: f64) -> Array1<f64> {
-                #[allow(clippy::float_cmp)]
+                #[expect(clippy::float_cmp, reason = "exact parameter value")]
                 if parameter == 2.0 {
                     array![f64::INFINITY, 0.0]
                 } else {

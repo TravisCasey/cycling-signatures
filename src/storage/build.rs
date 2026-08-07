@@ -60,7 +60,6 @@ impl CycleStorage {
     /// as at least 2; `threshold` must already be at least the embedded
     /// trajectory's consecutive-point resolution and strictly below the cube
     /// side.
-    #[allow(clippy::missing_panics_doc)]
     fn assemble(
         embedded: &EmbeddedTrajectory,
         range: Range<usize>,

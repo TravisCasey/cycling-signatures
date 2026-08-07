@@ -63,7 +63,10 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::reversed_empty_ranges)]
+    #[expect(
+        clippy::reversed_empty_ranges,
+        reason = "start past the end is explicitly under test"
+    )]
     fn out_of_range_returns_segment_out_of_bounds() {
         let err = normalize_segment(2..15, 10).unwrap_err();
         assert!(matches!(

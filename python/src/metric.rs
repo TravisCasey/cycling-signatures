@@ -73,7 +73,7 @@ fn pairwise_matrix<'py>(
 pub(crate) struct PyEuclidean;
 
 #[pymethods]
-#[allow(clippy::unused_self)]
+#[expect(clippy::unused_self, reason = "Python methods must take self")]
 impl PyEuclidean {
     /// Creates a new Euclidean metric.
     #[new]
@@ -153,7 +153,7 @@ impl PyEuclidean {
 pub(crate) struct PySphereBundle;
 
 #[pymethods]
-#[allow(clippy::unused_self)]
+#[expect(clippy::unused_self, reason = "Python methods must take self")]
 impl PySphereBundle {
     /// Creates a sphere-bundle metric.
     #[new]

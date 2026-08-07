@@ -55,6 +55,7 @@ cast_precision_loss = "allow"
 cast_sign_loss = "allow"
 len_without_is_empty = "allow"
 needless_pass_by_value = "allow"
+neg_cmp_op_on_partial_ord = "allow"
 unreadable_literal = "allow"
 
 [dev-dependencies]

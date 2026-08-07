@@ -60,13 +60,15 @@ impl Trajectory {
     /// trajectory's own maximum consecutive-point distance (including when
     /// `spacing` is NaN): no subset of the points is spaced more finely than
     /// the points themselves are.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "internal panic call is guarded, so the method advertises no panic"
+    )]
     pub fn downsample(&self, metric: Metric, spacing: f64) -> Result<Self> {
         let points = self.points();
         let resolution = self.resolution(metric);
         // Negated form (rather than `spacing < resolution`) so a NaN spacing
         // fails loudly instead of silently passing the comparison.
-        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         if !(spacing >= resolution) {
             return Err(Error::SpacingBelowResolution {
                 spacing,

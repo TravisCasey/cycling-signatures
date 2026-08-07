@@ -207,7 +207,6 @@ impl EmbeddedTrajectory {
         // threshold fails loudly here instead of silently passing both band
         // checks; past this guard the threshold is a number, so a plain
         // comparison suffices below.
-        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         if !(threshold >= self.resolution) {
             return Err(Error::ThresholdBelowResolution {
                 threshold,

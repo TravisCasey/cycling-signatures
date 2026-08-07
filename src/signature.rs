@@ -135,7 +135,6 @@ impl CyclingSignature {
     // The negated comparison (rather than `threshold > self.threshold_max`)
     // is deliberate: it also rejects a NaN threshold, which is neither
     // greater than nor less than or equal to any value.
-    #[allow(clippy::neg_cmp_op_on_partial_ord)]
     pub fn rank_at(&self, threshold: f64) -> Result<usize> {
         if !(threshold <= self.threshold_max) {
             return Err(Error::ThresholdExceedsFiltrationBand {
@@ -155,7 +154,10 @@ impl CyclingSignature {
     ///
     /// [`Error::ThresholdExceedsFiltrationBand`] if `threshold` exceeds
     /// [`threshold_max`](Self::threshold_max), or is NaN.
-    #[allow(clippy::missing_panics_doc)]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "internal panic call is guarded, so the method advertises no panic"
+    )]
     pub fn span_at(&self, threshold: f64) -> Result<F2Subspace> {
         let rank = self.rank_at(threshold)?;
         let classes: Vec<F2Vector> = self.generators[..rank]
