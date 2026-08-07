@@ -57,7 +57,7 @@ for features in "--no-default-features" "--features serde"; do
         cargo clippy --workspace --all-targets $features -- -D warnings
 
     RUSTDOCFLAGS="-Dwarnings --cfg docsrs" run_step "Documentation ($features)" \
-        cargo doc --no-deps --document-private-items $features
+        cargo +nightly doc --no-deps --document-private-items $features
 done
 
 # The backend features build and run the same source against a different

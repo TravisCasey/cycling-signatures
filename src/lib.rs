@@ -4,6 +4,8 @@
 //! Algebraic topological descriptions of recurrent motions in high-dimensional
 //! dynamical systems.
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod cover;
 pub(crate) mod distance;
 pub mod embedded;
