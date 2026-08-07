@@ -236,6 +236,19 @@ pub(crate) fn metric_from_py(object: &Bound<'_, PyAny>) -> PyResult<Metric> {
     )))
 }
 
+/// Builds the Python metric object corresponding to a core metric, the inverse
+/// of [`metric_from_py`].
+///
+/// Lets a caller holding a value that carries a metric (an embedded trajectory,
+/// for instance) ask which metric it measures under, for introspection or for
+/// passing on to another call that expects a metric object.
+pub(crate) fn metric_to_py(py: Python<'_>, metric: Metric) -> PyResult<Py<PyAny>> {
+    match metric {
+        Metric::Euclidean => Ok(Py::new(py, PyEuclidean)?.into_any()),
+        Metric::SphereBundle => Ok(Py::new(py, PySphereBundle)?.into_any()),
+    }
+}
+
 /// Registers the metric classes on the module.
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyEuclidean>()?;

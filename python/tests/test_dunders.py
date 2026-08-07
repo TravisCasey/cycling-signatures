@@ -8,8 +8,8 @@ def test_metric_reprs_round_trip_construction():
     assert repr(cs.SphereBundle()) == "SphereBundle()"
 
 
-def test_storage_repr_reports_construction_parameters(square_loop_storage, square_loop_points):
-    count = square_loop_points.shape[0]
+def test_storage_repr_reports_construction_parameters(square_loop_storage, square_loop_embedded):
+    count = len(square_loop_embedded)
     # Threshold renders as a float, and the extent and counts are reported.
     assert repr(square_loop_storage) == (
         f"CycleStorage(extent=(0, {count}), components=1, classes=1, "
@@ -46,9 +46,9 @@ def test_homology_class_indexing_matches_dense_array(square_loop_storage):
         homology_class[len(homology_class)]
 
 
-def test_value_type_reprs(square_loop_storage, square_loop_embedded, square_loop_points):
+def test_value_type_reprs(square_loop_storage, square_loop_embedded):
     storage = square_loop_storage
-    count = square_loop_points.shape[0]
+    count = len(square_loop_embedded)
     signature = square_loop_embedded.signature(range(count), 0.5)
 
     cycle = storage[0][0]
@@ -66,11 +66,9 @@ def test_value_type_reprs(square_loop_storage, square_loop_embedded, square_loop
     assert repr(signature) == "CyclingSignature(rank=1, threshold_max=0.5)"
 
 
-def test_equatable_types_hash_consistently_with_equality(
-    square_loop_storage, square_loop_embedded, square_loop_points
-):
+def test_equatable_types_hash_consistently_with_equality(square_loop_storage, square_loop_embedded):
     storage = square_loop_storage
-    count = square_loop_points.shape[0]
+    count = len(square_loop_embedded)
 
     # Distinct instances that compare equal must hash equal and deduplicate in a
     # set.
@@ -88,3 +86,11 @@ def test_equatable_types_hash_consistently_with_equality(
     first = square_loop_embedded.signature(range(count), 0.5)
     second = square_loop_embedded.signature(range(count), 0.5)
     assert first.span() == second.span()
+
+
+def test_cycle_equality_without_hashability(square_loop_storage):
+    component = square_loop_storage[0]
+    assert component[0] == component[0]
+    assert component[0] != component[-1]
+    with pytest.raises(TypeError):
+        hash(component[0])

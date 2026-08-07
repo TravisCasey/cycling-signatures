@@ -112,6 +112,11 @@ impl PyCycle {
         self.inner.length()
     }
 
+    /// Returns whether this cycle equals ``other``: the same range and birth.
+    fn __eq__(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+
     /// Returns a string representation of the cycle.
     fn __repr__(&self) -> String {
         let range = self.inner.range();

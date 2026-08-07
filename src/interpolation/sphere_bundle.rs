@@ -72,6 +72,12 @@ impl<Inner: DerivativeInterpolator> SphereBundleInterpolator<Inner> {
     pub fn direction_radius(&self) -> f64 {
         self.direction_radius
     }
+
+    /// The wrapped interpolator supplying positions and derivatives.
+    #[must_use]
+    pub fn inner(&self) -> &Inner {
+        &self.inner
+    }
 }
 
 impl<Inner: DerivativeInterpolator> Interpolator for SphereBundleInterpolator<Inner> {

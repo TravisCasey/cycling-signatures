@@ -6,11 +6,30 @@
 
 use std::sync::Arc;
 
-use cycling_signatures::{CubicSpline, SphereBundleInterpolator};
-use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+use cycling_signatures::{
+    CubicSpline, DerivativeInterpolator, Interpolator, SphereBundleInterpolator,
+};
+use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::errors::to_pyerr;
+
+/// Checks that `parameter` lies within `interpolator`'s fitted knot domain,
+/// raising `ValueError` if it does not (including if it is NaN), which would
+/// otherwise panic when sampled.
+fn checked_domain<I: Interpolator + ?Sized>(interpolator: &I, parameter: f64) -> PyResult<()> {
+    let knots = interpolator.knots();
+    let first_knot = knots[0];
+    let last_knot = *knots.last().expect("interpolator has at least two knots");
+
+    #[allow(clippy::neg_cmp_op_on_partial_ord)]
+    if !(parameter >= first_knot && parameter <= last_knot) {
+        return Err(PyValueError::new_err(format!(
+            "parameter {parameter} outside the fitted domain [{first_knot}, {last_knot}]"
+        )));
+    }
+    Ok(())
+}
 
 /// A natural cubic spline interpolator fit over a set of knots.
 ///
@@ -60,6 +79,39 @@ impl PyCubicSpline {
         Ok(Self {
             inner: Arc::new(inner),
         })
+    }
+
+    /// Evaluates the spline at ``parameter``.
+    ///
+    /// Parameters
+    /// ----------
+    /// parameter : float
+    ///     A value within the fitted knot domain.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray
+    ///     The interpolated value at ``parameter``.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If ``parameter`` lies outside the fitted knot domain (including if
+    ///     it is NaN).
+    fn sample<'py>(&self, py: Python<'py>, parameter: f64) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        checked_domain(&*self.inner, parameter)?;
+        Ok(self.inner.sample(parameter).to_pyarray(py))
+    }
+
+    /// Returns the knots this spline was fit over.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray
+    ///     A one-dimensional array of strictly increasing parameter values.
+    #[must_use]
+    fn knots<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, self.inner.knots())
     }
 }
 
@@ -133,6 +185,39 @@ impl PySphereBundleInterpolator {
     #[must_use]
     fn direction_radius(&self) -> f64 {
         self.inner.direction_radius()
+    }
+
+    /// Evaluates the interpolator at ``parameter``, concatenating position
+    /// and scaled direction.
+    ///
+    /// Parameters
+    /// ----------
+    /// parameter : float
+    ///     A value within the fitted knot domain of the inner spline.
+    ///
+    /// Returns
+    /// -------
+    /// ndarray
+    ///     The interpolated value at ``parameter``, twice the length of a
+    ///     plain sample from the inner spline.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If ``parameter`` lies outside the fitted knot domain (including if
+    ///     it is NaN), or if the derivative of the inner spline vanishes at
+    ///     ``parameter``, leaving the curve with no direction to sample there.
+    fn sample<'py>(&self, py: Python<'py>, parameter: f64) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        checked_domain(&self.inner, parameter)?;
+        let derivative = self.inner.inner().derivative(parameter);
+        let derivative_length = derivative.dot(&derivative).sqrt();
+        if derivative_length == 0.0 {
+            return Err(PyValueError::new_err(format!(
+                "the curve has no direction at parameter {parameter}: its derivative vanishes \
+                 there"
+            )));
+        }
+        Ok(self.inner.sample(parameter).to_pyarray(py))
     }
 }
 

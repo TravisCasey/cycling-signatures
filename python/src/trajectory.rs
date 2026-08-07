@@ -233,6 +233,17 @@ impl PyTrajectory {
         self.inner.len()
     }
 
+    /// Returns the number of coordinates in each point.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The coordinate count, the column count of ``points``.
+    #[must_use]
+    fn dimension(&self) -> usize {
+        self.inner.dimension()
+    }
+
     /// Returns a content fingerprint of the trajectory.
     ///
     /// Two trajectories with identical point and parameter data have the

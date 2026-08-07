@@ -6,8 +6,8 @@ import pytest
 import cycling_signatures as cs
 
 
-def test_signature_of_square_loop(square_loop_embedded, square_loop_points):
-    signature = square_loop_embedded.signature(range(0, square_loop_points.shape[0]), 0.5)
+def test_signature_of_square_loop(square_loop_embedded):
+    signature = square_loop_embedded.signature(range(0, len(square_loop_embedded)), 0.5)
     assert signature.rank() == 1
     generator_class = signature.classes()[0]
     assert signature.span().contains(generator_class)
@@ -16,18 +16,43 @@ def test_signature_of_square_loop(square_loop_embedded, square_loop_points):
     assert square_loop_embedded.cover().num_generators() == 1
 
 
-def test_sequential_backend_agrees_with_default(square_loop_embedded, square_loop_points):
-    segment = range(0, square_loop_points.shape[0])
+def test_from_interpolator_matches_four_stage_composition():
+    knots = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    values = np.array([[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0], [0.0, 0.0]])
+    spline = cs.CubicSpline(knots, values)
+    metric = cs.Euclidean()
+    resample_spacing, downsample_spacing = 0.2, 0.4
+
+    combined = cs.EmbeddedTrajectory.from_interpolator(
+        spline, metric, resample_spacing, downsample_spacing
+    )
+
+    dense = cs.Trajectory.resample(spline, metric, resample_spacing)
+    cover = cs.CubicalCover(dense)
+    detection = dense.downsample(metric, downsample_spacing)
+    composed = cs.EmbeddedTrajectory(detection, cover, metric)
+
+    assert combined.resolution() <= downsample_spacing
+    assert combined.resolution() == pytest.approx(composed.resolution())
+    whole_trajectory = range(len(combined))
+    assert (
+        combined.signature(whole_trajectory, 0.5).span()
+        == composed.signature(whole_trajectory, 0.5).span()
+    )
+
+
+def test_sequential_backend_agrees_with_default(square_loop_embedded):
+    segment = range(0, len(square_loop_embedded))
     default_signature = square_loop_embedded.signature(segment, 0.5)
     sequential_signature = square_loop_embedded.signature(segment, 0.5, parallel=False)
     assert sequential_signature.span() == default_signature.span()
     assert sequential_signature.rank_at(0.5) == default_signature.rank_at(0.5)
 
 
-def test_threshold_below_resolution_raises(square_loop_embedded, square_loop_points):
+def test_threshold_below_resolution_raises(square_loop_embedded):
     with pytest.raises(ValueError):
         square_loop_embedded.signature(
-            (0, square_loop_points.shape[0]), square_loop_embedded.resolution() / 2.0
+            (0, len(square_loop_embedded)), square_loop_embedded.resolution() / 2.0
         )
 
 
@@ -52,9 +77,9 @@ def test_cycle_class_rejects_short_segment(square_loop_embedded):
         square_loop_embedded.cycle_class((0, 1))
 
 
-def test_signature_rejects_threshold_at_cube_side(square_loop_embedded, square_loop_points):
+def test_signature_rejects_threshold_at_cube_side(square_loop_embedded):
     with pytest.raises(ValueError):
-        square_loop_embedded.signature(range(0, square_loop_points.shape[0]), 1.0)
+        square_loop_embedded.signature(range(0, len(square_loop_embedded)), 1.0)
 
 
 def test_cover_missing_the_trajectory_cubes_is_rejected(square_loop_points):

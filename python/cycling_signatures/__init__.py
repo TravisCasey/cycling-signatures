@@ -4,6 +4,8 @@ Cycling signatures are algebraic topological descriptions of recurrent motions
 in dynamical systems.
 """
 
+from importlib.metadata import version
+
 from ._core import (
     Component,
     CubicalCover,
@@ -20,6 +22,8 @@ from ._core import (
     Subspace,
     Trajectory,
 )
+
+__version__ = version("cycling-signatures")
 
 __all__ = [
     "Component",

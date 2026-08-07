@@ -89,6 +89,17 @@ impl PyHomologyClass {
         Ok(u8::from(self.inner.get(resolved) == F2::from(1u64)))
     }
 
+    /// Returns the indices of the class's nonzero entries, ascending.
+    ///
+    /// Returns
+    /// -------
+    /// list of int
+    ///     The generator indices at which the class has value one.
+    #[must_use]
+    fn nonzero_indices(&self) -> Vec<usize> {
+        self.inner.nonzero_indices().collect()
+    }
+
     /// Returns whether this is the trivial (all-zero) class.
     ///
     /// Returns
@@ -108,6 +119,40 @@ impl PyHomologyClass {
     /// Returns a hash consistent with equality.
     fn __hash__(&self) -> u64 {
         hash_of(&self.inner)
+    }
+
+    /// Returns the symmetric difference of this class and ``other``, entry by
+    /// entry.
+    ///
+    /// Both classes must come from the same cover's generator basis for the
+    /// result to be meaningful; the two operands necessarily satisfy this
+    /// whenever both were read from one cover.
+    ///
+    /// Parameters
+    /// ----------
+    /// other : ``HomologyClass``
+    ///     A class with the same number of generators as this one.
+    ///
+    /// Returns
+    /// -------
+    /// ``HomologyClass``
+    ///     The XOR of the two class vectors, entry by entry.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If the two classes have different lengths.
+    fn __xor__(&self, other: &Self) -> PyResult<Self> {
+        if self.inner.len() != other.inner.len() {
+            return Err(PyValueError::new_err(format!(
+                "homology class length {} does not match the other class's length {}",
+                self.inner.len(),
+                other.inner.len()
+            )));
+        }
+        Ok(Self {
+            inner: &self.inner ^ &other.inner,
+        })
     }
 
     /// Returns a string representation of the class.

@@ -82,6 +82,20 @@ impl PyCubicalCover {
         self.inner.cubes().nrows()
     }
 
+    /// Returns the spatial dimension of each cube.
+    ///
+    /// Must equal the embedded trajectory's own ``dimension`` when the two
+    /// are paired in an ``EmbeddedTrajectory``.
+    ///
+    /// Returns
+    /// -------
+    /// int
+    ///     The ambient coordinate dimension, the column count of ``cubes``.
+    #[must_use]
+    fn dimension(&self) -> usize {
+        self.inner.dimension()
+    }
+
     /// Returns the cover's cubes as a two-dimensional array.
     ///
     /// Each row holds the integer coordinates of one cube, the component-wise

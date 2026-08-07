@@ -5,15 +5,19 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use cycling_signatures::EmbeddedTrajectory;
-use pyo3::{exceptions::PyValueError, prelude::*};
+use cycling_signatures::{EmbeddedTrajectory, ExecutionBackend, Interpolator, Metric};
+use pyo3::{
+    exceptions::{PyTypeError, PyValueError},
+    prelude::*,
+};
 
 use crate::{
     convert::{parallel_backend, segment_from_py},
     cover::PyCubicalCover,
     errors::to_pyerr,
     homology::PyHomologyClass,
-    metric::metric_from_py,
+    interpolation::{PyCubicSpline, PySphereBundleInterpolator},
+    metric::{metric_from_py, metric_to_py},
     signature::PyCyclingSignature,
     trajectory::PyTrajectory,
 };
@@ -82,6 +86,93 @@ impl PyEmbeddedTrajectory {
             .detach(move || EmbeddedTrajectory::new(trajectory, cover, metric))
             .map_err(to_pyerr)?;
         Ok(Self { inner })
+    }
+
+    /// Runs the entire embedding pipeline over ``interpolator`` in one call.
+    ///
+    /// Resamples ``interpolator`` at ``resample_spacing`` into a dense
+    /// trajectory, builds a cubical cover from that dense trajectory, thins
+    /// the dense trajectory to ``downsample_spacing``, and embeds the thinned
+    /// trajectory in the cover. The dense intermediate is discarded once the
+    /// cover is built.
+    ///
+    /// Finer control, and retention of the dense trajectory, is possible by
+    /// instead composing ``Trajectory.resample``, ``CubicalCover``,
+    /// ``Trajectory.downsample``, and ``EmbeddedTrajectory``.
+    ///
+    /// Parameters
+    /// ----------
+    /// interpolator : ``CubicSpline`` or ``SphereBundleInterpolator``
+    ///     The interpolator to sample.
+    /// metric : ``Euclidean`` or ``SphereBundle``
+    ///     The metric used to measure point spacing and build the embedding.
+    /// resample_spacing : float
+    ///     The largest allowed distance between consecutive points of the
+    ///     dense trajectory the cover is built from. Must be positive.
+    /// downsample_spacing : float
+    ///     The largest allowed distance between consecutive points of the
+    ///     thinned, embedded trajectory.
+    /// parallel : bool, optional
+    ///     Whether to distribute the cover build across a thread pool.
+    ///     Defaults to ``True``; pass ``False`` to run sequentially on the
+    ///     calling thread.
+    ///
+    /// Returns
+    /// -------
+    /// ``EmbeddedTrajectory``
+    ///     The embedded, thinned trajectory.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If ``resample_spacing`` is not positive (including NaN), if the
+    ///     interpolator has fewer than two knots, if a sampled value is not
+    ///     finite, if bisection cannot reach ``resample_spacing``, if the
+    ///     interpolator's samples have zero columns, if a cube coordinate falls
+    ///     outside the supported integer range, if consecutive dense points
+    ///     fall in non-adjacent cubes, if ``downsample_spacing`` is below the
+    ///     dense trajectory's own consecutive-point distance, or if consecutive
+    ///     thinned points fall in non-adjacent cubes.
+    /// ``TypeError``
+    ///     If ``interpolator`` or ``metric`` is not a recognized type.
+    #[staticmethod]
+    #[pyo3(signature = (interpolator, metric, resample_spacing, downsample_spacing, *, parallel = true))]
+    fn from_interpolator(
+        py: Python<'_>,
+        interpolator: &Bound<'_, PyAny>,
+        metric: &Bound<'_, PyAny>,
+        resample_spacing: f64,
+        downsample_spacing: f64,
+        parallel: bool,
+    ) -> PyResult<Self> {
+        let metric = metric_from_py(metric)?;
+        let backend = parallel_backend(parallel);
+        if let Ok(spline) = interpolator.cast::<PyCubicSpline>() {
+            let spline = Arc::clone(&spline.borrow().inner);
+            return Self::embedded_from_interpolator(
+                py,
+                spline,
+                metric,
+                resample_spacing,
+                downsample_spacing,
+                backend,
+            );
+        }
+        if let Ok(bundle) = interpolator.cast::<PySphereBundleInterpolator>() {
+            let bundle = bundle.borrow().inner.clone();
+            return Self::embedded_from_interpolator(
+                py,
+                bundle,
+                metric,
+                resample_spacing,
+                downsample_spacing,
+                backend,
+            );
+        }
+        Err(PyTypeError::new_err(format!(
+            "expected a CubicSpline or SphereBundleInterpolator, got {}",
+            interpolator.get_type().name()?
+        )))
     }
 
     /// Returns the cycling signature of the trajectory segment ``segment`` at
@@ -197,6 +288,41 @@ impl PyEmbeddedTrajectory {
         self.inner.resolution()
     }
 
+    /// Returns the embedded trajectory.
+    ///
+    /// The returned trajectory shares its underlying data rather than copying
+    /// it.
+    ///
+    /// Returns
+    /// -------
+    /// ``Trajectory``
+    ///     The wrapped trajectory.
+    #[must_use]
+    fn trajectory(&self) -> PyTrajectory {
+        PyTrajectory {
+            inner: Arc::clone(self.inner.trajectory()),
+        }
+    }
+
+    /// Returns the number of points in the embedded trajectory.
+    fn __len__(&self) -> usize {
+        self.inner.trajectory().len()
+    }
+
+    /// Returns the metric this embedded trajectory measures distances under.
+    ///
+    /// Useful for introspection: a caller holding an embedding built or
+    /// returned elsewhere can recover which metric it uses without having
+    /// tracked the value separately.
+    ///
+    /// Returns
+    /// -------
+    /// ``Euclidean`` or ``SphereBundle``
+    ///     The metric this embedding was constructed with.
+    fn metric(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        metric_to_py(py, self.inner.metric())
+    }
+
     /// Returns the cubical cover this trajectory is embedded in.
     ///
     /// The returned cover shares its underlying data with this embedded
@@ -300,6 +426,32 @@ impl PyEmbeddedTrajectory {
         cover_path: PathBuf,
     ) -> PyResult<Self> {
         let inner = EmbeddedTrajectory::load(embedded_path, trajectory_path, cover_path)
+            .map_err(to_pyerr)?;
+        Ok(Self { inner })
+    }
+}
+
+impl PyEmbeddedTrajectory {
+    /// Runs [`EmbeddedTrajectory::from_interpolator`] with the interpreter
+    /// detached, so other Python threads run during the pipeline.
+    fn embedded_from_interpolator<I: Interpolator + Send>(
+        py: Python<'_>,
+        interpolator: I,
+        metric: Metric,
+        resample_spacing: f64,
+        downsample_spacing: f64,
+        backend: ExecutionBackend,
+    ) -> PyResult<Self> {
+        let inner = py
+            .detach(move || {
+                EmbeddedTrajectory::from_interpolator(
+                    &interpolator,
+                    metric,
+                    resample_spacing,
+                    downsample_spacing,
+                    &backend,
+                )
+            })
             .map_err(to_pyerr)?;
         Ok(Self { inner })
     }
