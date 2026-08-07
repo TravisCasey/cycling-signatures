@@ -192,21 +192,21 @@ mod tests {
 
     #[test]
     fn from_births_eliminates_in_birth_order() {
-        let e0 = F2Vector::from_nonzero(3, [0]);
-        let e1 = F2Vector::from_nonzero(3, [1]);
-        let e2 = F2Vector::from_nonzero(3, [2]);
-        let e0_e1 = &e0 ^ &e1;
-        let e0_e1_e2 = &e0_e1 ^ &e2;
+        let basis_zero = F2Vector::from_nonzero(3, [0]);
+        let basis_one = F2Vector::from_nonzero(3, [1]);
+        let basis_two = F2Vector::from_nonzero(3, [2]);
+        let basis_zero_one = &basis_zero ^ &basis_one;
+        let basis_all = &basis_zero_one ^ &basis_two;
 
         // Deliberately unsorted, with a dependent class (0.9, the XOR of the
         // first two pivots) and a repeated class (0.8, matching the earlier
         // 0.2 entry) both expected to vanish.
         let births = vec![
-            (0.5, e0_e1.clone()),
-            (0.2, e2.clone()),
-            (0.9, e0_e1_e2),
-            (0.7, e0.clone()),
-            (0.8, e2.clone()),
+            (0.5, basis_zero_one.clone()),
+            (0.2, basis_two.clone()),
+            (0.9, basis_all),
+            (0.7, basis_zero.clone()),
+            (0.8, basis_two.clone()),
         ];
 
         let signature = CyclingSignature::from_births(births, 3, 1.0);
@@ -224,7 +224,7 @@ mod tests {
         assert_eq!(signature.rank_at(1.0).unwrap(), 3);
         assert_eq!(signature.rank_at(1.0).unwrap(), signature.rank());
 
-        let expected_span_at_0_6 = F2Subspace::new(vec![e2, e0_e1], 3).unwrap();
+        let expected_span_at_0_6 = F2Subspace::new(vec![basis_two, basis_zero_one], 3).unwrap();
         assert_eq!(signature.span_at(0.6).unwrap(), expected_span_at_0_6);
 
         assert!(matches!(

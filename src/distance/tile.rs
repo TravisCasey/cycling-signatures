@@ -31,6 +31,7 @@ use crate::{
 ///
 /// Panics if `columns` and `window_end` are not a valid nested pair of
 /// sub-ranges of `0..points.len()`, or if `max_length` is 0.
+#[must_use]
 pub(super) fn detect_tile_components(
     points: &MetricPoints<'_>,
     columns: Range<usize>,
@@ -48,56 +49,59 @@ pub(super) fn detect_tile_components(
 /// distance tile.
 ///
 /// `tile` has shape `(height, width)`; `base` is the point index of the
-/// tile's first column (i.e., `tile[(row, col)]` is the distance between
-/// `points[base + col]` and `points[base + col + row]`).
+/// tile's first column (i.e., `tile[(row, column)]` is the distance between
+/// `points[base + column]` and `points[base + column + row]`).
 ///
 /// # Panics
 ///
-/// Panics if the tile holds more cells than an entry index can address.
+/// Panics if the detection window and cycle length cap together exceed the
+/// supported working set size.
+#[must_use]
 fn partition_tile(tile: ArrayView2<'_, f64>, base: usize, threshold: f64) -> TileComponents {
     let height = tile.nrows();
     let width = tile.ncols();
     assert!(
         height * width < u32::MAX as usize,
-        "distance tile holds more cells than an entry index can address"
+        "detection window and cycle length cap exceed the supported working set size"
     );
 
     let mut disjoint = DisjointSet::new();
-    // Each cell's entry index, addressed by `row * width + col`, or `u32::MAX`
-    // where the cell was not admitted. Every cell is written once and read at
-    // most twice, both at known positions, so the table is indexed directly.
+    // Each cell's entry index, addressed by `row * width + column`, or
+    // `u32::MAX` where the cell was not admitted. Every cell is written once
+    // and read at most twice, both at known positions, so the table is indexed
+    // directly.
     let mut entry_ids: Vec<u32> = vec![u32::MAX; height * width];
 
     // Row-major pass, which suits the predecessor convention (both required
     // predecessors are at `row - 1`).
-    for ((row, col), &distance) in tile.indexed_iter() {
+    for ((row, column), &distance) in tile.indexed_iter() {
         if distance > threshold {
             continue;
         }
         let id = disjoint.insert();
-        entry_ids[row * width + col] = id as u32;
+        entry_ids[row * width + column] = id as u32;
 
-        // Shorter-by-one neighbor at (row - 1, col): same start
-        // `base + col`, cycle ends one step earlier.
+        // Shorter-by-one neighbor at (row - 1, column): same start
+        // `base + column`, cycle ends one step earlier.
         if row > 0 {
-            let shorter_id = entry_ids[(row - 1) * width + col];
+            let shorter_id = entry_ids[(row - 1) * width + column];
             if shorter_id != u32::MAX {
                 disjoint.union(id, shorter_id as usize);
             }
         }
 
-        // Later-start-same-end neighbor at (row - 1, col + 1): same right
-        // endpoint `base + col + row`, start shifts one later.
+        // Later-start-same-end neighbor at (row - 1, column + 1): same right
+        // endpoint `base + column + row`, start shifts one later.
         //
-        // The `col + 1 < width` guard decides tile ownership of this edge. A
-        // tile carries one column past the ones it owns, so for an owned
+        // The `column + 1 < width` guard decides tile ownership of this edge.
+        // A tile carries one column past the ones it owns, so for an owned
         // column the partner is present and the edge is found here. On that
         // final read-ahead column the guard fails, which is correct: the same
         // column is owned by the next tile, where the partner is present and
         // the edge is found instead. Every edge is therefore discovered
         // exactly once, and neither side is dropped at a boundary.
-        if row > 0 && col + 1 < width {
-            let later_id = entry_ids[(row - 1) * width + col + 1];
+        if row > 0 && column + 1 < width {
+            let later_id = entry_ids[(row - 1) * width + column + 1];
             if later_id != u32::MAX {
                 disjoint.union(id, later_id as usize);
             }
@@ -127,12 +131,12 @@ fn partition_tile(tile: ArrayView2<'_, f64>, base: usize, threshold: f64) -> Til
         if id == u32::MAX {
             continue;
         }
-        let (row, col) = (cell / width, cell % width);
+        let (row, column) = (cell / width, cell % width);
         let root = disjoint.find(id as usize);
         let trivial = trivial_roots.contains(&root);
         // Only the columns a neighboring tile shares are kept for a component
         // carrying the trivial cycle; see [`TileComponents`].
-        if trivial && col != 0 && col + 1 != width {
+        if trivial && column != 0 && column + 1 != width {
             continue;
         }
         let component_id = *component_index.entry(root).or_insert_with(|| {
@@ -141,8 +145,8 @@ fn partition_tile(tile: ArrayView2<'_, f64>, base: usize, threshold: f64) -> Til
             grouped.len() - 1
         });
         // Cycle segment over trajectory points: length = row + 1.
-        let start = base + col;
-        let end = base + col + row + 1;
+        let start = base + column;
+        let end = base + column + row + 1;
         grouped[component_id].push((start as u32, end as u32));
     }
 
@@ -150,9 +154,9 @@ fn partition_tile(tile: ArrayView2<'_, f64>, base: usize, threshold: f64) -> Til
 }
 
 /// Builds a rectangular distance tile over the point indices `columns`. Entry
-/// `tile[(row, col)]` holds the metric distance between `points[base + col]`
-/// and `points[base + col + row]`, where `base = columns.start` and
-/// `width = columns.end - columns.start`.
+/// `tile[(row, column)]` holds the metric distance between
+/// `points[base + column]` and `points[base + column + row]`, where
+/// `base = columns.start` and `width = columns.end - columns.start`.
 ///
 /// Rows reach past the tile's own columns and stop at `window_end`, the end of
 /// the analysis window: a cycle starting in this tile may finish outside it.
@@ -208,8 +212,8 @@ fn build_distance_tile(
         // A column at or past this bound would reach a point outside the
         // window, and stays at infinity.
         let measured_columns = (window_end - base).saturating_sub(row).min(width);
-        for col in 0..measured_columns {
-            values.push(points.distance(base + col, base + col + row));
+        for column in 0..measured_columns {
+            values.push(points.distance(base + column, base + column + row));
         }
         values.resize(values.len() + (width - measured_columns), f64::INFINITY);
     }

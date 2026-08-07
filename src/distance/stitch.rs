@@ -169,6 +169,7 @@ impl OpenComponents {
 /// Panics if the input does not satisfy that geometry, as a cycle on a shared
 /// column would then have no counterpart to join and a component can be closed
 /// before it has been given any cycle.
+#[must_use]
 pub(super) fn stitch_per_tile_results(
     per_tile: Vec<(usize, TileComponents)>,
 ) -> Vec<Vec<Range<usize>>> {

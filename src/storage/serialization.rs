@@ -79,6 +79,7 @@ impl CycleStorage {
     ///
     /// Component invariants (`coverage` bounds the cycle ranges, `class_id` is
     /// in range, cycles are non-empty) are the caller's responsibility.
+    #[must_use]
     fn from_parts(
         fingerprint: u64,
         extent: Range<u32>,

@@ -37,6 +37,7 @@ impl IntervalSubsumptionIndex {
     /// Within each payload group, an interval is dropped when it strictly
     /// contains another same-payload interval whose birth is less than or
     /// equal to its own.
+    #[must_use]
     pub(crate) fn new(ranges: impl IntoIterator<Item = (Range<u32>, u32, f64)>) -> Self {
         let mut intervals: Vec<StoredInterval> = ranges
             .into_iter()

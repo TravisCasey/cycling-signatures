@@ -230,6 +230,7 @@ impl CubicalCover {
 ///
 /// Two cubes are adjacent when they intersect, which for unit cubes means
 /// their coordinates differ by at most 1 on every axis.
+#[must_use]
 pub(crate) fn non_adjacent_axis<'a>(
     from: impl IntoIterator<Item = &'a i64>,
     to: impl IntoIterator<Item = &'a i64>,
@@ -254,6 +255,7 @@ fn floor_to_cube(point: ArrayView1<'_, f64>, out: &mut Vec<i64>) {
 /// Returns the row index of the cube equal to `target`, or `None` if no cube
 /// matches. `cubes` must be lexicographically sorted (the canonical order
 /// [`CubicalCover`] enforces); the lookup is a binary search over that order.
+#[must_use]
 fn find_cube(cubes: ArrayView2<'_, i64>, target: &[i64]) -> Option<usize> {
     let mut low = 0_usize;
     let mut high = cubes.nrows();
@@ -272,6 +274,7 @@ fn find_cube(cubes: ArrayView2<'_, i64>, target: &[i64]) -> Option<usize> {
 
 /// Lexicographically sorts and deduplicates `cubes`, returning a new owned
 /// [`Array2<i64>`](Array2).
+#[must_use]
 fn canonicalize_cubes(cubes: ArrayView2<'_, i64>) -> Array2<i64> {
     let mut rows: Vec<Vec<i64>> = cubes.outer_iter().map(|row| row.to_vec()).collect();
     rows.sort();

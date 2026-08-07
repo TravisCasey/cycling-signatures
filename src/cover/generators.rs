@@ -18,6 +18,7 @@ use crate::f2_vector::F2Vector;
 /// Computes cohomology generators for the cubical complex defined by
 /// `canonical_cubes`, which must be sorted, deduplicated, in range for `i32`,
 /// and hold at least one row.
+#[must_use]
 pub(super) fn compute_generators(
     canonical_cubes: &Array2<i64>,
     backend: &ExecutionBackend,
@@ -101,6 +102,7 @@ pub(super) fn compute_generators(
 
 /// A total ordering on [`Chain<Cube, F2>`](Chain) used for deterministic
 /// sorting.
+#[must_use]
 fn compare_chains(left: &Chain<Cube, F2>, right: &Chain<Cube, F2>) -> Ordering {
     let left_entries: Vec<&Cube> = left.into_iter().map(|(cube, _)| cube).collect();
     let right_entries: Vec<&Cube> = right.into_iter().map(|(cube, _)| cube).collect();
@@ -109,6 +111,7 @@ fn compare_chains(left: &Chain<Cube, F2>, right: &Chain<Cube, F2>) -> Ordering {
 
 /// Builds the edge-to-class lookup table from the generator chains. Each
 /// generator contributes a `1` at its own index for every edge it contains.
+#[must_use]
 pub(super) fn compute_edge_classes(generators: &[Chain<Cube, F2>]) -> FxHashMap<Cube, F2Vector> {
     let mut edge_classes: FxHashMap<Cube, F2Vector> = FxHashMap::default();
     let num_generators = generators.len();

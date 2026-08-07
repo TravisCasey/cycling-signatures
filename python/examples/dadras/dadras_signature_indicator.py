@@ -105,17 +105,17 @@ COLUMN_STEP = 10
 
 column_starts = np.arange(SAMPLE_WINDOW_START, SAMPLE_WINDOW_STOP, COLUMN_STEP)
 num_rows = len(WINDOW_LENGTHS)
-num_cols = len(column_starts)
+num_columns = len(column_starts)
 
 library_index = {subspace: index for index, subspace in enumerate(library)}
-labels = np.full((num_rows, num_cols), -1, dtype=np.int8)
+labels = np.full((num_rows, num_columns), -1, dtype=np.int8)
 
 for row_index, length in enumerate(WINDOW_LENGTHS):
-    for col_index, start in enumerate(column_starts):
+    for column_index, start in enumerate(column_starts):
         if start + length > extent_stop:
             continue
         subspace = STORAGE.signature(range(int(start), int(start) + length)).span()
-        labels[row_index, col_index] = library_index.get(subspace, -1)
+        labels[row_index, column_index] = library_index.get(subspace, -1)
 
 # %%
 # **Place the columns and rows in time.** Columns step a fixed number of
@@ -149,7 +149,7 @@ def library_colors_and_labels(
     subspaces: list[cs.Subspace],
 ) -> tuple[list[tuple[float, float, float]], list[str]]:
     """Return the color and legend label for each non-trivial signature."""
-    frequent_keys: list[tuple[int, ...] | None] = []
+    matched_class_keys: list[tuple[int, ...] | None] = []
     for subspace in subspaces:
         key = None
         if subspace.rank() == 1:
@@ -158,14 +158,14 @@ def library_colors_and_labels(
             )
             if key not in CLASS_COLORS:
                 key = None
-        frequent_keys.append(key)
+        matched_class_keys.append(key)
 
-    used = {CLASS_COLORS[key] for key in frequent_keys if key is not None}
+    used = {CLASS_COLORS[key] for key in matched_class_keys if key is not None}
     remaining = [color for color in _support.signature_colors() if color not in used]
 
     colors: list[tuple[float, float, float]] = []
     labels: list[str] = []
-    for position, (subspace, key) in enumerate(zip(subspaces, frequent_keys, strict=True), 1):
+    for position, (subspace, key) in enumerate(zip(subspaces, matched_class_keys, strict=True), 1):
         if key is not None:
             colors.append(CLASS_COLORS[key])
             labels.append(f"class {CLASS_POSITIONS[key]} (rank 1)")

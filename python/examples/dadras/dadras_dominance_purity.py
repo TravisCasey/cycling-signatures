@@ -113,7 +113,7 @@ def library_colors_and_labels(
     subspaces: list[cs.Subspace],
 ) -> tuple[list[tuple[float, float, float]], list[str]]:
     """Return the color and legend label for each non-trivial signature."""
-    frequent_keys: list[tuple[int, ...] | None] = []
+    matched_class_keys: list[tuple[int, ...] | None] = []
     for subspace in subspaces:
         key = None
         if subspace.rank() == 1:
@@ -122,14 +122,14 @@ def library_colors_and_labels(
             )
             if key not in CLASS_COLORS:
                 key = None
-        frequent_keys.append(key)
+        matched_class_keys.append(key)
 
-    used = {CLASS_COLORS[key] for key in frequent_keys if key is not None}
+    used = {CLASS_COLORS[key] for key in matched_class_keys if key is not None}
     remaining = [color for color in _support.signature_colors() if color not in used]
 
     colors: list[tuple[float, float, float]] = []
     labels: list[str] = []
-    for position, (subspace, key) in enumerate(zip(subspaces, frequent_keys, strict=True), 1):
+    for position, (subspace, key) in enumerate(zip(subspaces, matched_class_keys, strict=True), 1):
         if key is not None:
             colors.append(CLASS_COLORS[key])
             labels.append(f"class {CLASS_POSITIONS[key]} (rank 1)")
@@ -214,7 +214,7 @@ purity_array = label_counts[kept] / labeled_neighbor_totals[kept, np.newaxis]
 
 library_colors, library_labels = library_colors_and_labels(library)
 
-purity_cmap = _support.purity_colormap()
+purity_colormap = _support.purity_colormap()
 
 
 # %%
@@ -239,19 +239,19 @@ def build_dominant_figure() -> plt.Figure:
         linewidths=0,
         rasterized=True,
     )
-    for library_index in range(len(library)):
-        mask = dominant_array == library_index
+    for position in range(len(library)):
+        mask = dominant_array == position
         if not np.any(mask):
             continue
         axes.scatter(
             positions_array[mask, 0],
             positions_array[mask, 1],
             positions_array[mask, 2],
-            color=library_colors[library_index],
+            color=library_colors[position],
             s=2,
             alpha=0.6,
             linewidths=0,
-            label=library_labels[library_index],
+            label=library_labels[position],
             rasterized=True,
         )
     axes.set_xlabel("x")
@@ -293,15 +293,15 @@ def build_purity_figure() -> plt.Figure:
     )
     panels = panel_grid.ravel()
     purity_scatter = None
-    for library_index in range(num_library):
-        panel = panels[library_index]
-        signature_purity = purity_array[:, library_index]
+    for signature_index in range(num_library):
+        panel = panels[signature_index]
+        signature_purity = purity_array[:, signature_index]
         draw_order = np.argsort(signature_purity)
         purity_scatter = panel.scatter(
             positions_array[draw_order, 0],
             positions_array[draw_order, 2],
             c=signature_purity[draw_order],
-            cmap=purity_cmap,
+            cmap=purity_colormap,
             vmin=0.0,
             vmax=1.0,
             s=4,
@@ -311,7 +311,7 @@ def build_purity_figure() -> plt.Figure:
         )
         panel.set_xlabel("x")
         panel.set_ylabel("z")
-        panel.set_title(library_labels[library_index], fontsize=10)
+        panel.set_title(library_labels[signature_index], fontsize=10)
     for extra_index in range(num_library, len(panels)):
         panels[extra_index].set_axis_off()
 

@@ -53,7 +53,9 @@ COMPONENTS = STORAGE.components()
 TOP_CLASSES = 5
 
 classes = STORAGE.classes()
-class_keys = [tuple(int(value) for value in hclass.to_array()) for hclass in classes]
+class_keys = [
+    tuple(int(value) for value in homology_class.to_array()) for homology_class in classes
+]
 
 class_cycle_counts: Counter[int] = Counter()
 for component in COMPONENTS:
@@ -92,7 +94,7 @@ TIME_WINDOW_START = float(PARAMETERS[EXTENT_START])
 TIME_WINDOW_STOP = min(TIME_WINDOW_START + WINDOW_DURATION, float(PARAMETERS[EXTENT_STOP - 1]))
 
 column_times = np.arange(TIME_WINDOW_START, TIME_WINDOW_STOP, COLUMN_DURATION)
-num_cols = len(column_times)
+num_columns = len(column_times)
 
 windowed_cycles: list[tuple[int, float, float, float]] = []
 for component in COMPONENTS:
@@ -134,7 +136,7 @@ BIRTH_CAPS = (
 
 def coverage_labels(max_birth: float) -> np.ndarray:
     """Return the label array for cycles born by ``max_birth``."""
-    labels = np.zeros((num_rows, num_cols), dtype=np.int8)
+    labels = np.zeros((num_rows, num_columns), dtype=np.int8)
     for row_index, first_time, last_time, cycle_birth in windowed_cycles:
         if cycle_birth > max_birth:
             continue

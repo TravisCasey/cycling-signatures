@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 mod sphere_bundle;
 
-use sphere_bundle::sphere_bundle_distance;
+use sphere_bundle::{assert_even_dimension, sphere_bundle_distance, sphere_bundle_distance_slices};
 
 /// A distance mode over rows of a trajectory.
 ///
@@ -145,11 +145,7 @@ impl Metric {
     #[must_use]
     pub(crate) fn over(self, points: ArrayView2<'_, f64>) -> MetricPoints<'_> {
         if let Metric::SphereBundle = self {
-            assert!(
-                points.ncols().is_multiple_of(2),
-                "sphere bundle metric requires even dimension, got {}",
-                points.ncols(),
-            );
+            assert_even_dimension(points.ncols());
         }
         let count = points.nrows();
         let dimension = points.ncols();
@@ -203,12 +199,7 @@ impl MetricPoints<'_> {
 
         match self.metric {
             Metric::Euclidean => euclidean_distance_slices(left, right),
-            Metric::SphereBundle => {
-                let half = left.len() / 2;
-                let position_distance = euclidean_distance_slices(&left[..half], &right[..half]);
-                let direction_distance = euclidean_distance_slices(&left[half..], &right[half..]);
-                position_distance.max(direction_distance)
-            },
+            Metric::SphereBundle => sphere_bundle_distance_slices(left, right),
         }
     }
 }

@@ -140,13 +140,13 @@ def integrate(
             step = adaptive_step(state)
             state = runge_kutta_step(state, step)
             elapsed += step
-            gap = (
+            gap_squared = (
                 (state[0] - previous[0]) ** 2
                 + (state[1] - previous[1]) ** 2
                 + (state[2] - previous[2]) ** 2
                 + (state[3] - previous[3]) ** 2
             )
-            if gap >= spacing_squared:
+            if gap_squared >= spacing_squared:
                 break
         samples[sample_index] = state
         times[sample_index] = elapsed

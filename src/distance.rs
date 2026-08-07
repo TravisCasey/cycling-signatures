@@ -58,6 +58,7 @@ pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 256;
 /// joins a cycle to the one starting one step later, an edge that would
 /// otherwise straddle a tile boundary, and the shared cycles give the stitching
 /// pass the join key it needs to reunite the two sides.
+#[must_use]
 fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Vec<Range<usize>> {
     let mut column_ranges = Vec::new();
     let mut base = range.start;

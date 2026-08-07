@@ -88,17 +88,17 @@ COLUMN_STEP = 7
 
 column_starts = np.arange(SAMPLE_WINDOW_START, SAMPLE_WINDOW_STOP, COLUMN_STEP)
 num_rows = len(WINDOW_LENGTHS)
-num_cols = len(column_starts)
+num_columns = len(column_starts)
 
 library_index = {subspace: index for index, subspace in enumerate(library)}
-labels = np.full((num_rows, num_cols), -1, dtype=np.int8)
+labels = np.full((num_rows, num_columns), -1, dtype=np.int8)
 
 for row_index, length in enumerate(WINDOW_LENGTHS):
-    for col_index, start in enumerate(column_starts):
+    for column_index, start in enumerate(column_starts):
         if start + length > extent_stop:
             continue
         subspace = STORAGE.signature(range(int(start), int(start) + length)).span()
-        labels[row_index, col_index] = library_index.get(subspace, -1)
+        labels[row_index, column_index] = library_index.get(subspace, -1)
 
 # %%
 # **Place the columns and rows in time.** Columns step a fixed number of

@@ -97,15 +97,11 @@ mod tests {
         set.union(elements[2], elements[3]);
         set.union(elements[1], elements[3]);
 
-        let rep_0 = set.find(elements[0]);
-        let rep_1 = set.find(elements[1]);
-        let rep_2 = set.find(elements[2]);
-        let rep_3 = set.find(elements[3]);
-        let rep_4 = set.find(elements[4]);
+        let roots: Vec<usize> = elements.iter().map(|&index| set.find(index)).collect();
 
-        assert_eq!(rep_0, rep_1);
-        assert_eq!(rep_1, rep_2);
-        assert_eq!(rep_2, rep_3);
-        assert_ne!(rep_3, rep_4);
+        assert_eq!(roots[0], roots[1]);
+        assert_eq!(roots[1], roots[2]);
+        assert_eq!(roots[2], roots[3]);
+        assert_ne!(roots[3], roots[4]);
     }
 }

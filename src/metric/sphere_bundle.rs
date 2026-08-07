@@ -6,25 +6,31 @@
 
 use ndarray::{ArrayView1, s};
 
-use crate::metric::euclidean_distance;
+use crate::metric::{euclidean_distance, euclidean_distance_slices};
 
-/// Splits a sphere-bundle point into its position half and direction half.
+/// Checks that `dimension` coordinates can be read as a sphere-bundle point.
 ///
 /// A valid sphere-bundle point has even-length coordinates: the first half is
 /// position, the second half is direction. An odd length is not a valid
-/// sphere-bundle point at all, so the even-length requirement is asserted:
-/// that catches malformed input loudly instead of silently splitting it into
-/// a mismatched position half and direction half.
+/// sphere-bundle point.
+///
+/// # Panics
+///
+/// Panics if `dimension` is odd.
+pub(crate) fn assert_even_dimension(dimension: usize) {
+    assert!(
+        dimension.is_multiple_of(2),
+        "sphere bundle metric requires even dimension, got {dimension}",
+    );
+}
+
+/// Splits a sphere-bundle point into its position half and direction half.
 ///
 /// # Panics
 ///
 /// Panics if `point.len()` is odd.
 fn split(point: ArrayView1<'_, f64>) -> (ArrayView1<'_, f64>, ArrayView1<'_, f64>) {
-    assert!(
-        point.len().is_multiple_of(2),
-        "sphere bundle metric requires even dimension, got {}",
-        point.len(),
-    );
+    assert_even_dimension(point.len());
     let half = point.len() / 2;
     (point.slice_move(s![..half]), point.slice_move(s![half..]))
 }
@@ -52,6 +58,20 @@ pub(crate) fn sphere_bundle_distance(
     let (position_other, direction_other) = split(other);
     euclidean_distance(position_point, position_other)
         .max(euclidean_distance(direction_point, direction_other))
+}
+
+/// The sphere-bundle distance between two slices of the same even length: the
+/// maximum of the position-half and direction-half Euclidean distances.
+///
+/// The lengths are the caller's responsibility, which is what distinguishes
+/// this from [`sphere_bundle_distance`]: it serves indexed distance queries
+/// over a point array whose coordinate count was checked once when the array
+/// was paired with the metric.
+#[must_use]
+pub(crate) fn sphere_bundle_distance_slices(point: &[f64], other: &[f64]) -> f64 {
+    let half = point.len() / 2;
+    euclidean_distance_slices(&point[..half], &other[..half])
+        .max(euclidean_distance_slices(&point[half..], &other[half..]))
 }
 
 #[cfg(test)]

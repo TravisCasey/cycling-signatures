@@ -141,7 +141,7 @@ def library_colors_and_labels(
     subspaces: list[cs.Subspace],
 ) -> tuple[list[tuple[float, float, float]], list[str]]:
     """Return the color and legend label for each non-trivial signature."""
-    frequent_keys: list[tuple[int, ...] | None] = []
+    matched_class_keys: list[tuple[int, ...] | None] = []
     for subspace in subspaces:
         key = None
         if subspace.rank() == 1:
@@ -150,14 +150,14 @@ def library_colors_and_labels(
             )
             if key not in CLASS_COLORS:
                 key = None
-        frequent_keys.append(key)
+        matched_class_keys.append(key)
 
-    used = {CLASS_COLORS[key] for key in frequent_keys if key is not None}
+    used = {CLASS_COLORS[key] for key in matched_class_keys if key is not None}
     remaining = [color for color in _support.signature_colors() if color not in used]
 
     colors: list[tuple[float, float, float]] = []
     labels: list[str] = []
-    for position, (subspace, key) in enumerate(zip(subspaces, frequent_keys, strict=True), 1):
+    for position, (subspace, key) in enumerate(zip(subspaces, matched_class_keys, strict=True), 1):
         if key is not None:
             colors.append(CLASS_COLORS[key])
             labels.append(f"class {CLASS_POSITIONS[key]} (rank 1)")
