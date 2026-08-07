@@ -54,7 +54,6 @@ pub(crate) struct PyCubicSpline {
 impl PyCubicSpline {
     /// Fits a natural cubic spline through the given knots and values.
     #[new]
-    #[allow(clippy::needless_pass_by_value)]
     fn new(knots: PyReadonlyArray1<'_, f64>, values: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
         let inner =
             CubicSpline::new(knots.as_array().to_owned(), values.as_array()).map_err(to_pyerr)?;

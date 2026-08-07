@@ -5,16 +5,32 @@
 
 use std::path::PathBuf;
 
-use cycling_signatures::{Component, Cycle, CycleStorage, ExecutionBackend};
+use cycling_signatures::{Component, Cycle, CycleStorage};
 use pyo3::{exceptions::PyIndexError, prelude::*};
 
 use crate::{
+    convert::{parallel_backend, resolve_index, segment_from_py},
     embedded::PyEmbeddedTrajectory,
     errors::to_pyerr,
     homology::PyHomologyClass,
-    segment::{resolve_index, segment_from_py},
     signature::PyCyclingSignature,
 };
+
+/// Resolves a component id against a storage's component count, raising
+/// `IndexError` if it falls outside `range(len(storage))`.
+///
+/// Unlike `resolve_index`, this does not accept Python-style negative
+/// indexing: component ids are commonly computed rather than literals, so a
+/// negative id here is more likely to be an arithmetic error than a deliberate
+/// negative index.
+fn checked_component_id(component_id: isize, component_count: usize) -> PyResult<usize> {
+    if component_id < 0 || component_id as usize >= component_count {
+        return Err(PyIndexError::new_err(format!(
+            "component index {component_id} out of bounds for {component_count} components"
+        )));
+    }
+    Ok(component_id as usize)
+}
 
 /// A single detected near-recurrent cycle in a trajectory.
 ///
@@ -235,6 +251,10 @@ impl PyCycleStorage {
     /// distance does not exceed ``threshold``, and computes the homology
     /// class each one represents.
     ///
+    /// By default the work is distributed across a thread pool; set the
+    /// ``RAYON_NUM_THREADS`` environment variable to cap the number of
+    /// threads it uses.
+    ///
     /// Parameters
     /// ----------
     /// embedded : ``EmbeddedTrajectory``
@@ -248,6 +268,10 @@ impl PyCycleStorage {
     ///     The largest endpoint distance admitted as a cycle. Must be at
     ///     least the embedded trajectory's ``resolution`` and strictly below
     ///     ``1.0`` (the cube side).
+    /// parallel : bool, optional
+    ///     Whether to distribute the work across a thread pool. Defaults to
+    ///     ``True``; pass ``False`` to run sequentially on the calling
+    ///     thread.
     ///
     /// Returns
     /// -------
@@ -264,24 +288,21 @@ impl PyCycleStorage {
     /// ``IndexError``
     ///     If the segment indices are out of bounds.
     #[staticmethod]
+    #[pyo3(signature = (embedded, segment, max_length, threshold, *, parallel = true))]
     fn build(
         py: Python<'_>,
         embedded: &Bound<'_, PyEmbeddedTrajectory>,
         segment: &Bound<'_, PyAny>,
         max_length: usize,
         threshold: f64,
+        parallel: bool,
     ) -> PyResult<Self> {
         let range = segment_from_py(segment)?;
+        let backend = parallel_backend(parallel);
         let embedded_ref = &embedded.borrow().inner;
         let inner = py
             .detach(move || {
-                CycleStorage::build(
-                    embedded_ref,
-                    range,
-                    max_length,
-                    threshold,
-                    &ExecutionBackend::Rayon,
-                )
+                CycleStorage::build(embedded_ref, range, max_length, threshold, &backend)
             })
             .map_err(to_pyerr)?;
         Ok(Self { inner })
@@ -407,15 +428,10 @@ impl PyCycleStorage {
     /// ------
     /// ``IndexError``
     ///     If ``component_id`` is out of bounds.
-    fn component(&self, component_id: usize) -> PyResult<PyComponent> {
-        if component_id >= self.inner.components().len() {
-            return Err(PyIndexError::new_err(format!(
-                "component index {component_id} out of bounds for {} components",
-                self.inner.components().len()
-            )));
-        }
+    fn component(&self, component_id: isize) -> PyResult<PyComponent> {
+        let resolved = checked_component_id(component_id, self.inner.components().len())?;
         Ok(PyComponent {
-            inner: self.inner.component(component_id).clone(),
+            inner: self.inner.component(resolved).clone(),
         })
     }
 
@@ -435,15 +451,10 @@ impl PyCycleStorage {
     /// ------
     /// ``IndexError``
     ///     If ``component_id`` is out of bounds.
-    fn homology_class(&self, component_id: usize) -> PyResult<PyHomologyClass> {
-        if component_id >= self.inner.components().len() {
-            return Err(PyIndexError::new_err(format!(
-                "component index {component_id} out of bounds for {} components",
-                self.inner.components().len()
-            )));
-        }
+    fn homology_class(&self, component_id: isize) -> PyResult<PyHomologyClass> {
+        let resolved = checked_component_id(component_id, self.inner.components().len())?;
         Ok(PyHomologyClass {
-            inner: self.inner.class(component_id).clone(),
+            inner: self.inner.class(resolved).clone(),
         })
     }
 
@@ -483,7 +494,8 @@ impl PyCycleStorage {
     /// Parameters
     /// ----------
     /// point : int
-    ///     A point index to test for coverage.
+    ///     A point index to test for coverage. A negative value is always
+    ///     outside the stored extent.
     ///
     /// Returns
     /// -------
@@ -491,8 +503,11 @@ impl PyCycleStorage {
     ///     The covering component ids, ascending. Empty when ``point`` lies
     ///     outside the stored extent.
     #[must_use]
-    fn components_covering(&self, point: usize) -> Vec<u32> {
-        self.inner.components_covering(point)
+    fn components_covering(&self, point: isize) -> Vec<u32> {
+        if point < 0 {
+            return Vec::new();
+        }
+        self.inner.components_covering(point as usize)
     }
 
     /// Returns the number of detected components.

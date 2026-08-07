@@ -5,10 +5,7 @@
 //! returned by signature queries. The signature type itself lives in
 //! [`crate::signature`].
 
-use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
-};
+use std::hash::{Hash, Hasher};
 
 use cycling_signatures::{F2, F2Subspace, F2Vector};
 use numpy::PyArray1;
@@ -16,13 +13,14 @@ use pyo3::{
     exceptions::{PyIndexError, PyValueError},
     prelude::*,
 };
+use rustc_hash::FxHasher;
 
-use crate::segment::resolve_index;
+use crate::convert::resolve_index;
 
 /// Computes a hash of a value, used to give the equatable value types a
 /// `__hash__` consistent with their `__eq__`.
 fn hash_of<T: Hash>(value: &T) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = FxHasher::default();
     value.hash(&mut hasher);
     hasher.finish()
 }

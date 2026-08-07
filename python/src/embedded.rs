@@ -5,12 +5,17 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use cycling_signatures::{EmbeddedTrajectory, ExecutionBackend};
+use cycling_signatures::EmbeddedTrajectory;
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
-    cover::PyCubicalCover, errors::to_pyerr, homology::PyHomologyClass, metric::metric_from_py,
-    segment::segment_from_py, signature::PyCyclingSignature, trajectory::PyTrajectory,
+    convert::{parallel_backend, segment_from_py},
+    cover::PyCubicalCover,
+    errors::to_pyerr,
+    homology::PyHomologyClass,
+    metric::metric_from_py,
+    signature::PyCyclingSignature,
+    trajectory::PyTrajectory,
 };
 
 /// A trajectory embedded in a cubical cover, ready for homological analysis.
@@ -101,6 +106,10 @@ impl PyEmbeddedTrajectory {
     /// threshold : float
     ///     The largest endpoint distance admitted as a cycle. Must be at
     ///     least ``resolution`` and strictly below ``1.0`` (the cube side).
+    /// parallel : bool, optional
+    ///     Whether to distribute the work across a thread pool. Defaults to
+    ///     ``True``; pass ``False`` to run sequentially on the calling
+    ///     thread.
     ///
     /// Returns
     /// -------
@@ -115,16 +124,19 @@ impl PyEmbeddedTrajectory {
     ///     endpoint points fall in non-adjacent cubes.
     /// ``IndexError``
     ///     If the segment indices are out of range.
+    #[pyo3(signature = (segment, threshold, *, parallel = true))]
     fn signature(
         &self,
         py: Python<'_>,
         segment: &Bound<'_, PyAny>,
         threshold: f64,
+        parallel: bool,
     ) -> PyResult<PyCyclingSignature> {
         let range = segment_from_py(segment)?;
+        let backend = parallel_backend(parallel);
         let embedded = &self.inner;
         let cycling_signature = py
-            .detach(move || embedded.signature(range, threshold, &ExecutionBackend::Rayon))
+            .detach(move || embedded.signature(range, threshold, &backend))
             .map_err(to_pyerr)?;
         Ok(PyCyclingSignature {
             inner: cycling_signature,

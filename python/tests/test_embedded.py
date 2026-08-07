@@ -16,6 +16,14 @@ def test_signature_of_square_loop(square_loop_embedded, square_loop_points):
     assert square_loop_embedded.cover().num_generators() == 1
 
 
+def test_sequential_backend_agrees_with_default(square_loop_embedded, square_loop_points):
+    segment = range(0, square_loop_points.shape[0])
+    default_signature = square_loop_embedded.signature(segment, 0.5)
+    sequential_signature = square_loop_embedded.signature(segment, 0.5, parallel=False)
+    assert sequential_signature.span() == default_signature.span()
+    assert sequential_signature.rank_at(0.5) == default_signature.rank_at(0.5)
+
+
 def test_threshold_below_resolution_raises(square_loop_embedded, square_loop_points):
     with pytest.raises(ValueError):
         square_loop_embedded.signature(

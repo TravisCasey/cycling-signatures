@@ -1,10 +1,12 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Shared helpers for converting Python index and segment arguments.
+//! Conversion helpers for Python arguments: sequence indices, trajectory
+//! segments, and the caller-selectable execution backend.
 
 use std::ops::Range;
 
+use cycling_signatures::ExecutionBackend;
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -81,4 +83,13 @@ fn validate_bounds(start: isize, stop: isize) -> PyResult<Range<usize>> {
         )));
     }
     Ok(start..stop)
+}
+
+/// Converts the caller's parallel/sequential choice to an `ExecutionBackend`.
+pub(crate) fn parallel_backend(parallel: bool) -> ExecutionBackend {
+    if parallel {
+        ExecutionBackend::Rayon
+    } else {
+        ExecutionBackend::Sequential
+    }
 }

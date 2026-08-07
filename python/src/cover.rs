@@ -5,11 +5,11 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use cycling_signatures::{CubicalCover, ExecutionBackend};
+use cycling_signatures::CubicalCover;
 use numpy::{PyArray2, ToPyArray};
 use pyo3::prelude::*;
 
-use crate::{errors::to_pyerr, trajectory::PyTrajectory};
+use crate::{convert::parallel_backend, errors::to_pyerr, trajectory::PyTrajectory};
 
 /// The cubical cover of the integer cubes a trajectory visits, with its
 /// cohomology generators computed over ``F_2``.
@@ -21,10 +21,17 @@ use crate::{errors::to_pyerr, trajectory::PyTrajectory};
 /// ``EmbeddedTrajectory`` instances, each over a different thinned copy of
 /// it.
 ///
+/// By default the work is distributed across a thread pool; set the
+/// ``RAYON_NUM_THREADS`` environment variable to cap the number of threads it
+/// uses.
+///
 /// Parameters
 /// ----------
 /// trajectory : ``Trajectory``
 ///     The trajectory whose visited cubes define the cover.
+/// parallel : bool, optional
+///     Whether to distribute the work across a thread pool. Defaults to
+///     ``True``; pass ``False`` to run sequentially on the calling thread.
 ///
 /// Raises
 /// ------
@@ -43,10 +50,12 @@ impl PyCubicalCover {
     /// Builds the cover of exactly the integer cubes ``trajectory`` visits,
     /// and computes its cohomology generators.
     #[new]
-    fn new(py: Python<'_>, trajectory: &Bound<'_, PyTrajectory>) -> PyResult<Self> {
+    #[pyo3(signature = (trajectory, *, parallel = true))]
+    fn new(py: Python<'_>, trajectory: &Bound<'_, PyTrajectory>, parallel: bool) -> PyResult<Self> {
+        let backend = parallel_backend(parallel);
         let trajectory = Arc::clone(&trajectory.borrow().inner);
         let inner = py
-            .detach(move || CubicalCover::build(&trajectory, &ExecutionBackend::Rayon))
+            .detach(move || CubicalCover::build(&trajectory, &backend))
             .map_err(to_pyerr)?;
         Ok(Self {
             inner: Arc::new(inner),

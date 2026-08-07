@@ -33,6 +33,19 @@ def test_component_index_out_of_bounds_raises(square_loop_embedded, square_loop_
         storage.component(9999)
 
 
+def test_component_negative_index_raises_but_getitem_wraps(square_loop_storage):
+    with pytest.raises(IndexError):
+        square_loop_storage.component(-1)
+    assert (
+        square_loop_storage[-1].class_id()
+        == square_loop_storage.component(len(square_loop_storage) - 1).class_id()
+    )
+
+
+def test_components_covering_negative_point_returns_empty(square_loop_storage):
+    assert square_loop_storage.components_covering(-1) == []
+
+
 def test_signature_out_of_range_raises_index_error_not_value_error(square_loop_storage):
     with pytest.raises(IndexError):
         square_loop_storage.signature((0, 9999))

@@ -49,7 +49,6 @@ impl PyTrajectory {
     /// Constructs a trajectory from a two-dimensional array of points.
     #[new]
     #[pyo3(signature = (points, parameters=None))]
-    #[allow(clippy::needless_pass_by_value)]
     fn new(
         points: PyReadonlyArray2<'_, f64>,
         parameters: Option<PyReadonlyArray1<'_, f64>>,

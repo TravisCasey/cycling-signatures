@@ -8,13 +8,13 @@
 // `clippy::doc_markdown`.
 #![allow(clippy::doc_markdown)]
 
+mod convert;
 mod cover;
 mod embedded;
 mod errors;
 mod homology;
 mod interpolation;
 mod metric;
-mod segment;
 mod signature;
 mod storage;
 mod trajectory;

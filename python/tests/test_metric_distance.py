@@ -48,3 +48,7 @@ def test_sphere_bundle_distance_rejects_odd_length():
     point = np.array([0.0, 0.0, 0.0])
     with pytest.raises(ValueError):
         metric.distance(point, point)
+
+
+def test_euclidean_and_sphere_bundle_expose_the_same_method_surface():
+    assert sorted(dir(cs.Euclidean())) == sorted(dir(cs.SphereBundle()))

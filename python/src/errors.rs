@@ -22,7 +22,6 @@ create_exception!(
 /// failures become `OSError`, a format-version mismatch becomes custom
 /// `FormatVersionMismatchError`, an out-of-range segment becomes `IndexError`,
 /// and every other validation, input, or decode failure becomes `ValueError`.
-#[allow(clippy::needless_pass_by_value)]
 pub(crate) fn to_pyerr(error: Error) -> PyErr {
     let message = error.to_string();
     match error {

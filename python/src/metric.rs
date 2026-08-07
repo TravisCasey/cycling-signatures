@@ -73,6 +73,7 @@ fn pairwise_matrix<'py>(
 pub(crate) struct PyEuclidean;
 
 #[pymethods]
+#[allow(clippy::unused_self)]
 impl PyEuclidean {
     /// Creates a new Euclidean metric.
     #[new]
@@ -98,8 +99,6 @@ impl PyEuclidean {
     /// ------
     /// ``ValueError``
     ///     If the two vectors differ in length.
-    #[allow(clippy::needless_pass_by_value)]
-    #[allow(clippy::unused_self)]
     fn distance(
         &self,
         point: PyReadonlyArray1<'_, f64>,
@@ -120,8 +119,6 @@ impl PyEuclidean {
     /// ndarray
     ///     A square symmetric matrix whose entry ``(i, j)`` is the distance
     ///     between row ``i`` and row ``j``. The diagonal is zero.
-    #[allow(clippy::needless_pass_by_value)]
-    #[allow(clippy::unused_self)]
     fn distance_matrix<'py>(
         &self,
         py: Python<'py>,
@@ -131,7 +128,6 @@ impl PyEuclidean {
     }
 
     /// Returns a string representation of the metric.
-    #[allow(clippy::unused_self)]
     fn __repr__(&self) -> String {
         "Euclidean()".to_string()
     }
@@ -157,6 +153,7 @@ impl PyEuclidean {
 pub(crate) struct PySphereBundle;
 
 #[pymethods]
+#[allow(clippy::unused_self)]
 impl PySphereBundle {
     /// Creates a sphere-bundle metric.
     #[new]
@@ -184,8 +181,6 @@ impl PySphereBundle {
     /// ``ValueError``
     ///     If the two vectors differ in length, or if their common length is
     ///     odd.
-    #[allow(clippy::needless_pass_by_value)]
-    #[allow(clippy::unused_self)]
     fn distance(
         &self,
         point: PyReadonlyArray1<'_, f64>,
@@ -212,8 +207,6 @@ impl PySphereBundle {
     /// ------
     /// ``ValueError``
     ///     If ``points`` has an odd number of columns.
-    #[allow(clippy::needless_pass_by_value)]
-    #[allow(clippy::unused_self)]
     fn distance_matrix<'py>(
         &self,
         py: Python<'py>,
@@ -223,7 +216,6 @@ impl PySphereBundle {
     }
 
     /// Returns a string representation of the metric.
-    #[allow(clippy::unused_self)]
     fn __repr__(&self) -> String {
         "SphereBundle()".to_string()
     }
