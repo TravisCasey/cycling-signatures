@@ -140,8 +140,8 @@ labeled_values = np.array(
 # **Compute neighborhood dominance and purity.** Build one KD-tree per library
 # signature, holding the labeled detection points that carry it. The query
 # points are raw rows instead, taken every ``QUERY_STEP`` rows and restricted
-# to the stretch of time the labeling covers, so the result is drawn at the raw
-# sampling density rather than the thinned one.
+# to the stretch of time the labeling covers, so the result is drawn at the
+# raw row density rather than the detection one.
 # For each query point, count each signature's labeled points within
 # ``EPSILON``. The dominant signature is the most common, and purity is the
 # per-signature fraction of the labeled neighbors. Query points with fewer than

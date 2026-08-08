@@ -10,9 +10,9 @@ the Lorenz trajectory; climbing the column replays that window's
 filtration: white below the window's first generator birth, then the span
 of every generator born by the threshold. Colors name the frequent
 signatures (shared with the signature indicator); gray marks non-trivial
-signatures outside that library. A column whose color locks in well below
-the band top carries a signature that is stable across the detection band
-rather than an artifact of one threshold choice.
+signatures outside that library. A column whose color presents well below the
+band top carries a signature that is stable across the detection band rather
+than an artifact of one threshold choice.
 """
 
 # %%
@@ -79,15 +79,15 @@ def signature_color_and_label(
 # column exactly.
 
 WINDOW_LENGTH = 330
-SAMPLE_WINDOW_START = 0
-SAMPLE_WINDOW_STOP = 6000
+POINT_WINDOW_START = 0
+POINT_WINDOW_STOP = 6000
 COLUMN_STEP = 5
 ROW_COUNT = 60
 
 extent_start, extent_stop = STORAGE.extent()
 column_starts = np.arange(
-    max(SAMPLE_WINDOW_START, extent_start),
-    min(SAMPLE_WINDOW_STOP, extent_stop - WINDOW_LENGTH + 1),
+    max(POINT_WINDOW_START, extent_start),
+    min(POINT_WINDOW_STOP, extent_stop - WINDOW_LENGTH + 1),
     COLUMN_STEP,
 )
 row_thresholds = [BAND_TOP * (row + 0.5) / ROW_COUNT for row in range(ROW_COUNT)]

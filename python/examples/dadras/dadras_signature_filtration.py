@@ -43,8 +43,8 @@ BAND_TOP = STORAGE.threshold()
 assert math.isfinite(BAND_TOP)
 
 # %%
-# **Rank the classes by frequency and assign canonical colors.** Classes are
-# ranked by how often they recur (their total cycle count across components),
+# **Order the classes by frequency and assign canonical colors.** Classes are
+# ordered by how often they recur (their total cycle count across components),
 # the same ordering the other Dadras examples use, so "class 1" names the
 # same class throughout. A rank-1 signature spanning a frequent class takes
 # that class's color and label; the class vectors themselves are typically
@@ -80,15 +80,15 @@ CLASS_POSITIONS = {
 # column exactly.
 
 WINDOW_LENGTH = 240
-SAMPLE_WINDOW_START = 0
-SAMPLE_WINDOW_STOP = 8000
+POINT_WINDOW_START = 0
+POINT_WINDOW_STOP = 8000
 COLUMN_STEP = 10
 ROW_COUNT = 60
 
 extent_start, extent_stop = STORAGE.extent()
 column_starts = np.arange(
-    max(SAMPLE_WINDOW_START, extent_start),
-    min(SAMPLE_WINDOW_STOP, extent_stop - WINDOW_LENGTH + 1),
+    max(POINT_WINDOW_START, extent_start),
+    min(POINT_WINDOW_STOP, extent_stop - WINDOW_LENGTH + 1),
     COLUMN_STEP,
 )
 row_thresholds = [BAND_TOP * (row + 0.5) / ROW_COUNT for row in range(ROW_COUNT)]

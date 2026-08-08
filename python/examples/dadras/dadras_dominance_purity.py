@@ -74,8 +74,8 @@ LIBRARY_SIZE = 4
 LIBRARY_SCAN_STEP = 40
 
 # %%
-# **Rank the classes by frequency and assign canonical colors.** Classes are
-# ranked by how often they recur (their total cycle count across components),
+# **Order the classes by frequency and assign canonical colors.** Classes are
+# ordered by how often they recur (their total cycle count across components),
 # the same ordering the other gallery examples use, so "class 1" names the
 # same class throughout and takes the same color via ``class_color_map``. A
 # rank-1 signature spanning a frequent class takes that class's color and
@@ -176,8 +176,8 @@ labeled_values = np.array(
 # **Compute neighborhood dominance and purity.** Build one KD-tree per library
 # signature, holding the labeled detection points that carry it. The query
 # points are raw rows instead, taken every ``QUERY_STEP`` rows and restricted
-# to the stretch of time the labeling covers, so the result is drawn at the raw
-# sampling density rather than the thinned one.
+# to the stretch of time the labeling covers, so the result is drawn at the
+# raw row density rather than the detection one.
 # For each query point, count each signature's labeled points within
 # ``EPSILON``. The dominant signature is the most common, and purity is the
 # per-signature fraction of the labeled neighbors. Query points with fewer than
@@ -271,11 +271,10 @@ def build_dominant_figure() -> plt.Figure:
 dominant_figure = build_dominant_figure()
 
 # %%
-# **Per-signature purity.** One map per library signature, arranged in a grid,
-# projecting onto the first and third coordinates. Every query point is shaded
-# by that signature's local share via the gray-to-dark-red colormap, drawn in
-# ascending purity order so the prevalent regions sit on top. A shared
-# colorbar spans the grid.
+# **Per-signature purity.** One x-z map per library signature, arranged in a
+# grid. Every query point is shaded by that signature's local share via the
+# gray-to-dark-red colormap, drawn in ascending purity order so the prevalent
+# regions sit on top. A shared colorbar spans the grid.
 
 
 def build_purity_figure() -> plt.Figure:

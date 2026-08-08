@@ -13,8 +13,11 @@ loop types at once, get their own colors.
 
 Only the most frequent signatures are distinguished. The Dadras storage keeps
 many rare signatures, each confined to a small part of the attractor, alongside
-a frequent few; cells whose signature falls outside the frequent library render
-white like the trivial ones.
+a frequent few, so the library truncates: cells carrying a non-trivial
+signature from outside it are drawn gray. White therefore means the window
+encloses nothing, and gray means it encloses something the legend does not
+name. The Lorenz figure needs no gray, because two cover generators admit only
+four possible non-trivial signatures and its library holds all of them.
 """
 
 # %%
@@ -39,8 +42,8 @@ STORAGE = cs.CycleStorage.load(_support.dadras_storage())
 PARAMETERS = TRAJECTORY.parameters()
 
 # %%
-# **Rank the classes by frequency and assign canonical colors.** Classes are
-# ranked by how often they recur (their total cycle count across components),
+# **Order the classes by frequency and assign canonical colors.** Classes are
+# ordered by how often they recur (their total cycle count across components),
 # the same ordering the coverage barcode uses, so "class 1" names the same
 # class in both plots and takes the same color via ``class_color_map``. A
 # rank-1 signature is the span of a single homology class; when that class is
@@ -94,28 +97,33 @@ ordered = sorted(most_common, key=lambda item: (item[0].rank(), -item[1]))
 library = [subspace for subspace, _ in ordered]
 
 # %%
-# **Build the label array.** Each cell is an integer label: -1 for a signature
-# outside the library (trivial or uncommon) and 0..len(library)-1 for library
-# members.
+# **Build the label array.** Cell values: 0 for the trivial signature (white),
+# 1 through ``len(library)`` for library signatures, and one extra label (gray)
+# for any non-trivial signature outside the library. The library truncates for
+# this system, so a cell outside it is usually a real signature rather than a
+# trivial one, and gray keeps the two apart.
 
 WINDOW_LENGTHS = (180, 240, 360)
-SAMPLE_WINDOW_START = 0
-SAMPLE_WINDOW_STOP = 8000
+POINT_WINDOW_START = 0
+POINT_WINDOW_STOP = 8000
 COLUMN_STEP = 10
 
-column_starts = np.arange(SAMPLE_WINDOW_START, SAMPLE_WINDOW_STOP, COLUMN_STEP)
+column_starts = np.arange(POINT_WINDOW_START, POINT_WINDOW_STOP, COLUMN_STEP)
 num_rows = len(WINDOW_LENGTHS)
 num_columns = len(column_starts)
 
-library_index = {subspace: index for index, subspace in enumerate(library)}
-labels = np.full((num_rows, num_columns), -1, dtype=np.int8)
+library_index = {subspace: index for index, subspace in enumerate(library, start=1)}
+OTHER_LABEL = len(library) + 1
 
+labels = np.zeros((num_rows, num_columns), dtype=np.int8)
 for row_index, length in enumerate(WINDOW_LENGTHS):
     for column_index, start in enumerate(column_starts):
         if start + length > extent_stop:
             continue
         subspace = STORAGE.signature(range(int(start), int(start) + length)).span()
-        labels[row_index, column_index] = library_index.get(subspace, -1)
+        if subspace.rank() == 0:
+            continue
+        labels[row_index, column_index] = library_index.get(subspace, OTHER_LABEL)
 
 # %%
 # **Place the columns and rows in time.** Columns step a fixed number of
@@ -176,26 +184,26 @@ def library_colors_and_labels(
 
 
 # %%
-# **Render the heatmap.** The colormap puts trivial (white) at index 0 and
-# each library signature at indices 1..len(library). Shift ``labels + 1`` so
-# -1 (trivial or unlabeled) maps to 0.
+# **Render the heatmap.** The colormap puts trivial (white) at index 0, each
+# library signature at indices 1..len(library), and other non-trivial signatures
+# (gray) last, the same three-way scheme the filtration heatmap uses.
 
 
 def build_figure() -> plt.Figure:
     """Return the signature indicator heatmap figure."""
     library_colors, library_labels = library_colors_and_labels(library)
-    colors = [(1.0, 1.0, 1.0), *library_colors]
-    tick_labels = ["trivial", *library_labels]
+    colors = [(1.0, 1.0, 1.0), *library_colors, (0.75, 0.75, 0.75)]
+    tick_labels = ["trivial", *library_labels, "other non-trivial"]
     colormap = ListedColormap(colors)
 
     figure, axes = plt.subplots(figsize=(14, 5))
     image = axes.pcolormesh(
         column_edges,
         np.arange(num_rows + 1) - 0.5,
-        labels + 1,
+        labels,
         cmap=colormap,
         vmin=-0.5,
-        vmax=len(library) + 0.5,
+        vmax=OTHER_LABEL + 0.5,
     )
     axes.invert_yaxis()
 
@@ -211,7 +219,7 @@ def build_figure() -> plt.Figure:
     axes.set_title("Signature indicator: Dadras attractor")
 
     colorbar = figure.colorbar(image, ax=axes, pad=0.02)
-    colorbar.set_ticks(range(len(library) + 1))
+    colorbar.set_ticks(range(OTHER_LABEL + 1))
     colorbar.set_ticklabels(tick_labels)
 
     figure.tight_layout()

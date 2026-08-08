@@ -78,15 +78,15 @@ library = [subspace for subspace, _ in ordered[:LIBRARY_SIZE]]
 
 # %%
 # **Build the label array.** Each cell is an integer label: -1 for a signature
-# outside the library (trivial or uncommon) and 0..len(library)-1 for library
-# members.
+# outside the library and 0..len(library)-1 for library members. The library is
+# exhaustive for this system, so -1 always means the trivial signature.
 
 WINDOW_LENGTHS = (230, 330, 430)
-SAMPLE_WINDOW_START = 0
-SAMPLE_WINDOW_STOP = 8600
+POINT_WINDOW_START = 0
+POINT_WINDOW_STOP = 8600
 COLUMN_STEP = 7
 
-column_starts = np.arange(SAMPLE_WINDOW_START, SAMPLE_WINDOW_STOP, COLUMN_STEP)
+column_starts = np.arange(POINT_WINDOW_START, POINT_WINDOW_STOP, COLUMN_STEP)
 num_rows = len(WINDOW_LENGTHS)
 num_columns = len(column_starts)
 
@@ -124,7 +124,7 @@ def median_window_duration(length: int) -> float:
 # **Render the heatmap.** The colormap puts trivial (white) at index 0 and
 # each library signature at indices 1..len(library): a rank-1 signature takes
 # its homology class's color, a higher-rank one a distinct palette color.
-# Shift ``labels + 1`` so -1 (trivial or unlabeled) maps to 0.
+# Shift ``labels + 1`` so -1, which is trivial here, maps to 0.
 
 
 def signature_color_and_label(

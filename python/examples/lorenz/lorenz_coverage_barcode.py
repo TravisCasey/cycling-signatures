@@ -57,12 +57,10 @@ CLASS_COLORS = _support.class_color_map(class_keys)
 # so every class-ordered plot in the gallery lists classes the same way. The
 # trivial (all-zero) class is excluded.
 
-TOP_CLASSES = 5
-
 ordered_class_ids = sorted(
     (class_id for class_id, key in enumerate(class_keys) if any(key)),
     key=lambda class_id: class_keys[class_id],
-)[:TOP_CLASSES]
+)
 
 num_rows = len(ordered_class_ids)
 row_by_class_id = {class_id: row_index for row_index, class_id in enumerate(ordered_class_ids)}
@@ -141,9 +139,9 @@ def coverage_labels(max_birth: float) -> np.ndarray:
 
 # %%
 # **Render the stacked barcodes.** The colormap starts with white (uncovered)
-# and assigns each ranked class its canonical color. The y-axis tick labels show
-# the class vector so the reader can relate rows to homology classes, and each
-# panel is labeled with its birth cap.
+# and assigns each ordered class its canonical color. The y-axis tick labels
+# show the class vector so the reader can relate rows to homology classes, and
+# each panel is labeled with its birth cap.
 
 row_colors = [CLASS_COLORS[class_keys[class_id]] for class_id in ordered_class_ids]
 

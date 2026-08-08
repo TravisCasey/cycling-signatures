@@ -11,7 +11,9 @@ A window of the Dadras trajectory showing a clear representative of each
 frequent cycle class, with those loops overlaid in their class colors (shared
 with the other gallery examples) on a longer stretch of trajectory that traces
 out the attractor shape, projected onto the first three of the four state
-coordinates. The second figure shows the analysis window as
+coordinates. Unlike the two Lorenz wings, the Dadras classes have no short
+geometric names, so the loops are labeled by frequency position rather than by
+the feature they enclose. The second figure shows the analysis window as
 coordinate-versus-time traces for all four coordinates, with each
 representative cycle's time span shaded.
 """

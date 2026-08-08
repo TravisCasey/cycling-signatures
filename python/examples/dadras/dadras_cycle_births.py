@@ -39,8 +39,8 @@ BAND_TOP = STORAGE.threshold()
 assert math.isfinite(BAND_TOP)
 
 # %%
-# **Rank the classes by frequency and assign canonical colors.** Classes are
-# ranked by how often they recur (their total cycle count across components),
+# **Order the classes by frequency and assign canonical colors.** Classes are
+# ordered by how often they recur (their total cycle count across components),
 # the same ordering the other Dadras examples use, so "class 1" names the
 # same class throughout. Cycles outside the frequent classes (rare classes
 # and the trivial class) are drawn in gray.
@@ -104,7 +104,7 @@ def build_figure() -> plt.Figure:
     if births_by_group[OTHER]:
         gray = (0.75, 0.75, 0.75)
         groups.append(
-            (gray, 0.2, births_by_group[OTHER], durations_by_group[OTHER], "other cycles")
+            (gray, 0.2, births_by_group[OTHER], durations_by_group[OTHER], "rare or trivial")
         )
     for position, key in enumerate(frequent_keys, start=1):
         if not births_by_group[key]:
