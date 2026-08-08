@@ -1,8 +1,8 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Signature filtration heatmap
-===============================
+"""Signature filtration heatmap (Dadras)
+========================================
 
 The cycling signature of a sliding window at every adjacency threshold up
 to the top of the stored detection band. Each column fixes one window of
@@ -19,8 +19,9 @@ the loosest recurrence scales.
 # %%
 # Load the detection trajectory and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. The storage's
-# sample indices are positions in the detection trajectory, and that
-# trajectory's ``parameters()`` give the integration time of each sample,
+# point indices are positions in the detection trajectory, and that
+# trajectory's ``parameters()`` give the integration time of each detection
+# point,
 # which places every column on the time axis below. ``threshold()`` is the top
 # of the stored detection band and bounds every filtration query below.
 
@@ -100,11 +101,11 @@ for window_start in column_starts:
 
 # %%
 # **Place the columns in time.** Columns step a fixed number of detection
-# samples, which is not a fixed amount of time: the sampling follows the
-# trajectory's geometry, so a sample spans more time where the flow runs
-# slowly. Each column runs from its window's start time to the next column's
-# start time, tiling the axis with no gaps; the column marks where its window
-# begins, not the time its window covers.
+# points, which is not a fixed amount of time: the points follow the
+# trajectory's geometry, so one spans more time where the flow runs slowly.
+# Each column runs from its window's start time to the next column's start
+# time, tiling the axis with no gaps; the column marks where its window begins,
+# not the time its window covers.
 
 column_edges = np.append(
     PARAMETERS[column_starts],
@@ -212,7 +213,7 @@ def build_figure() -> plt.Figure:
     axes.set_ylabel("Adjacency threshold t")
     axes.set_title(
         "Signature filtration: Dadras attractor, window length "
-        f"{WINDOW_LENGTH} samples ({MEDIAN_WINDOW_DURATION:.2f} time)"
+        f"{WINDOW_LENGTH} points ({MEDIAN_WINDOW_DURATION:.2f} time)"
     )
 
     colorbar = figure.colorbar(image, ax=axes, pad=0.02)

@@ -4,15 +4,13 @@
 """Shared helpers for the gallery examples: data fetching and color constants.
 
 Each system publishes the raw position trajectory as ``.npy``, the detection
-trajectory the storage was built over, and the cycle storage itself; Dadras
-adds the integration time of each raw sample, since its raw samples are spaced
-by distance rather than by time. A storage sample index is an index into the
-detection trajectory, and that trajectory's ``parameters()`` carry the
-integration time each detection point was sampled at, in the system's own time
-units.
+trajectory the storage was built over, and the cycle storage itself. Dadras
+adds the integration time of each raw row, since its raw rows are spaced by
+distance travelled rather than by time.
 
-Raw color values are written as RGB triples in the 0-255 range and normalized
-to the [0, 1] floats matplotlib expects through ``_normalized``.
+A storage index is an index into the detection trajectory, and that
+trajectory's ``parameters()`` carry the integration time of each detection
+point, in the system's own time units.
 """
 
 import hashlib
@@ -40,9 +38,10 @@ def _download_verified(remote: _RemoteFile, target: Path) -> None:
     (including a digest mismatch) `target` is left untouched and no partial
     file remains.
 
-    # Raises
-
-    ValueError if the downloaded bytes do not match the expected digest.
+    Raises
+    ------
+    ValueError
+        If the downloaded bytes do not match the expected digest.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256()
@@ -92,14 +91,14 @@ _LORENZ_RAW = _published(
     "74103f830bfc532f91a0a999a805b835f2444ed799de73ae631b372036993101",
 )
 
-# Real position units per cube: the divisor `data/generate_lorenz.py` scales
-# the raw positions by. Multiplying a detection trajectory's position half by
-# it recovers native Lorenz coordinates.
+# Real position units per cube: the divisor the raw Lorenz positions were
+# scaled by. Multiplying a detection trajectory's position half by it recovers
+# native Lorenz coordinates.
 LORENZ_BOXSIZE = 5.0
 
-# Time units per raw row: the fixed sampling interval `data/integrate_lorenz.py`
-# recorded the raw trajectory at. Lorenz raw row `i` is time `i * LORENZ_DT`, so
-# dividing a detection parameter by it gives the raw row coordinate.
+# Time units per raw row: the fixed interval the raw Lorenz trajectory was
+# recorded at. Lorenz raw row `i` is time `i * LORENZ_DT`, so dividing a
+# detection parameter by it gives the raw row coordinate.
 LORENZ_DT = 0.007
 
 
@@ -116,11 +115,9 @@ def _cached(remote: _RemoteFile, target: Path) -> Path:
     """Return the local path to a data file, re-fetching a stale cache entry.
 
     A present cache entry is re-hashed against the known digest before being
-    returned, so a cached file left over from a rebuilt pipeline cannot
-    silently shadow regenerated data. A mismatch triggers a re-download rather
-    than an error, since the cache may simply be a stale artifact. A build stays
-    offline after the first fetch (or if the file is placed there manually) as
-    long as its digest still matches.
+    returned, and a mismatch triggers a re-download. A build stays offline
+    after the first fetch (or if the file is placed there manually) as long as
+    its digest still matches.
     """
     if not target.exists() or _file_digest(target) != remote.sha256:
         _download_verified(remote, target)
@@ -140,8 +137,8 @@ def lorenz_trajectory() -> Path:
 
     The trajectory is fetched if absent and cached under the gallery's
     `lorenz/data/` directory. It is the point sequence the published storage
-    indexes: storage sample `i` is its point `i`, and its `parameters()` are
-    integration times in Lorenz time units.
+    indexes: storage index `i` is its detection point `i`, and its
+    `parameters()` are integration times in Lorenz time units.
     """
     return _cached(_LORENZ_TRAJECTORY, _LORENZ_CACHE / "lorenz_trajectory.cyc")
 
@@ -150,10 +147,9 @@ def lorenz_raw() -> Path:
     """Return the local path to the raw Lorenz trajectory.
 
     The trajectory is fetched if absent and cached under the gallery's
-    `lorenz/data/` directory. Its rows are the integrator's samples, taken
-    `LORENZ_DT` time units apart, which the storage does not index; dividing a
-    detection parameter by `LORENZ_DT` gives the raw row coordinate of that
-    storage sample.
+    `lorenz/data/` directory. Its raw rows are taken `LORENZ_DT` time units
+    apart and the storage does not index them; dividing a detection parameter
+    by `LORENZ_DT` gives the raw row coordinate of that detection point.
     """
     return _cached(_LORENZ_RAW, _LORENZ_CACHE / "lorenz_raw.npy")
 
@@ -177,9 +173,9 @@ _DADRAS_TIMES = _published(
     "f3449347349c9015c0d8a46a262ca48c028fc8bf91123e283b5a9a6ffcb38972",
 )
 
-# Real position units per cube: the divisor `data/generate_dadras.py` scales
-# the raw positions by. Multiplying a detection trajectory's position half by
-# it recovers native Dadras coordinates.
+# Real position units per cube: the divisor the raw Dadras positions were
+# scaled by. Multiplying a detection trajectory's position half by it recovers
+# native Dadras coordinates.
 DADRAS_BOXSIZE = 12.0
 
 
@@ -196,8 +192,8 @@ def dadras_trajectory() -> Path:
 
     The trajectory is fetched if absent and cached under the gallery's
     `dadras/data/` directory. It is the point sequence the published storage
-    indexes: storage sample `i` is its point `i`, and its `parameters()` are
-    integration times in Dadras time units.
+    indexes: storage index `i` is its detection point `i`, and its
+    `parameters()` are integration times in Dadras time units.
     """
     return _cached(_DADRAS_TRAJECTORY, _DADRAS_CACHE / "dadras_trajectory.cyc")
 
@@ -206,17 +202,16 @@ def dadras_raw() -> Path:
     """Return the local path to the raw Dadras trajectory.
 
     The trajectory is fetched if absent and cached under the gallery's
-    `dadras/data/` directory. Its rows are the integrator's samples, spaced by
-    distance travelled rather than by time, which the storage does not index;
-    `dadras_times()` gives the time of each raw row, and interpolating a
-    detection parameter back through it gives the raw row coordinate of that
-    storage sample.
+    `dadras/data/` directory. Its raw rows are spaced by distance travelled
+    rather than by time and the storage does not index them; `dadras_times()`
+    gives the time of each raw row, and interpolating a detection parameter
+    back through it gives the raw row coordinate of that detection point.
     """
     return _cached(_DADRAS_RAW, _DADRAS_CACHE / "dadras_raw.npy")
 
 
 def dadras_times() -> Path:
-    """Return the local path to the raw Dadras trajectory's sample times.
+    """Return the local path to the raw Dadras trajectory's row times.
 
     The file is fetched if absent and cached under the gallery's
     `dadras/data/` directory. It holds one strictly increasing integration
@@ -230,6 +225,9 @@ def _normalized(red: int, green: int, blue: int) -> tuple[float, float, float]:
     return (red / 255, green / 255, blue / 255)
 
 
+# Raw color values below are RGB triples in the 0-255 range, normalized to the
+# [0, 1] floats matplotlib expects through `_normalized`.
+
 # Eight-color categorical palette for distinguishing cycle signatures.
 _SIGNATURE_PALETTE = [
     (68, 119, 238),
@@ -242,7 +240,8 @@ _SIGNATURE_PALETTE = [
     (170, 102, 68),
 ]
 
-# Five entry gray-to-dark-red colormap for purity values.
+# Five-stop colormap for purity values, running gray, pale yellow, orange,
+# orange-red, dark red.
 _PURITY_STOPS = [
     (0.00, (185, 185, 185)),
     (0.25, (255, 237, 160)),
@@ -266,6 +265,9 @@ def class_color_map(
     (trivial) class maps to white; the distinct nonzero classes take palette
     colors in ascending key order, so the same class gets the same color in
     every plot built from one storage.
+
+    Only the keys passed in receive colors, so a lookup for a class absent
+    from ``class_keys`` raises ``KeyError``.
     """
     palette = signature_colors()
     nonzero = sorted(key for key in set(class_keys) if any(key))
@@ -277,6 +279,6 @@ def class_color_map(
 
 
 def purity_colormap() -> LinearSegmentedColormap:
-    """Return a gray-to-dark-red colormap for purity values."""
+    """Return the gray-to-dark-red purity colormap."""
     stops = [(position, _normalized(*rgb)) for position, rgb in _PURITY_STOPS]
     return LinearSegmentedColormap.from_list("purity", stops)

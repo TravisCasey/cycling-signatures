@@ -1,21 +1,21 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Rank-frequency histogram
-===========================
+"""Rank-frequency histogram (Lorenz)
+====================================
 
 Frequency of appearance of each signature rank as a function of window length.
 For the Lorenz attractor, longer windows capture more of the two independent
-cycles, so rank-2 windows become dominant as the length grows. Windows are
-swept in detection samples, and each length is presented at the median time
+loop types, so rank-2 windows become dominant as the length grows. Windows are
+swept in detection points, and each length is presented at the median time
 its windows span.
 """
 
 # %%
 # Load the detection trajectory and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. The trajectory
-# contributes only its ``parameters()``, the integration time of each sample,
-# which turn a window length in samples into a duration.
+# contributes only its ``parameters()``, the integration time of each detection
+# point, which turn a window length in detection points into a duration.
 
 from collections import Counter
 
@@ -32,8 +32,8 @@ PARAMETERS = TRAJECTORY.parameters()
 # %%
 # Sweep over window lengths and tally rank occurrences. For each length the
 # window slides across the full storage extent and each
-# ``signature(...).rank()`` call queries the number of independent cycles this
-# window contains.
+# ``signature(...).rank()`` call queries the number of independent loop types
+# this window contains.
 
 LENGTH_STEP = 10
 SCAN_STEP = 125
@@ -55,12 +55,12 @@ for length in window_lengths:
 all_ranks = sorted({rank for counter in rank_counts for rank in counter})
 
 # %%
-# Place each window length on a time axis. A length is a sample count, and the
-# time such a window spans varies along the trajectory, so a length is drawn at
-# the median time spanned by exactly the windows tallied above. Consecutive
-# medians are not evenly spaced, so each bar runs from the midpoint before its
-# median to the midpoint after: the bars tile the axis and their widths show
-# how much time each step in window length buys.
+# Place each window length on a time axis. A length is a detection point count,
+# and the time such a window spans varies along the trajectory, so a length is
+# drawn at the median time spanned by exactly the windows tallied above.
+# Consecutive medians are not evenly spaced, so each bar runs from the midpoint
+# before its median to the midpoint after: the bars tile the axis and their
+# widths show how much time each step in window length buys.
 
 duration_values: list[float] = []
 for length in window_lengths:
@@ -76,8 +76,8 @@ bar_widths = np.diff(bar_boundaries)
 
 # %%
 # Build a stacked bar chart. Each bar represents one window length; the stacked
-# segments show how many windows produced each rank. Viridis maps low ranks
-# (cold, near-zero) to high ranks (warm).
+# segments show how many windows produced each rank. Viridis colors the rank
+# stack, dark purple at rank 0 through to yellow at the highest rank present.
 
 
 def build_figure() -> plt.Figure:

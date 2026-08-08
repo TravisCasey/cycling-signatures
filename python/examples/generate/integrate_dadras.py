@@ -3,23 +3,23 @@
 
 """Integrate the Dadras trajectory the gallery's example data derives from.
 
-Writes two files under ``dadras/data``: ``dadras_raw.npy``, the position
-samples of the four-wing chaotic Dadras system (parameters a 8, b 40, c 14.9)
-recorded after a discarded transient, and ``dadras_times.npy``, the integration
-time each of those samples was recorded at. Integration uses fourth-order
+Writes two files under ``dadras/data``: ``dadras_raw.npy``, the raw position
+trajectory of the four-wing chaotic Dadras system (parameters a 8, b 40,
+c 14.9) recorded after a discarded transient, and ``dadras_times.npy``, the
+integration time of each of its raw rows. Integration uses fourth-order
 Runge-Kutta steps with size adapted to the local speed of the flow.
 
-A sample is recorded whenever the trajectory has moved a fixed Euclidean
-distance from the previously recorded sample. The spacing controls how densely
-the attractor is sampled relative to the downstream cubical cover: tighter
-spacing shrinks the metric distance between consecutive samples, which
+A raw row is recorded whenever the trajectory has moved a fixed Euclidean
+distance from the previously recorded row. The spacing controls how densely
+the attractor is covered relative to the downstream cubical cover: tighter
+spacing shrinks the metric distance between consecutive raw rows, which
 reduces the resample densification the embedding pipeline needs.
 
-Because the samples are spaced by distance, the time between consecutive samples
+Because the raw rows are spaced by distance, the time between consecutive rows
 varies with the local speed of the flow. The times array carries that
-information: it holds one strictly increasing entry per saved sample,
-measured in the system's own time units from the first saved sample, so its
-first entry is zero and the discarded transient contributes nothing to it.
+information: it holds one strictly increasing entry per raw row, measured in
+the system's own time units from the first saved row, so its first entry is
+zero and the discarded transient contributes nothing to it.
 """
 
 import argparse
@@ -41,8 +41,8 @@ INITIAL_STATE = (10.0, 1.0, 10.0, 1.0)
 ARC_TARGET = 0.25
 STEP_LIMIT = 0.002
 
-DEFAULT_SAMPLE_SPACING = 1.0
-DEFAULT_SAMPLE_COUNT = 1_500_000
+DEFAULT_ROW_SPACING = 1.0
+DEFAULT_ROW_COUNT = 1_500_000
 DEFAULT_TRANSIENT_TIME = 10_000.0
 _DATA_DIRECTORY = Path(__file__).resolve().parent.parent / "dadras" / "data"
 DEFAULT_OUTPUT = _DATA_DIRECTORY / "dadras_raw.npy"
@@ -108,18 +108,17 @@ def adaptive_step(state: State) -> float:
 
 
 def integrate(
-    sample_spacing: float, sample_count: int, transient_time: float
+    row_spacing: float, row_count: int, transient_time: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return ``sample_count`` spaced samples, with the time of each.
+    """Return ``row_count`` spaced raw rows, with the time of each.
 
     The trajectory starts from a fixed initial state and discards
-    ``transient_time`` time units before recording, so the samples lie on the
-    attractor. Each subsequent sample is the first integration state at least
-    ``sample_spacing`` away from its predecessor in Euclidean distance.
+    ``transient_time`` time units before recording, so the raw rows lie on the
+    attractor. Each subsequent row is the first integration state at least
+    ``row_spacing`` away from its predecessor in Euclidean distance.
 
-    The second array holds the integration time of each sample, measured from
-    the first saved sample, so its first entry is zero and it increases
-    strictly.
+    The second array holds the integration time of each raw row, measured from
+    the first saved row, so its first entry is zero and it increases strictly.
     """
     state = INITIAL_STATE
     elapsed = 0.0
@@ -128,14 +127,14 @@ def integrate(
         state = runge_kutta_step(state, step)
         elapsed += step
 
-    samples = np.empty((sample_count, 4))
-    times = np.empty(sample_count)
-    samples[0] = state
+    rows = np.empty((row_count, 4))
+    times = np.empty(row_count)
+    rows[0] = state
     times[0] = 0.0
     elapsed = 0.0
     previous = state
-    spacing_squared = sample_spacing * sample_spacing
-    for sample_index in range(1, sample_count):
+    spacing_squared = row_spacing * row_spacing
+    for row_index in range(1, row_count):
         while True:
             step = adaptive_step(state)
             state = runge_kutta_step(state, step)
@@ -148,10 +147,10 @@ def integrate(
             )
             if gap_squared >= spacing_squared:
                 break
-        samples[sample_index] = state
-        times[sample_index] = elapsed
+        rows[row_index] = state
+        times[row_index] = elapsed
         previous = state
-    return samples, times
+    return rows, times
 
 
 def save_atomic(array: np.ndarray, target: Path) -> None:
@@ -171,16 +170,16 @@ def main() -> None:
     """Integrate and save the trajectory described by the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--sample-spacing",
+        "--row-spacing",
         type=float,
-        default=DEFAULT_SAMPLE_SPACING,
-        help="Euclidean distance between saved samples (default %(default)s)",
+        default=DEFAULT_ROW_SPACING,
+        help="Euclidean distance between saved raw rows (default %(default)s)",
     )
     parser.add_argument(
-        "--sample-count",
+        "--row-count",
         type=int,
-        default=DEFAULT_SAMPLE_COUNT,
-        help="number of samples to save (default %(default)s)",
+        default=DEFAULT_ROW_COUNT,
+        help="number of raw rows to save (default %(default)s)",
     )
     parser.add_argument(
         "--transient-time",
@@ -192,22 +191,20 @@ def main() -> None:
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT,
-        help="output .npy path for the position samples (default %(default)s)",
+        help="output .npy path for the raw positions (default %(default)s)",
     )
     parser.add_argument(
         "--times-output",
         type=Path,
         default=DEFAULT_TIMES_OUTPUT,
-        help="output .npy path for the sample times (default %(default)s)",
+        help="output .npy path for the raw row times (default %(default)s)",
     )
     arguments = parser.parse_args()
 
-    samples, times = integrate(
-        arguments.sample_spacing, arguments.sample_count, arguments.transient_time
-    )
-    save_atomic(samples, arguments.output)
+    rows, times = integrate(arguments.row_spacing, arguments.row_count, arguments.transient_time)
+    save_atomic(rows, arguments.output)
     save_atomic(times, arguments.times_output)
-    print(f"{arguments.output}  {samples.shape[0]} samples")
+    print(f"{arguments.output}  {rows.shape[0]} raw rows")
     print(f"{arguments.times_output}  {times[-1]:.1f} time units")
 
 

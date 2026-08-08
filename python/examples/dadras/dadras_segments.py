@@ -1,31 +1,31 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Cycle segments overlaid on the trajectory
-=============================================
+"""Cycle segments overlaid on the trajectory (Dadras)
+=====================================================
 
-A detected cycle is a contiguous run of trajectory samples that nearly returns
+A detected cycle is a contiguous run of detection points that nearly returns
 to its start.
 
-This example picks a window of the Dadras trajectory that shows a clear
-representative of each frequent cycle class, then overlays those loops, in
-their class colors (shared with the other gallery examples), on a longer
-stretch of trajectory that traces out the attractor shape, projected onto the
-first three of the four state coordinates. The second figure shows the
-analysis window as coordinate-versus-time traces for all four coordinates,
-with each representative cycle's time span shaded.
+A window of the Dadras trajectory showing a clear representative of each
+frequent cycle class, with those loops overlaid in their class colors (shared
+with the other gallery examples) on a longer stretch of trajectory that traces
+out the attractor shape, projected onto the first three of the four state
+coordinates. The second figure shows the analysis window as
+coordinate-versus-time traces for all four coordinates, with each
+representative cycle's time span shaded.
 """
 
 # %%
-# Load the raw trajectory and its sample times, the detection trajectory, and
+# Load the raw trajectory and its row times, the detection trajectory, and
 # the prebuilt ``CycleStorage`` from the published example data, fetched and
-# cached on first use. A cycle's sample range indexes the detection
-# trajectory, which is thinned relative to the raw samples, so drawing a loop
+# cached on first use. A cycle's point range indexes the detection
+# trajectory, which is thinned relative to the raw rows, so drawing a loop
 # as a smooth curve means crossing back to the raw rows. The detection
 # trajectory's ``parameters()`` are that bridge: each entry is the integration
-# time its point was sampled at. Raw rows are spaced by distance travelled
+# time of its detection point. Raw rows are spaced by distance travelled
 # rather than by time, so recovering a row from a time is a search through the
-# raw sample times rather than a division.
+# raw row times rather than a division.
 
 from collections import Counter
 
@@ -44,12 +44,12 @@ PARAMETERS = TRAJECTORY.parameters()
 
 
 def raw_rows(start: int, stop: int) -> tuple[int, int]:
-    """Return the raw row range the sample range ``[start, stop)`` spans.
+    """Return the raw row range the point range ``[start, stop)`` spans.
 
-    Searching the raw sample times to the right of a sample's time gives the
-    first row past it. One less is the row the start sample sits at or just
-    after; taken at the last sample it is one past that sample's row, so
-    slicing the raw positions with the pair covers every sample in the range.
+    Searching the raw row times to the right of a detection point's time gives
+    the first row past it. One less is the row the start point sits at or just
+    after; taken at the last point it is one past that point's row, so slicing
+    the raw positions with the pair covers every point in the range.
     """
     first = int(np.searchsorted(TIMES, PARAMETERS[start], side="right")) - 1
     last = int(np.searchsorted(TIMES, PARAMETERS[stop - 1], side="right"))
@@ -57,13 +57,13 @@ def raw_rows(start: int, stop: int) -> tuple[int, int]:
 
 
 # %%
-# **Rank the classes by frequency and assign canonical colors.** The Dadras
-# storage keeps many rare, swath-dependent homology classes alongside a
-# frequent few that carry the attractor's structure. Classes are ranked by
-# how often they recur (their total cycle count across components), the same
-# ordering the other gallery examples use, and only the most frequent are
-# drawn, labeled by frequency position with stable colors via
-# ``class_color_map``.
+# **Order the classes by frequency and assign canonical colors.** The Dadras
+# storage keeps many rare homology classes, each confined to a small part of
+# the attractor, alongside a frequent few that carry its overall structure.
+# Classes are ordered by how often they recur (their total cycle count across
+# components), the same ordering the other gallery examples use, and only the
+# most frequent are drawn, labeled by frequency position with stable colors
+# via ``class_color_map``.
 
 TOP_CLASSES = 3
 
@@ -85,8 +85,8 @@ CLASS_LABELS = {key: f"class {position}" for position, key in enumerate(frequent
 # %%
 # **Pick a window with a clear loop of each class.** Take each component's
 # shortest cycle (its tightest single recurrence), as the cleanest geometric
-# representative. Each ``Cycle`` reports its sample ``range()``, so a
-# representative is just a sample interval.
+# representative. Each ``Cycle`` reports its point ``range()``, so a
+# representative is just a detection point interval.
 
 WINDOW_LENGTH = 400
 WINDOW_SCAN_STEP = 80
@@ -173,9 +173,9 @@ window_stop = window_start + WINDOW_LENGTH
 # %%
 # **Overlay the loops on the trajectory.** A longer stretch of the trajectory is
 # drawn in faint gray to trace the attractor shape, and each representative
-# cycle is overdrawn in its class color. Each sample range is carried through
+# cycle is overdrawn in its class color. Each point range is carried through
 # ``raw_rows`` and the raw positions sliced with the result, so the loops draw
-# at the raw sampling density rather than the detection one. The drawing
+# at the raw row density rather than the detection one. The drawing
 # projects the four-dimensional state onto the first three coordinates.
 
 CONTEXT_LENGTH = 8000

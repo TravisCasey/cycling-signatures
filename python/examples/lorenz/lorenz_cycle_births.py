@@ -1,13 +1,14 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Cycle birth and duration population
-======================================
+"""Cycle birth and duration population (Lorenz)
+===============================================
 
 Every stored cycle binned by its birth (the metric distance between its
-endpoint samples) and its duration (the integration time from its first sample
-to its last), colored by homology class: cell intensity grows with the number
-of cycles, and a blended hue marks a cell several classes share. The dashed
+endpoint detection points) and its duration (the integration time from its
+first detection point to its last), colored by homology class: cell intensity
+grows with the number of cycles, and a blended hue marks a cell several
+classes share. The dashed
 line marks the top of the stored detection band. A vertical cut at any
 threshold keeps exactly the cycles a detection capped there would admit, so the
 plot shows what each threshold choice trades away.
@@ -17,7 +18,8 @@ plot shows what each threshold choice trades away.
 # Load the detection trajectory and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. A cycle's
 # ``range()`` indexes the detection trajectory, whose ``parameters()`` give
-# the integration time of each sample and so turn that range into a duration.
+# the integration time of each detection point and so turn that range into a
+# duration.
 # ``threshold()`` is the top of the stored detection band; every stored birth
 # lies at or under it.
 
@@ -52,8 +54,8 @@ nonzero_keys = sorted(key for key in set(class_keys) if any(key))
 # %%
 # **Collect every cycle's birth and duration per class.** Each ``Component``
 # exposes its cycles through ``cycles()``, and every ``Cycle`` carries its
-# ``birth()`` and its sample ``range()``; the duration is the time between the
-# parameters of the range's first and last sample.
+# ``birth()`` and its point ``range()``; the duration is the time between the
+# parameters of the range's first and last detection point.
 
 births_by_key: dict[tuple[int, ...], list[float]] = {key: [] for key in class_keys}
 durations_by_key: dict[tuple[int, ...], list[float]] = {key: [] for key in class_keys}
@@ -67,10 +69,10 @@ for component in STORAGE.components():
 # %%
 # **Bin and composite the population.** A uniform grid of duration bins by
 # birth bins, fine enough that the recurrence time scales read as distinct
-# bands. Cycles of one sample count do not all last the same time. Each cell's
-# color is the count-weighted mix of the class colors present, its intensity
-# grows with the logarithm of the cell's weighted count, and empty cells stay
-# white; a blended hue therefore means several classes share that cell.
+# bands: cycles of one detection point count do not all last the same time.
+# Each cell's color is the count-weighted mix of the class colors present, its
+# intensity grows with the logarithm of the cell's weighted count, and empty
+# cells stay white; a blended hue therefore means several classes share it.
 # Trivial cycles are drawn with reduced weight, so they read as background
 # where classes overlap them.
 

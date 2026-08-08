@@ -1,15 +1,15 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Dominance and purity maps
-===========================
+"""Dominance and purity maps (Lorenz)
+=====================================
 
-This example assigns every query point on the Lorenz attractor a *dominant*
-signature: the library signature most common among the point's spatial
-neighbors. It also measures the assigned signature's *purity*: the fraction of
-neighbors that share that signature. Signatures are computed on the detection
-samples the storage indexes; the query points the result is drawn at are raw
-trajectory samples, which trace the attractor more finely.
+Every query point on the Lorenz attractor carries a *dominant* signature:
+the library signature most common among the point's spatial neighbors. Each
+also carries that signature's *purity*: the fraction of neighbors that share
+it. Signatures are computed on the detection points the storage indexes; the
+query points the result is drawn at are raw rows, which trace the attractor
+more finely.
 
 The first figure colors the attractor by dominant signature. The two wings of
 the Lorenz butterfly are each dominated by a single-wing rank-1 signature (the
@@ -25,14 +25,14 @@ they overlap.
 # %%
 # Load the raw trajectory, the detection trajectory, and the prebuilt
 # ``CycleStorage`` from the published example data, fetched and cached on first
-# use. A storage sample index is an index into the detection trajectory, so its
+# use. A storage index is an index into the detection trajectory, so its
 # points are what the signature queries and neighborhood tallies below need.
 # Each detection point holds a position half followed by a direction half of
 # the same width; the position half is divided by the box size, so multiplying
 # it back gives native Lorenz coordinates, the coordinates the raw rows are
 # already in. The detection trajectory's ``parameters()`` are the integration
-# time of each sample, and a raw row is a fixed ``LORENZ_DT`` apart from the
-# next, which is how the two samplings are aligned.
+# time of each detection point, and a raw row is a fixed ``LORENZ_DT`` apart
+# from the next, which is how the two are aligned.
 
 import math
 from collections import Counter
@@ -55,13 +55,12 @@ POSITIONS = sphere_bundle_points[:, :POSITION_DIMENSION] * _support.LORENZ_BOXSI
 
 # %%
 # Constants that control the analysis. ``WINDOW_LENGTH`` is the number of
-# detection samples in each signature query. ``EPSILON`` is the neighborhood
+# detection points in each signature query. ``EPSILON`` is the neighborhood
 # radius in native Lorenz coordinates. ``MIN_NEIGHBORS`` is the minimum count
 # of labeled neighbors to trust a dominance reading; points with fewer are
 # skipped. ``QUERY_STEP`` and ``BACKGROUND_STEP`` stride the raw rows the two
-# scatters draw, keeping the figures legible; the raw sampling is about 1.8
-# times as dense as the detection sampling, so both are wider than a stride
-# over detection samples would be for the same number of drawn points.
+# scatters draw, keeping the figures legible; both are counted in raw rows,
+# which are denser than the detection points.
 # ``LIBRARY_SIZE`` caps the number of distinct signatures shown.
 
 WINDOW_LENGTH = 180
@@ -120,35 +119,36 @@ for window_start in range(extent_start, extent_stop - WINDOW_LENGTH + 1, LIBRARY
 library = [subspace for subspace, _ in frequency.most_common(LIBRARY_SIZE)]
 
 # %%
-# **Label every sample.** For each sample in the labeled prefix (the range
-# where a full window fits), query ``STORAGE.signature()`` and look it up in
+# **Label every detection point.** For each point in the labeled prefix (the
+# range where a full window fits), query ``STORAGE.signature()`` and look it
+# up in
 # the library: the value is the library position, or -1 for a signature that
 # is trivial or absent from the library.
 
 library_index = {subspace: index for index, subspace in enumerate(library)}
 labeled_stop = extent_stop - WINDOW_LENGTH
-labeled_samples = np.arange(extent_start, labeled_stop)
+labeled_points = np.arange(extent_start, labeled_stop)
 labeled_values = np.array(
     [
-        library_index.get(STORAGE.signature(range(sample, sample + WINDOW_LENGTH)).span(), -1)
-        for sample in labeled_samples
+        library_index.get(STORAGE.signature(range(point, point + WINDOW_LENGTH)).span(), -1)
+        for point in labeled_points
     ],
     dtype=np.int32,
 )
 
 # %%
 # **Compute neighborhood dominance and purity.** Build one KD-tree per library
-# signature, holding the labeled detection samples that carry it. The query
+# signature, holding the labeled detection points that carry it. The query
 # points are raw rows instead, taken every ``QUERY_STEP`` rows and restricted
 # to the stretch of time the labeling covers, so the result is drawn at the raw
 # sampling density rather than the thinned one.
-# For each query point, count each signature's labeled samples within
+# For each query point, count each signature's labeled points within
 # ``EPSILON``. The dominant signature is the most common, and purity is the
 # per-signature fraction of the labeled neighbors. Query points with fewer than
 # ``MIN_NEIGHBORS`` labeled neighbors are dropped.
 
 member_trees = [
-    KDTree(POSITIONS[labeled_samples[labeled_values == position]])
+    KDTree(POSITIONS[labeled_points[labeled_values == position]])
     for position in range(len(library))
 ]
 

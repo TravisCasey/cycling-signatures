@@ -1,13 +1,14 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Cycle birth and duration population
-======================================
+"""Cycle birth and duration population (Dadras)
+===============================================
 
 Every stored cycle binned by its birth (the metric distance between its
-endpoint samples) and its duration (the integration time from its first sample
-to its last), colored by homology class: cell intensity grows with the number
-of cycles, and a blended hue marks a cell several classes share. The dashed
+endpoint detection points) and its duration (the integration time from its
+first detection point to its last), colored by homology class: cell intensity
+grows with the number of cycles, and a blended hue marks a cell several
+classes share. The dashed
 line marks the top of the stored detection band. A vertical cut at any
 threshold keeps exactly the cycles a detection capped there would admit, so the
 plot shows what each threshold choice trades away.
@@ -17,9 +18,9 @@ plot shows what each threshold choice trades away.
 # Load the detection trajectory and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. A cycle's
 # ``range()`` indexes the detection trajectory, whose ``parameters()`` give
-# the integration time of each sample and so turn that range into a duration.
-# ``threshold()`` is the top of the stored detection band; every stored birth
-# lies at or under it.
+# the integration time of each detection point and so turn that range into a
+# duration. ``threshold()`` is the top of the stored detection band; every
+# stored birth lies at or under it.
 
 import math
 from collections import Counter
@@ -63,9 +64,9 @@ frequent_keys = [class_keys[class_id] for class_id in ordered_class_ids]
 # %%
 # **Collect every cycle's birth and duration per class.** Each ``Component``
 # exposes its cycles through ``cycles()``, and every ``Cycle`` carries its
-# ``birth()`` and its sample ``range()``; the duration is the time between the
-# parameters of the range's first and last sample. Cycles are grouped by
-# frequent class, with one shared bucket for everything else.
+# ``birth()`` and its point ``range()``; the duration is the time between the
+# parameters of the range's first and last detection point. Cycles are grouped
+# by frequent class, with one shared bucket for everything else.
 
 OTHER = "other"
 
@@ -85,8 +86,9 @@ for component in STORAGE.components():
 
 # %%
 # **Bin and composite the population.** A uniform grid of duration bins by
-# birth bins. Cycles of one sample count do not all last the same time. Each
-# cell's color is the count-weighted mix of the class colors present, its
+# birth bins, fine enough that the recurrence time scales read as distinct
+# bands: cycles of one detection point count do not all last the same time.
+# Each cell's color is the count-weighted mix of the class colors present, its
 # intensity grows with the logarithm of the cell's weighted count, and empty
 # cells stay white; a blended hue therefore means several classes share that
 # cell. Cycles outside the frequent classes are drawn with reduced weight, so

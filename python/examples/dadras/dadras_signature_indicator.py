@@ -1,29 +1,29 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Signature indicator heatmap
-==============================
+"""Signature indicator heatmap (Dadras)
+=======================================
 
-The homological signature present at each time, shown for several window
+The cycling signature present at each time, shown for several window
 lengths. Each (window length, time) cell is colored by its signature: white
 for the trivial signature (rank 0); a rank-1 signature is the span of a single
 frequent homology class and takes that class's color (the same colors the
-coverage barcode uses); higher-rank signatures, spanning several cycling
-motions at once, get their own colors.
+coverage barcode uses); higher-rank signatures, spanning several independent
+loop types at once, get their own colors.
 
 Only the most frequent signatures are distinguished. The Dadras storage keeps
-many rare, swath-dependent signatures alongside a frequent few; cells whose
-signature falls outside the frequent library render white like the trivial
-ones.
+many rare signatures, each confined to a small part of the attractor, alongside
+a frequent few; cells whose signature falls outside the frequent library render
+white like the trivial ones.
 """
 
 # %%
 # Load the detection trajectory and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. The storage's
-# sample indices are positions in the detection trajectory, and that
-# trajectory's ``parameters()`` give the integration time of each sample: they
-# place every window on the time axis below and turn a window length in
-# samples into a duration.
+# point indices are positions in the detection trajectory, and that
+# trajectory's ``parameters()`` give the integration time of each detection
+# point: they place every window on the time axis below and turn a window
+# length in detection points into a duration.
 
 from collections import Counter
 
@@ -119,11 +119,11 @@ for row_index, length in enumerate(WINDOW_LENGTHS):
 
 # %%
 # **Place the columns and rows in time.** Columns step a fixed number of
-# detection samples, which is not a fixed amount of time: the sampling follows
-# the trajectory's geometry, so a sample spans more time where the flow runs
-# slowly. Each column therefore runs from its window's start time to the next
-# column's start time, tiling the axis with no gaps; the column marks where
-# its window begins, not the time its window covers.
+# detection points, which is not a fixed amount of time: the points follow the
+# trajectory's geometry, so one spans more time where the flow runs slowly.
+# Each column therefore runs from its window's start time to the next column's
+# start time, tiling the axis with no gaps; the column marks where its window
+# begins, not the time its window covers.
 
 column_edges = np.append(
     PARAMETERS[column_starts],
@@ -132,7 +132,7 @@ column_edges = np.append(
 
 
 def median_window_duration(length: int) -> float:
-    """Return the median time a window of ``length`` samples spans."""
+    """Return the median time a window of ``length`` points spans."""
     starts = np.arange(extent_start, extent_stop - length + 1)
     return float(np.median(PARAMETERS[starts + length - 1] - PARAMETERS[starts]))
 
@@ -202,7 +202,7 @@ def build_figure() -> plt.Figure:
     axes.set_yticks(range(len(WINDOW_LENGTHS)))
     axes.set_yticklabels(
         [
-            f"{length} samples\n({median_window_duration(length):.2f} time)"
+            f"{length} points\n({median_window_duration(length):.2f} time)"
             for length in WINDOW_LENGTHS
         ]
     )

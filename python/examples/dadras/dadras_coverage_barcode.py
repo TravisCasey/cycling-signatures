@@ -1,28 +1,27 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Coverage barcode
-==================
+"""Coverage barcode (Dadras)
+===========================
 
 Three barcodes stacked by the birth cap each panel admits. Every row tracks
 one frequent homology class of the Dadras attractor over time, colored where
 some cycle of that class born by the panel's threshold spans the time. A
-cycle's birth is the metric distance between its endpoint samples, so low caps
-admit only the tightest recurrences; raising the cap toward the top of the
-stored detection band fills the rows in. All panels admit only cycles up to
-one fixed length, counted in detection samples rather than in time, so
-coverage always means participation in a recurrence at that declared sampling
-scale.
+cycle's birth is the metric distance between its endpoint detection points, so
+low caps admit only the tightest recurrences; raising the cap toward the top of
+the stored detection band fills the rows in. All panels admit only cycles up to
+one fixed length, counted in detection points rather than in time, so coverage
+always means participation in a recurrence no longer than that cap.
 """
 
 # %%
 # Load the detection trajectory and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. ``extent()`` gives
-# the half-open sample range covered by all stored components, in indices into
+# the half-open point range covered by all stored components, in indices into
 # the detection trajectory, and that trajectory's ``parameters()`` give the
-# integration time of each sample, which turns a cycle's sample range into the
-# span of time it covers. ``threshold()`` is the top of the stored detection
-# band; the per-panel birth caps below sit at or under it.
+# integration time of each detection point, which turns a cycle's point range
+# into the span of time it covers. ``threshold()`` is the top of the stored
+# detection band; the per-panel birth caps below sit at or under it.
 
 import math
 from collections import Counter
@@ -43,12 +42,13 @@ EXTENT_START, EXTENT_STOP = STORAGE.extent()
 COMPONENTS = STORAGE.components()
 
 # %%
-# **Rank the classes by frequency.** The Dadras storage keeps many rare,
-# swath-dependent homology classes alongside a frequent few that carry the
-# attractor's structure. Classes are ranked by how often they recur (their
-# total cycle count across components) and only the most frequent are shown;
-# the trivial (all-zero) class is excluded. Every class-ranked plot in the
-# gallery uses this ordering, so "class 1" names the same class throughout.
+# **Order the classes by frequency.** The Dadras storage keeps many rare
+# homology classes, each confined to a small part of the attractor, alongside
+# a frequent few that carry its overall structure. Classes are ordered by how
+# often they recur (their total cycle count across components) and only the
+# most frequent are shown; the trivial (all-zero) class is excluded. Every
+# class-ordered plot in the gallery uses this ordering, so "class 1" names the
+# same class throughout.
 
 TOP_CLASSES = 5
 
@@ -77,11 +77,11 @@ CLASS_COLORS = _support.class_color_map([class_keys[class_id] for class_id in or
 
 # %%
 # **Collect the cycles in the time window.** Each ``Component`` exposes its
-# cycles through ``cycles()``, and every ``Cycle`` carries its sample
-# ``range()`` and ``birth()``. A cycle's sample range becomes the closed span
-# of time between its first and last sample. Filtering cycles by birth matches
-# the cycles a detection capped at that threshold would admit. Cycles longer
-# than ``LENGTH_CAP`` detection samples are excluded; that cap is a sample
+# cycles through ``cycles()``, and every ``Cycle`` carries its point
+# ``range()`` and ``birth()``. A cycle's point range becomes the closed span of
+# time between its first and last detection point. Filtering cycles by birth
+# matches the cycles a detection capped at that threshold would admit. Cycles
+# longer than ``LENGTH_CAP`` detection points are excluded; that cap is a point
 # count, not a duration, so the time a capped cycle covers varies with the
 # local speed of the flow. The window restricts the figure to a legible span
 # of the full extent, and its columns are a uniform width in time.
@@ -149,7 +149,7 @@ def coverage_labels(max_birth: float) -> np.ndarray:
 
 # %%
 # **Render the stacked barcodes.** The colormap starts with white (uncovered)
-# and assigns each ranked class its canonical color. The y-axis tick labels
+# and assigns each ordered class its canonical color. The y-axis tick labels
 # name classes by frequency position, and each panel is labeled with its
 # birth cap.
 
@@ -178,7 +178,7 @@ def build_figure() -> plt.Figure:
     panels[-1].set_xlabel("Time")
     figure.supylabel("Homology class (by frequency)")
     figure.suptitle(
-        f"Coverage barcode: Dadras attractor (cycles up to {LENGTH_CAP} detection samples)"
+        f"Coverage barcode: Dadras attractor (cycles up to {LENGTH_CAP} detection points)"
     )
     figure.tight_layout()
     return figure

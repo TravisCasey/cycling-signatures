@@ -1,27 +1,27 @@
 # This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 # See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-"""Signature indicator heatmap
-==============================
+"""Signature indicator heatmap (Lorenz)
+=======================================
 
-The homological signature present at each time, shown for several window
+The cycling signature present at each time, shown for several window
 lengths. Each (window length, time) cell is colored by its signature: white
 for the trivial signature (rank 0); a rank-1 signature is the span of a single
 homology class and takes that class's color (the same colors the coverage
 barcode uses); the rank-2 signature, spanning both cycles, gets its own color.
 
-The Lorenz attractor has two independent homological cycles, so a window's
-signature is trivial, captures one cycle (rank 1), or captures both (rank 2)
-depending on which part of the trajectory it covers.
+The Lorenz attractor has two independent loop types, so a window's signature
+is trivial, captures one of them (rank 1), or captures both (rank 2) depending
+on which part of the trajectory it covers.
 """
 
 # %%
 # Load the detection trajectory and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. The storage's
-# sample indices are positions in the detection trajectory, and that
-# trajectory's ``parameters()`` give the integration time of each sample: they
-# place every window on the time axis below and turn a window length in
-# samples into a duration.
+# point indices are positions in the detection trajectory, and that
+# trajectory's ``parameters()`` give the integration time of each detection
+# point: they place every window on the time axis below and turn a window
+# length in detection points into a duration.
 
 from collections import Counter
 
@@ -102,11 +102,11 @@ for row_index, length in enumerate(WINDOW_LENGTHS):
 
 # %%
 # **Place the columns and rows in time.** Columns step a fixed number of
-# detection samples, which is not a fixed amount of time: the sampling follows
-# the trajectory's geometry, so a sample spans more time where the flow runs
-# slowly. Each column therefore runs from its window's start time to the next
-# column's start time, tiling the axis with no gaps; the column marks where
-# its window begins, not the time its window covers.
+# detection points, which is not a fixed amount of time: the points follow the
+# trajectory's geometry, so one spans more time where the flow runs slowly.
+# Each column therefore runs from its window's start time to the next column's
+# start time, tiling the axis with no gaps; the column marks where its window
+# begins, not the time its window covers.
 
 column_edges = np.append(
     PARAMETERS[column_starts],
@@ -115,7 +115,7 @@ column_edges = np.append(
 
 
 def median_window_duration(length: int) -> float:
-    """Return the median time a window of ``length`` samples spans."""
+    """Return the median time a window of ``length`` points spans."""
     starts = np.arange(extent_start, extent_stop - length + 1)
     return float(np.median(PARAMETERS[starts + length - 1] - PARAMETERS[starts]))
 
@@ -165,7 +165,7 @@ def build_figure() -> plt.Figure:
     axes.set_yticks(range(len(WINDOW_LENGTHS)))
     axes.set_yticklabels(
         [
-            f"{length} samples\n({median_window_duration(length):.2f} time)"
+            f"{length} points\n({median_window_duration(length):.2f} time)"
             for length in WINDOW_LENGTHS
         ]
     )

@@ -7,12 +7,12 @@ Reads the Lorenz position trajectory, embeds it in full through the
 sphere-bundle pipeline, and writes two files under ``lorenz/data``:
 ``lorenz_trajectory.cyc``, the detection trajectory the storage indexes, and
 ``lorenz_storage.cyc``, the detected cycles the gallery queries. A cycle's
-sample range indexes the detection trajectory's points directly; its
-``parameters()`` carry the integration time each detection point was sampled
-at, in Lorenz time units measured from the first raw sample.
+point range indexes the detection trajectory directly; that trajectory's
+``parameters()`` carry the integration time of each detection point, in Lorenz
+time units measured from the first raw row.
 
-The raw samples are a fixed ``_support.LORENZ_DT`` apart in time, so the curve
-is fitted over row number and the resulting parameters are scaled to time
+The raw rows are a fixed ``_support.LORENZ_DT`` apart in time, so the curve is
+fitted over row number and the resulting parameters are scaled to time
 afterwards.
 
 The raw trajectory is fetched from the Zenodo published dataset and cached
@@ -36,17 +36,15 @@ import _support
 # Sphere-bundle parameters are interdependent; see the SphereBundle metric
 # docs for the rationale. SPHERE_RADIUS sets the interpolator's direction
 # normalization radius, which the metric measures against directly.
-# RESAMPLE_SPACING is the dense-placement spacing that feeds the cover:
-# tuned against the raw trajectory's own sampling interval so resampling
-# inserts a low number of extra points, fine enough that the cover resolves
-# the attractor. DOWNSAMPLE_SPACING is the detection resolution: the build
-# detects at an explicit threshold just under the cube side, so the stored
-# band runs from the achieved resolution up to the threshold. Detection
-# points are spaced by distance rather than time, so MAX_LENGTH, a count of
-# them, caps cycles by their length through state space. The box size is
-# large enough that recurrences are frequent while the cover still resolves
-# the attractor; it lives in ``_support`` because the gallery needs it to read
-# the published trajectory's positions back in native coordinates.
+# RESAMPLE_SPACING is the dense-placement spacing that feeds the cover: tuned
+# against the raw trajectory's own row spacing to stay fine enough that the
+# cover resolves the attractor, at the insertion cost `report` prints.
+# DOWNSAMPLE_SPACING is the detection resolution: the build detects at an
+# explicit threshold just under the cube side, so the stored band runs from
+# the achieved resolution up to the threshold. Detection points are spaced by
+# distance rather than time, so MAX_LENGTH, a count of them, caps cycles by
+# their length through state space. The box size is large enough that
+# recurrences are frequent while the cover still resolves the attractor.
 BOXSIZE = _support.LORENZ_BOXSIZE
 SPHERE_RADIUS = 3.5
 RESAMPLE_SPACING = 0.45
@@ -60,14 +58,14 @@ def build() -> tuple[Path, Path, float, float]:
 
     The two paths are the detection trajectory and the storage built over it.
     The fraction is the share of resample-inserted rows relative to the raw
-    sample count. The resolution is the detection trajectory's achieved
+    row count. The resolution is the detection trajectory's achieved
     consecutive-point resolution, the recorded band's lower end.
     """
     raw_path = _support.lorenz_raw()
     points = np.load(raw_path)
-    sample_count = len(points)
+    row_count = len(points)
 
-    spline = cs.CubicSpline(np.arange(sample_count, dtype=np.float64), points / BOXSIZE)
+    spline = cs.CubicSpline(np.arange(row_count, dtype=np.float64), points / BOXSIZE)
     interpolator = cs.SphereBundleInterpolator(spline, SPHERE_RADIUS)
     metric = cs.SphereBundle()
 
@@ -77,7 +75,7 @@ def build() -> tuple[Path, Path, float, float]:
     dense = cs.Trajectory(dense.points(), parameters=dense.parameters() * _support.LORENZ_DT)
     cover = cs.CubicalCover(dense)
     detection = dense.downsample(metric, DOWNSAMPLE_SPACING)
-    inserted_fraction = (len(dense) - sample_count) / sample_count
+    inserted_fraction = (len(dense) - row_count) / row_count
     del dense, points, spline, interpolator
 
     trajectory_target = raw_path.parent / "lorenz_trajectory.cyc"
@@ -107,7 +105,7 @@ def report(
         f"classes {len(storage.classes())}, components {len(storage.components())}"
     )
     print(f"band [{achieved_resolution:.6f}, {storage.threshold():.6f}]")
-    print(f"inserted points {inserted_fraction:.2%} of raw samples")
+    print(f"inserted points {inserted_fraction:.2%} of raw rows")
 
 
 if __name__ == "__main__":
