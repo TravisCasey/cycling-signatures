@@ -26,12 +26,10 @@ impl CubicalCover {
     /// trajectory resampled at a spacing of at most 1 (the cube side)
     /// satisfies this by construction.
     ///
-    /// Build the cover from the densest trajectory available. A cover built
-    /// from a thinned trajectory is a coarser model of the same curve: the
-    /// cubes the curve crosses between kept points are absent, which creates
-    /// spurious holes and reports first-homology classes the curve does not
-    /// have. A cover is reusable, so one built once from the dense trajectory
-    /// serves every embedding taken over it.
+    /// Build the cover from the densest trajectory available; see the
+    /// [crate documentation](crate) for why a thinned one reports classes the
+    /// curve does not have. A cover is reusable, so one built once from the
+    /// dense trajectory serves every embedding taken over it.
     ///
     /// # Errors
     ///

@@ -3,6 +3,75 @@
 
 //! Algebraic topological descriptions of recurrent motions in high-dimensional
 //! dynamical systems.
+//!
+//! Given a sampled trajectory, this crate finds the stretches that nearly
+//! return to where they started, then classifies each cycle by the hole it
+//! encloses: two cycles winding the same way around the same obstruction
+//! share a class. The classes a trajectory visits, filtered by adjacency
+//! threshold, form its cycling signature ([`CyclingSignature`]).
+//!
+//! # Pipeline
+//!
+//! The pipeline runs in four stages: resample to a dense trajectory, build
+//! the cover from it, downsample to the sparser detection trajectory, then
+//! embed and store cycles at an explicit adjacency threshold.
+//!
+//! ```no_run
+//! use cycling_signatures::prelude::*;
+//! use ndarray::array;
+//!
+//! const RESAMPLE_SPACING: f64 = 0.1;
+//! const DOWNSAMPLE_SPACING: f64 = 0.3;
+//!
+//! let knots = array![0.0, 1.0, 2.0, 3.0, 4.0];
+//! let values =
+//!     array![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0], [0.0, 0.0]];
+//! let spline = CubicSpline::new(knots, values.view()).unwrap();
+//! let metric = Metric::Euclidean;
+//! let backend = ExecutionBackend::default();
+//!
+//! let dense =
+//!     Trajectory::resample(&spline, metric, RESAMPLE_SPACING).unwrap();
+//! let cover = CubicalCover::build(&dense, &backend).unwrap();
+//! let detection = dense.downsample(metric, DOWNSAMPLE_SPACING).unwrap();
+//! let embedded = EmbeddedTrajectory::new(detection, cover, metric).unwrap();
+//! let storage =
+//!     CycleStorage::build(&embedded, .., 100, 0.5, &backend).unwrap();
+//! assert!(!storage.components().is_empty());
+//! ```
+//!
+//! # Build the cover from the densest trajectory
+//!
+//! Build the cover from the densest trajectory available. Building it from
+//! an already-thinned trajectory type-checks and validates, but perforates
+//! the cover, leaving spurious holes that report first-homology classes the
+//! curve does not have.
+//!
+//! # Resolution and threshold
+//!
+//! Cubes have unit side length. Callers scale a trajectory's coordinates into
+//! cube units before constructing it; the crate does not scale or center them
+//! itself. The resample spacing sets cover fidelity; the downsample spacing
+//! sets detection resolution and is the primary cost lever. The detection
+//! band is `resolution() <= threshold < 1`, where `resolution()` is
+//! [`EmbeddedTrajectory::resolution`]; see [`Error::ThresholdAboveCubeSide`]
+//! for why the upper bound is what it is.
+//!
+//! # Comparing output between runs
+//!
+//! Cover generators (a cover's `F_2` cohomology generators) are not
+//! computed in the same basis from one run to the next. Class vectors,
+//! subspaces, and containment checks ([`F2Subspace::contains`]) are
+//! meaningful only within one basis: one run, or every process loading the
+//! same saved [`CubicalCover`] file.
+//!
+//! # Feature flags
+//!
+//! `serde` enables saving and loading a [`CubicalCover`] or [`CycleStorage`]
+//! to disk. `rayon` adds a shared-memory parallel [`ExecutionBackend`] variant
+//! for cover construction and cycle detection. `mpi` adds a distributed
+//! [`ExecutionBackend`] variant and implies `serde`, since coordinating work
+//! across processes serializes values between them.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
