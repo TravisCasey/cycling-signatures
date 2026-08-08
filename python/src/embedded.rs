@@ -29,16 +29,6 @@ use crate::{
 /// cube is present in the cover and that consecutive points land in adjacent
 /// cubes. The result can be saved with ``save`` and reloaded with ``load``.
 ///
-/// Typical pipeline, building the cover once from a dense trajectory and
-/// embedding a thinned one against it (``resample_spacing`` and
-/// ``downsample_spacing`` are the caller's own tuned values, fine and coarse
-/// respectively)::
-///
-///     dense = cs.Trajectory.resample(interpolator, metric, resample_spacing)
-///     cover = cs.CubicalCover(dense)
-///     detection = dense.downsample(metric, downsample_spacing)
-///     embedded = cs.EmbeddedTrajectory(detection, cover, metric)
-///
 /// The ``resolution`` method reports the largest distance between consecutive
 /// points; any adjacency threshold passed to ``signature`` must be at least
 /// this value.
@@ -60,6 +50,29 @@ use crate::{
 ///     non-adjacent cubes.
 /// ``TypeError``
 ///     If ``metric`` is not a recognized metric type.
+///
+/// Examples
+/// --------
+/// Build the cover once from a dense trajectory, then embed a thinned copy of
+/// it against that cover::
+///
+///     import numpy as np
+///     import cycling_signatures as cs
+///
+///     RESAMPLE_SPACING = 0.1
+///     DOWNSAMPLE_SPACING = 0.3
+///
+///     knots = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+///     values = np.array(
+///         [[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0], [0.0, 0.0]]
+///     )
+///     spline = cs.CubicSpline(knots, values)
+///     metric = cs.Euclidean()
+///
+///     dense = cs.Trajectory.resample(spline, metric, RESAMPLE_SPACING)
+///     cover = cs.CubicalCover(dense)
+///     detection = dense.downsample(metric, DOWNSAMPLE_SPACING)
+///     embedded = cs.EmbeddedTrajectory(detection, cover, metric)
 #[pyclass(name = "EmbeddedTrajectory")]
 pub(crate) struct PyEmbeddedTrajectory {
     pub(crate) inner: EmbeddedTrajectory,
@@ -68,10 +81,6 @@ pub(crate) struct PyEmbeddedTrajectory {
 #[pymethods]
 impl PyEmbeddedTrajectory {
     /// Embeds ``trajectory`` in ``cover`` under ``metric``.
-    ///
-    /// For large, high-dimensional trajectories, consider saving the result
-    /// with ``save`` and reloading it later with ``load`` rather than
-    /// recomputing it.
     #[new]
     fn new(
         py: Python<'_>,
@@ -120,7 +129,6 @@ impl PyEmbeddedTrajectory {
     /// Returns
     /// -------
     /// ``EmbeddedTrajectory``
-    ///     The embedded, thinned trajectory.
     ///
     /// Raises
     /// ------
@@ -205,7 +213,7 @@ impl PyEmbeddedTrajectory {
     /// Returns
     /// -------
     /// ``CyclingSignature``
-    ///     The homological content of the detected cycles.
+    ///     Complete up to ``threshold``.
     ///
     /// Raises
     /// ------
@@ -249,7 +257,6 @@ impl PyEmbeddedTrajectory {
     /// Returns
     /// -------
     /// ``HomologyClass``
-    ///     The homology class of the closed cycle.
     ///
     /// Raises
     /// ------
@@ -282,7 +289,6 @@ impl PyEmbeddedTrajectory {
     /// Returns
     /// -------
     /// float
-    ///     The largest distance between consecutive points.
     #[must_use]
     fn resolution(&self) -> f64 {
         self.inner.resolution()
@@ -296,7 +302,6 @@ impl PyEmbeddedTrajectory {
     /// Returns
     /// -------
     /// ``Trajectory``
-    ///     The wrapped trajectory.
     #[must_use]
     fn trajectory(&self) -> PyTrajectory {
         PyTrajectory {
@@ -311,30 +316,25 @@ impl PyEmbeddedTrajectory {
 
     /// Returns the metric this embedded trajectory measures distances under.
     ///
-    /// Useful for introspection: a caller holding an embedding built or
-    /// returned elsewhere can recover which metric it uses without having
-    /// tracked the value separately.
+    /// Recovers the metric an embedding was constructed with, including one
+    /// reloaded with ``load``, without the caller tracking it separately.
     ///
     /// Returns
     /// -------
     /// ``Euclidean`` or ``SphereBundle``
-    ///     The metric this embedding was constructed with.
     fn metric(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         metric_to_py(py, self.inner.metric())
     }
 
     /// Returns the cubical cover this trajectory is embedded in.
     ///
-    /// The returned cover shares its underlying data with this embedded
-    /// trajectory's cover rather than copying it, so it carries the exact
-    /// generator basis this embedding's homology classes were computed
-    /// against; saving it and reloading it later maintains that basis for
-    /// comparison against classes computed here.
+    /// The returned cover shares its underlying data rather than copying it,
+    /// so it carries the generator basis this embedding's homology classes
+    /// were computed against.
     ///
     /// Returns
     /// -------
     /// ``CubicalCover``
-    ///     The wrapped cover.
     #[must_use]
     fn cover(&self) -> PyCubicalCover {
         PyCubicalCover {
@@ -351,7 +351,6 @@ impl PyEmbeddedTrajectory {
     /// Returns
     /// -------
     /// int
-    ///     A fingerprint identifying the embedded trajectory.
     #[must_use]
     fn fingerprint(&self) -> u64 {
         self.inner.fingerprint()
@@ -363,6 +362,9 @@ impl PyEmbeddedTrajectory {
     /// cover data to ``cover_path``, and an envelope recording this
     /// embedding's metric and both files' fingerprints to ``embedded_path``.
     /// All three files must be loaded together via ``load``.
+    ///
+    /// For a large, high-dimensional trajectory, saving an embedding and
+    /// reloading it later costs less than rebuilding the cover.
     ///
     /// Parameters
     /// ----------
@@ -408,7 +410,6 @@ impl PyEmbeddedTrajectory {
     /// Returns
     /// -------
     /// ``EmbeddedTrajectory``
-    ///     The reloaded embedded trajectory.
     ///
     /// Raises
     /// ------

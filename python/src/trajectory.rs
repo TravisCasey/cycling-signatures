@@ -124,8 +124,7 @@ impl PyTrajectory {
     /// A greedy forward walk always keeps the first and last point, and
     /// keeps an intermediate point once the next point would fall further
     /// than ``spacing`` from the last kept point. Any spacing up to the
-    /// intended detection threshold is valid: the threshold has to clear the
-    /// output's own consecutive-point distance, which this spacing bounds.
+    /// intended adjacency threshold is valid.
     ///
     /// Only the lower end is validated here. A spacing coarse enough to put
     /// consecutive kept points more than one cube apart surfaces later, when
@@ -141,7 +140,7 @@ impl PyTrajectory {
     /// Returns
     /// -------
     /// ``Trajectory``
-    ///     A new, thinned trajectory.
+    ///     A subset of this trajectory's points, with their parameters.
     ///
     /// Raises
     /// ------
@@ -185,7 +184,6 @@ impl PyTrajectory {
     /// Returns
     /// -------
     /// float
-    ///     The maximum distance between consecutive points.
     ///
     /// Raises
     /// ------
@@ -205,7 +203,7 @@ impl PyTrajectory {
     /// Returns
     /// -------
     /// ndarray
-    ///     A two-dimensional array whose rows are the trajectory points.
+    ///     One row per point.
     #[must_use]
     fn points<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
         self.inner.points().to_pyarray(py)
@@ -222,7 +220,7 @@ impl PyTrajectory {
     /// Returns
     /// -------
     /// ndarray
-    ///     A one-dimensional array of parameter values, one per point.
+    ///     One-dimensional, one value per point.
     #[must_use]
     fn parameters<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         self.inner.parameters().to_pyarray(py)
@@ -253,7 +251,6 @@ impl PyTrajectory {
     /// Returns
     /// -------
     /// int
-    ///     A fingerprint identifying the trajectory's content.
     #[must_use]
     fn fingerprint(&self) -> u64 {
         self.inner.fingerprint()
@@ -284,7 +281,6 @@ impl PyTrajectory {
     /// Returns
     /// -------
     /// ``Trajectory``
-    ///     The reloaded trajectory.
     ///
     /// Raises
     /// ------

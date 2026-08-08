@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "cycling-signatures"
-description = "Algebraic topological descriptions of recurrent motions in dynamical systems"
+description = "Algebraic topological descriptions of recurrent motions in high-dimensional dynamical systems."
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
 classifiers = [

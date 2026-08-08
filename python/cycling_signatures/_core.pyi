@@ -41,7 +41,7 @@ class SphereBundleInterpolator:
     def sample(self, parameter: float) -> NDArray[np.float64]: ...
 
 class HomologyClass:
-    """An F_2 cohomology class, expressed against the cover generator basis."""
+    """A cycle's class, as coordinates in the cover's generator basis."""
 
     def __len__(self) -> int: ...
     def __getitem__(self, index: int) -> int: ...
@@ -54,7 +54,7 @@ class HomologyClass:
     def to_array(self) -> NDArray[np.uint8]: ...
 
 class Subspace:
-    """A span: classes closed under addition, held as an RREF basis."""
+    """A span of classes, canonicalized so that equal spans compare equal."""
 
     def rank(self) -> int: ...
     def num_generators(self) -> int: ...
@@ -65,7 +65,7 @@ class Subspace:
     def contains(self, homology_class: HomologyClass) -> bool: ...
 
 class CyclingSignature:
-    """The rank and span of a segment's classes, as a function of threshold."""
+    """The rank and span of a window's classes, as a function of threshold."""
 
     def span(self) -> Subspace: ...
     def rank(self) -> int: ...
@@ -78,7 +78,7 @@ class CyclingSignature:
     def births(self) -> list[float]: ...
     def classes(self) -> list[HomologyClass]: ...
     def threshold_max(self) -> float:
-        """The adjacency threshold this signature was computed at."""
+        """The largest adjacency threshold this signature is complete for."""
 
     def num_generators(self) -> int: ...
     def __repr__(self) -> str: ...
@@ -192,7 +192,7 @@ class Component:
     def __repr__(self) -> str: ...
 
 class CycleStorage:
-    """The detected components for a segment, indexed by class and point."""
+    """The detected components for a window, indexed by class and point."""
 
     @staticmethod
     def build(
@@ -204,7 +204,7 @@ class CycleStorage:
         parallel: bool = True,
     ) -> CycleStorage: ...
     def extent(self) -> tuple[int, int]:
-        """The index range this storage was built from."""
+        """The window this storage was built over: the bound on every query."""
 
     def fingerprint(self) -> int:
         """The fingerprint of the embedded trajectory this was built from."""

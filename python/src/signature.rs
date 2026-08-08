@@ -12,7 +12,7 @@ use crate::{
     homology::{PyHomologyClass, PySubspace},
 };
 
-/// The cycling signature of a trajectory segment: a filtered ``F_2`` subspace
+/// The cycling signature of a trajectory window: a filtered ``F_2`` subspace
 /// of cover homology, ordered by the adjacency threshold ("birth") at which
 /// each independent class first enters.
 ///
@@ -31,8 +31,7 @@ impl PyCyclingSignature {
     /// Returns
     /// -------
     /// ``Subspace``
-    ///     The cycle space spanned by every generator, complete up to
-    ///     ``threshold_max``.
+    ///     The cycle space, complete up to ``threshold_max``.
     #[must_use]
     fn span(&self) -> PySubspace {
         PySubspace {
@@ -40,18 +39,18 @@ impl PyCyclingSignature {
         }
     }
 
-    /// Returns the number of independent cycling classes in the signature.
+    /// Returns the rank of the full-band span: the number of independent loop
+    /// types the signature carries.
     ///
     /// Returns
     /// -------
     /// int
-    ///     The rank of the full-band spanned cycle space.
     #[must_use]
     fn rank(&self) -> usize {
         self.inner.rank()
     }
 
-    /// Returns the number of independent cycling classes with birth at most
+    /// Returns the number of independent loop types with birth at most
     /// ``threshold``.
     ///
     /// Parameters
@@ -62,7 +61,7 @@ impl PyCyclingSignature {
     /// Returns
     /// -------
     /// int
-    ///     The rank of the subspace at ``threshold``.
+    ///     The rank of the span at ``threshold``.
     ///
     /// Raises
     /// ------
@@ -83,7 +82,7 @@ impl PyCyclingSignature {
     /// Returns
     /// -------
     /// ``Subspace``
-    ///     The cycle space at ``threshold``.
+    ///     The cycle space restricted to ``threshold``.
     ///
     /// Raises
     /// ------
@@ -145,7 +144,6 @@ impl PyCyclingSignature {
     /// Returns
     /// -------
     /// int
-    ///     The ambient dimension.
     #[must_use]
     fn num_generators(&self) -> usize {
         self.inner.num_generators()

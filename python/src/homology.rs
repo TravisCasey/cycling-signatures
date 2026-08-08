@@ -27,24 +27,19 @@ fn hash_of<T: Hash>(value: &T) -> u64 {
 
 /// The homology class of a recurrent cycle, as a vector over ``F_2``.
 ///
-/// The cubical cover of a trajectory contains a detected set of independent
-/// loops (its first rank homology generators); a cycle's homology class records
-/// which of them a near-recurrent trajectory cycle wraps. Because the
-/// coefficients live in the two-element field ``F_2`` (the integers modulo 2),
-/// every entry is either zero or one: the class is a zero/one vector with one
-/// entry per homology generator of the cover.
+/// A class records which cover generators a near-recurrent trajectory cycle
+/// wraps. The coefficients live in the two-element field ``F_2`` (the integers
+/// modulo 2), so every entry is either zero or one: the class is a zero/one
+/// vector with one entry per cover generator.
 ///
-/// The entries are coordinates in a chosen basis of generators, and that basis
-/// is not canonical: the same cover can present its generators in a different
-/// basis from one computation to the next, so the same class may appear with
-/// different coordinates. Comparing two classes entry by entry is therefore
-/// only meaningful when both use the same basis, and is rarely the operation
-/// you want. To compare a span of cycling results in the same basis, use
-/// ``Subspace``. Classes from different covers or bases are not currently
-/// comparable.
+/// The entries are coordinates in the cover's generator basis, which is not
+/// stable across builds (see ``CubicalCover``), so comparing two classes entry
+/// by entry is meaningful only when both were computed against one basis, and
+/// is rarely the operation wanted. To compare cycling results, use
+/// ``Subspace``.
 ///
-/// ``len`` gives the number of generators, and indexing returns the zero or one
-/// entry at a generator (negative indices count from the end). Equality
+/// ``len`` gives the number of cover generators, and indexing returns the zero
+/// or one entry at a generator (negative indices count from the end). Equality
 /// compares entry by entry.
 #[pyclass(name = "HomologyClass")]
 pub(crate) struct PyHomologyClass {
@@ -57,15 +52,15 @@ pub(crate) struct PyHomologyClass {
 /// Equality and membership depend only on the space a subspace spans, not on
 /// the particular set of classes used to form it: two subspaces formed from
 /// different spanning sets compare equal whenever they span the same space.
-/// This is the right unit for comparing cycling results, since a signature's
-/// components may contribute linearly dependent classes.
+/// Compare cycling results at this level, since a signature's components may
+/// contribute linearly dependent classes that no entry-by-entry comparison of
+/// individual classes accounts for.
 ///
 /// The comparison is still taken in the cover's generator basis, so it requires
-/// both subspaces to use that same basis. A cycling signature over a fixed
-/// cover is expected to be independent of the basis chosen for its homology,
-/// but the library provides no basis-independent comparison: subspaces from
-/// different covers, or from the same cover expressed in a different generator
-/// basis, are not currently comparable.
+/// both subspaces to use that same basis (see ``CubicalCover``). A cycling
+/// signature over a fixed cover is independent of the basis chosen for its
+/// homology; its coordinates are not, and the library offers no
+/// basis-independent comparison.
 #[pyclass(name = "Subspace")]
 pub(crate) struct PySubspace {
     pub(crate) inner: F2Subspace,
@@ -124,9 +119,7 @@ impl PyHomologyClass {
     /// Returns the symmetric difference of this class and ``other``, entry by
     /// entry.
     ///
-    /// Both classes must come from the same cover's generator basis for the
-    /// result to be meaningful; the two operands necessarily satisfy this
-    /// whenever both were read from one cover.
+    /// Both classes must share one cover's generator basis.
     ///
     /// Parameters
     /// ----------
@@ -172,16 +165,14 @@ impl PyHomologyClass {
     /// Returns the class as a dense zero or one array over the cover's
     /// generators.
     ///
-    /// The array has one entry per generator, with ``1`` at each generator the
-    /// class includes and ``0`` elsewhere. The layout depends on the cover's
-    /// non-canonical choice of generator basis, so it is meaningful only
-    /// relative to the basis that produced this class.
+    /// The array has one entry per cover generator, with ``1`` at each
+    /// generator the class includes and ``0`` elsewhere. Its entry order
+    /// follows the cover's generator basis.
     ///
     /// Returns
     /// -------
     /// ndarray
-    ///     A one-dimensional array of ``uint8`` zeros and ones, one per
-    ///     generator.
+    ///     A one-dimensional array of ``uint8`` zeros and ones.
     #[must_use]
     fn to_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u8>> {
         let mut values = vec![0_u8; self.inner.len()];
@@ -211,22 +202,22 @@ impl PySubspace {
     /// Returns
     /// -------
     /// int
-    ///     The ambient dimension, equal to the length of each class vector.
+    ///     Equal to the length of each class vector.
     #[must_use]
     fn num_generators(&self) -> usize {
         self.inner.num_generators()
     }
 
-    /// Returns the basis classes that span this subspace.
+    /// Returns the canonical basis classes that span this subspace.
     ///
-    /// The basis is the reduced row echelon form of the spanning classes, in
-    /// the cover's generator coordinates, so a rank-r subspace returns r
-    /// classes and the trivial subspace returns an empty list.
+    /// Two subspaces spanning the same space return the same basis, so a
+    /// subspace of rank ``r`` returns ``r`` classes and the trivial subspace
+    /// returns an empty list.
     ///
     /// Returns
     /// -------
     /// list of ``HomologyClass``
-    ///     The canonical basis of the subspace, one class per dimension.
+    ///     One class per dimension.
     #[must_use]
     fn basis(&self) -> Vec<PyHomologyClass> {
         self.inner
@@ -259,9 +250,7 @@ impl PySubspace {
 
     /// Returns whether ``homology_class`` lies in this subspace.
     ///
-    /// The class and the subspace must be expressed in the same cover's
-    /// generator basis; the result is not meaningful across covers or across
-    /// differing generator bases.
+    /// The class and the subspace must share one cover's generator basis.
     ///
     /// Parameters
     /// ----------
