@@ -67,8 +67,7 @@ impl Trajectory {
     pub fn downsample(&self, metric: Metric, spacing: f64) -> Result<Self> {
         let points = self.points();
         let resolution = self.resolution(metric);
-        // Negated form (rather than `spacing < resolution`) so a NaN spacing
-        // fails loudly instead of silently passing the comparison.
+        // Negated: also rejects a NaN spacing.
         if !(spacing >= resolution) {
             return Err(Error::SpacingBelowResolution {
                 spacing,
@@ -190,8 +189,7 @@ mod tests {
             Error::SpacingBelowResolution { .. }
         ));
 
-        // A NaN spacing fails every comparison, so the guard must be written
-        // to reject it rather than let it silently pass.
+        // A NaN spacing triggers the same negated guard.
         let nan_outcome = trajectory.downsample(Metric::Euclidean, f64::NAN);
         assert!(matches!(
             nan_outcome.unwrap_err(),

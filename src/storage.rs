@@ -3,10 +3,10 @@
 
 //! Component-first cycle storage.
 //!
-//! On-disk cache for all near-recurrent cycles over a trajectory extent
-//! (the range of trajectory points the storage was built over). Cycles are
-//! grouped by their connected component in the below-threshold distance
-//! graph, paired with the homology class shared across the component.
+//! Cache for all near-recurrent cycles over a trajectory extent (the range of
+//! trajectory points the storage was built over). Cycles are grouped by their
+//! connected component in the below-threshold distance graph, paired with the
+//! homology class shared across the component.
 
 mod build;
 pub(crate) mod interval_subsumption;
@@ -685,8 +685,7 @@ mod tests {
                     && (resolution - embedded.resolution()).abs() < 1e-12
         ));
 
-        // A NaN threshold fails every comparison, so the band check must be
-        // written to reject it rather than let it pass both ends.
+        // A NaN threshold triggers the same negated guard.
         let nan_outcome =
             CycleStorage::build(&embedded, .., 25, f64::NAN, &ExecutionBackend::Sequential);
         assert!(matches!(

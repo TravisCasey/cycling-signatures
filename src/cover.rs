@@ -143,9 +143,9 @@ impl CubicalCover {
     /// A stable 64-bit fingerprint of this cover's content.
     ///
     /// Derived from the cube set only. The cohomology generators are
-    /// deliberately excluded: the same cubes may yield a different generator
-    /// basis across builds, so hashing the cubes keeps the fingerprint a
-    /// function of the canonical data.
+    /// excluded: the same cubes may yield a different generator basis across
+    /// builds, so hashing the cubes keeps the fingerprint a function of the
+    /// canonical data.
     #[must_use]
     pub fn fingerprint(&self) -> u64 {
         let mut hasher = Fingerprint::new();
@@ -193,13 +193,9 @@ impl CubicalCover {
     /// Writes this cover to `path` in the crate's binary format, including
     /// its cube set and its exact generator basis.
     ///
-    /// A cover loaded back from the result (via [`load`](Self::load)) carries
-    /// this same generator basis, so homology class vectors computed against
-    /// the two are directly comparable. A cover independently rebuilt from
-    /// the same cubes gives no such guarantee: its fingerprint matches (the
-    /// fingerprint depends on the cube set alone), but its generator basis is
-    /// not guaranteed to match, since the generator basis is not stable
-    /// across builds of the same cubes.
+    /// A cover loaded back from the result (via [`load`](Self::load)) shares
+    /// this generator basis, unlike one independently rebuilt from the same
+    /// cubes.
     ///
     /// # Errors
     ///

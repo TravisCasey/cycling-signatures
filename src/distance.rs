@@ -13,13 +13,12 @@
 //!
 //! Neighboring cycles are homologous in the cover, so a component carries a
 //! single homology class. The two cycles differ by a loop that stays inside
-//! the block of cubes spanned by their three distinct endpoints, and those
-//! three points are pairwise within the threshold: two by admission, the
+//! the block of cubes spanned by their three distinct endpoints. Those three
+//! points are pairwise within the threshold (two by admission, the
 //! consecutive pair because a valid threshold clears the trajectory's own
-//! resolution. A valid threshold also stays below the cube side, which puts
-//! the three cubes within one position per axis of each other, so every cube
-//! of the block they span meets in a common vertex and any loop confined to
-//! it contracts.
+//! resolution), and a valid threshold also stays below 1, the cube side
+//! ([`Error::ThresholdAboveCubeSide`]): together these make the loop
+//! confined to their cubes contract.
 
 mod stitch;
 mod tile;
@@ -44,10 +43,11 @@ use crate::{
 /// per worker without affecting the result, and it is the largest lever on the
 /// memory a detection pass needs.
 ///
-/// Lowering tends to improve results to a certain point due to cache residence
+/// Lowering tends to improve throughput up to a point, from cache residence
 /// and locality. There is a redundant `1 / owned_columns` portion that grows
-/// as the column count is reduced, but it is outweighed in this regime. It
-/// also sets parallel dispatch granularity; another positive of small tiles.
+/// as the column count is reduced, but it stays small next to the throughput
+/// gained. Owned-column count also sets parallel dispatch granularity:
+/// smaller tiles balance work across workers more evenly.
 pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 256;
 
 /// Partitions `range` into tiles of `owned_columns` consecutive columns, each

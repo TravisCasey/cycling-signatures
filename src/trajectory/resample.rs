@@ -72,8 +72,7 @@ impl Trajectory {
         metric: Metric,
         spacing: f64,
     ) -> Result<Self> {
-        // Negated form (rather than `spacing <= 0.0`) so a NaN spacing fails
-        // loudly instead of silently passing the comparison.
+        // Negated: also rejects a NaN spacing.
         if !(spacing > 0.0) {
             return Err(Error::SpacingNotPositive { spacing });
         }
@@ -137,7 +136,9 @@ impl Trajectory {
     }
 }
 
-// 2^40 subdivisions of any parameter interval is the f64 precision limit.
+// A backstop depth cap: the midpoint-equality check in `is_stagnant` is what
+// actually detects precision stagnation; this only bounds bisection depth if
+// that check never acts.
 const MAX_DEPTH: u32 = 40;
 
 /// A bisection-stack entry: an interval of parameter space and the inner
@@ -327,8 +328,7 @@ mod tests {
             Error::SpacingNotPositive { .. }
         ));
 
-        // A NaN spacing fails every comparison, so the guard must be written
-        // to reject it rather than let it silently pass.
+        // A NaN spacing triggers the same negated guard.
         let nan_outcome = Trajectory::resample(&spline, Metric::Euclidean, f64::NAN);
         assert!(matches!(
             nan_outcome.unwrap_err(),

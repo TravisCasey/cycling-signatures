@@ -32,11 +32,8 @@ pub(crate) struct IntervalSubsumptionIndex {
 }
 
 impl IntervalSubsumptionIndex {
-    /// Builds a deduplicated index from `(range, payload, birth)` triples.
-    ///
-    /// Within each payload group, an interval is dropped when it strictly
-    /// contains another same-payload interval whose birth is less than or
-    /// equal to its own.
+    /// Builds a deduplicated index from `(range, payload, birth)` triples,
+    /// applying the minimal-subsumption rule described on the module.
     #[must_use]
     pub(crate) fn new(ranges: impl IntoIterator<Item = (Range<u32>, u32, f64)>) -> Self {
         let mut intervals: Vec<StoredInterval> = ranges
@@ -62,17 +59,12 @@ impl IntervalSubsumptionIndex {
         // every field are genuine duplicates of the same cycle.
         intervals.dedup();
 
-        // Right-to-left sweep within each payload group, maintaining a
-        // Pareto frontier of already-seen survivors as an ordered map from
-        // `end` to `birth`, with births strictly descending as ends ascend.
-        //
-        // Every seen entry has `begin >= current.begin` (processing runs in
-        // descending `begin` order), so a seen entry additionally satisfying
-        // `end <= current.end` is strictly contained in the current entry
-        // (exact duplicates were already removed above). The current entry
-        // is dropped when such a seen entry also has `birth <= current
-        // birth`: the current entry is dominated in both coverage and birth
-        // by something it contains.
+        // Right-to-left sweep within each payload group: `frontier` maps each
+        // already-seen survivor's `end` to its `birth`, kept with births
+        // strictly descending as `end` ascends. Because processing runs in
+        // descending `begin` order, a frontier entry with `end <= current.end`
+        // is exactly a survivor strictly contained in the current interval
+        // (exact duplicates were removed above).
         let mut result: Vec<StoredInterval> = Vec::with_capacity(intervals.len());
         let mut current_payload: Option<u32> = None;
         let mut frontier: BTreeMap<u32, f64> = BTreeMap::new();

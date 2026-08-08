@@ -29,9 +29,9 @@ use crate::util::disjoint::DisjointSet;
 /// Every method below preserves this, which is what bounds how much a
 /// long-lived trivial component can accumulate.
 ///
-/// [`close`](Self::close) leaves its slot empty rather than removing it, and a
-/// closed slot must not be reached again. Nothing that survives a tile resolves
-/// to one, and closing a component that holds no cycles panics.
+/// [`close`](Self::close) leaves its slot empty rather than removing it, since
+/// removing would shift every later slot index; a closed slot must not be
+/// reached again, and closing a component that holds no cycles panics.
 struct OpenComponents {
     membership: DisjointSet,
     cycles: Vec<Vec<Range<usize>>>,
@@ -197,11 +197,7 @@ pub(super) fn stitch_per_tile_results(
         for index in 0..tile_components.len() {
             // The cycles on the column shared with the previous tile name the
             // components this one continues, so they are looked up rather than
-            // added: the preceding tile already holds them. Every such cycle
-            // was reported there too, since the two tiles compute that column
-            // from the same points over the same row range and so admit the
-            // same entries, and a tile keeps its first and last columns even
-            // when it reports nothing else of a component.
+            // added: the preceding tile already holds them.
             let continued = components.distinct_roots(
                 tile_components
                     .cycles(index)
@@ -243,10 +239,9 @@ pub(super) fn stitch_per_tile_results(
             touched.push(root);
         }
 
-        // A component the next tile cannot reach is complete. Nothing drains
-        // the collection afterwards, so this is the only place a component is
-        // emitted, and the final tile shares no column with a successor and so
-        // closes everything.
+        // A component the next tile cannot reach is complete: this is the only
+        // place a component is emitted, and the final tile, sharing no column
+        // with a successor, closes everything that remains.
         let surviving = components.distinct_roots(next_frontier.values().copied());
         let live = components.distinct_roots(carried_slots.iter().chain(&touched).copied());
         for root in live {
@@ -278,14 +273,6 @@ mod tests {
 
     /// Builds one tile's input: its first column and its components, each given
     /// as its `(start, end)` cycles paired with the triviality it reports.
-    ///
-    /// The flag is given rather than derived from the cycles, because a tile
-    /// reports it separately: a component carrying the trivial cycle lists only
-    /// its shared-column cycles, so the self-comparison need not be among them.
-    ///
-    /// Every cycle starting on the tile's own first column must also appear in
-    /// the preceding tile, which is what the real tiling guarantees and what
-    /// the sweep relies on.
     fn tile(base: usize, components: &[(&[(usize, usize)], bool)]) -> (usize, TileComponents) {
         let grouped: Vec<Vec<(u32, u32)>> = components
             .iter()
@@ -356,8 +343,8 @@ mod tests {
     #[test]
     fn component_with_no_shared_cycle_is_emitted() {
         // No component here reaches a shared column, so each is complete as
-        // soon as its own tile is read. Nothing drains them afterwards, so a
-        // component closed at the wrong moment is lost rather than reordered.
+        // soon as its own tile is read; nothing drains them afterwards, so a
+        // component closed at the wrong moment is lost, not merely reordered.
         let joined = stitch_per_tile_results(vec![
             tile(0, &[(&[(0, 3)], false)]),
             tile(4, &[(&[(5, 8)], false)]),

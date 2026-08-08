@@ -132,9 +132,7 @@ impl CyclingSignature {
     ///
     /// [`Error::ThresholdExceedsFiltrationBand`] if `threshold` exceeds
     /// [`threshold_max`](Self::threshold_max), or is NaN.
-    // The negated comparison (rather than `threshold > self.threshold_max`)
-    // is deliberate: it also rejects a NaN threshold, which is neither
-    // greater than nor less than or equal to any value.
+    // Negated: also rejects a NaN threshold.
     pub fn rank_at(&self, threshold: f64) -> Result<usize> {
         if !(threshold <= self.threshold_max) {
             return Err(Error::ThresholdExceedsFiltrationBand {

@@ -33,7 +33,7 @@ impl CycleStorage {
     /// - [`Error::MaxLengthBelowMinimum`] if `max_length < 2`.
     /// - [`Error::ThresholdBelowResolution`] if `threshold <
     ///   embedded.resolution()`.
-    /// - [`Error::ThresholdAboveCubeSide`] if `threshold` is at or above the
+    /// - [`Error::ThresholdAboveCubeSide`] if `threshold` is at or above 1, the
     ///   cube side.
     pub fn build(
         embedded: &EmbeddedTrajectory,
@@ -58,8 +58,8 @@ impl CycleStorage {
     ///
     /// `range` must already be normalized and `max_length` already validated
     /// as at least 2; `threshold` must already be at least the embedded
-    /// trajectory's consecutive-point resolution and strictly below the cube
-    /// side.
+    /// trajectory's consecutive-point resolution and strictly below 1, the
+    /// cube side.
     fn assemble(
         embedded: &EmbeddedTrajectory,
         range: Range<usize>,

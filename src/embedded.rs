@@ -201,12 +201,9 @@ impl EmbeddedTrajectory {
 
     /// Returns an error if `threshold` is below the embedded trajectory's
     /// consecutive-point resolution under its metric (including when it is
-    /// NaN), or at or above the cube side.
+    /// NaN), or at or above 1, the cube side.
     pub(crate) fn check_threshold(&self, threshold: f64) -> Result<()> {
-        // Negated form (rather than `threshold < self.resolution`) so a NaN
-        // threshold fails loudly here instead of silently passing both band
-        // checks; past this guard the threshold is a number, so a plain
-        // comparison suffices below.
+        // Negated: rejects a NaN threshold before the plain check below runs.
         if !(threshold >= self.resolution) {
             return Err(Error::ThresholdBelowResolution {
                 threshold,

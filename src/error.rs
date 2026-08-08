@@ -2,8 +2,6 @@
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
 //! Crate-level error-handling and reporting.
-//!
-//! A NaN value fails every comparison, and so fails whichever guard checks it.
 
 /// Error type specific to the cycling-signatures crate.
 #[derive(Debug, thiserror::Error)]

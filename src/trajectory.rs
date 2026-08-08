@@ -121,9 +121,7 @@ impl Trajectory {
             });
         }
         for pair in parameters.windows(2) {
-            // Negated form (rather than `pair[1] <= pair[0]`) so a NaN
-            // parameter fails loudly instead of silently passing the
-            // comparison.
+            // Negated: also rejects a NaN parameter.
             if !(pair[0] < pair[1]) {
                 return Err(Error::TrajectoryParametersNotIncreasing);
             }
@@ -269,8 +267,7 @@ mod tests {
 
     #[test]
     fn with_parameters_returns_err_on_non_increasing() {
-        // A NaN parameter fails every comparison, so the guard must be written
-        // to reject it rather than let it silently pass.
+        // A NaN parameter is rejected by the guard's negated form.
         let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]];
         let outcome = Trajectory::with_parameters(points.view(), &[0.0, f64::NAN, 2.0]);
 

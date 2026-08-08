@@ -17,8 +17,7 @@ use crate::{
 /// A subspace of the vector space `F_2^n`.
 ///
 /// Two subspaces compare equal if and only if they span the same set of
-/// vectors. The internal canonical form makes this comparison structurally
-/// cheap.
+/// vectors.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct F2Subspace {
@@ -29,10 +28,9 @@ pub struct F2Subspace {
 impl F2Subspace {
     /// Constructs the subspace spanned by `vectors`.
     ///
-    /// `vectors` is a generating set in `F_2^n`. Independence is not assumed;
-    /// the implementation reduces to reduced row echelon form (RREF) to
-    /// canonicalize. Passing an empty vector yields the trivial (rank 0)
-    /// subspace.
+    /// `vectors` is a generating set in `F_2^n`; independence is not assumed,
+    /// and the resulting subspace depends only on the space `vectors` spans.
+    /// Passing an empty vector yields the trivial (rank 0) subspace.
     ///
     /// # Examples
     ///
@@ -215,8 +213,8 @@ impl F2Subspace {
         }
 
         // Different ranks rule out equality and one inclusion direction; only
-        // the larger-ranked side can possibly contain the smaller, so we test
-        // a single direction.
+        // the larger-ranked side can possibly contain the smaller, so only one
+        // direction is tested.
         let ordering = match self.rank().cmp(&other.rank()) {
             Ordering::Less => self
                 .basis

@@ -22,8 +22,7 @@ fn checked_domain<I: Interpolator + ?Sized>(interpolator: &I, parameter: f64) ->
     let first_knot = knots[0];
     let last_knot = *knots.last().expect("interpolator has at least two knots");
 
-    // Negated form (rather than the two out-of-domain comparisons) so a NaN
-    // parameter fails loudly instead of silently passing both.
+    // Negated: also rejects a NaN parameter.
     if !(parameter >= first_knot && parameter <= last_knot) {
         return Err(PyValueError::new_err(format!(
             "parameter {parameter} outside the fitted domain [{first_knot}, {last_knot}]"

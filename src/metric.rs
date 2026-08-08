@@ -43,11 +43,8 @@ pub enum Metric {
     /// )
     /// ```
     ///
-    /// The maximum, rather than a Euclidean combination of the two halves,
-    /// is what gives `distance <= t` its reading: within `t` in position
-    /// *and* within `t` in direction. A combination would let the two trade,
-    /// admitting a pair far apart in space merely because it is well aligned,
-    /// which is not a recurrence.
+    /// The maximum of the two halves gives `distance <= t` its reading: within
+    /// `t` in position *and* within `t` in direction.
     ///
     /// This metric is calibrated against
     /// [`SphereBundleInterpolator`](crate::interpolation::SphereBundleInterpolator),
@@ -218,7 +215,7 @@ fn euclidean_distance_slices(left: &[f64], right: &[f64]) -> f64 {
     euclidean_norm_of_differences(left.iter().copied().zip(right.iter().copied()))
 }
 
-/// The Euclidean distance between two equal-length slices.
+/// The Euclidean distance between two equal-length array views.
 ///
 /// # Panics
 ///

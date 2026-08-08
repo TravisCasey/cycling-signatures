@@ -128,8 +128,8 @@ mod tests {
 
     #[test]
     fn distance_allows_zero_direction_half() {
-        // A zero direction half is a legal point at the origin of the
-        // direction factor now that the metric no longer normalizes.
+        // A zero direction half is a legal point: the direction factor is
+        // measured on stored coordinates directly, with no normalization.
         let left = array![0.0, 0.0, 0.0, 0.0];
         let right = array![0.0, 0.0, 1.0, 0.0];
         let distance = Metric::SphereBundle.distance(left.view(), right.view());
