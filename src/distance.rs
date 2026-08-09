@@ -39,15 +39,14 @@ use crate::{
 /// The number of columns each tile owns in the parallel distance
 /// computations that back cycle detection.
 ///
-/// The count bounds per-tile memory at `8 * max_length * owned_columns` bytes
-/// per worker without affecting the result, and it is the largest lever on the
-/// memory a detection pass needs.
+/// The count does not affect the result: the emitted partition is the same at
+/// every value. What it sets is cache locality and parallel dispatch
+/// granularity.
 ///
 /// Lowering tends to improve throughput up to a point, from cache residence
 /// and locality. There is a redundant `1 / owned_columns` portion that grows
 /// as the column count is reduced, but it stays small next to the throughput
-/// gained. Owned-column count also sets parallel dispatch granularity:
-/// smaller tiles balance work across workers more evenly.
+/// gained. Smaller tiles also balance work across workers more evenly.
 pub(crate) const DEFAULT_OWNED_COLUMNS: usize = 256;
 
 /// Partitions `range` into tiles of `owned_columns` consecutive columns, each
@@ -197,6 +196,56 @@ mod tests {
             components.is_empty(),
             "expected no non-trivial components for a straight-line trajectory, got {components:?}",
         );
+    }
+
+    #[test]
+    fn admission_is_strict_at_an_exact_threshold_distance() {
+        // Points 0 and 2 sit exactly `threshold` apart, which is the only
+        // distance at which the admission comparison's direction is visible.
+        // The pair is not admitted, so nothing outside the self-comparisons is,
+        // and every component carries the trivial cycle and is dropped.
+        //
+        // Point 1 is far from both, so the cell holding the exact-distance pair
+        // has no admitted predecessor: were the pair admitted it would form a
+        // component of its own rather than joining a trivial one, which is what
+        // makes the drop below able to see the difference.
+        let points = array![[0.0, 0.0], [5.0, 0.0], [1.0, 0.0]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+
+        let components = detect_euclidean(&trajectory, 0..3, 1.0, 3, 3).unwrap();
+
+        assert!(
+            components.is_empty(),
+            "a pair exactly `threshold` apart must not be admitted; got {components:?}",
+        );
+    }
+
+    #[test]
+    fn merges_read_only_the_immediately_preceding_row() {
+        // A cell's two merge predecessors both sit one row above it, and no
+        // cell may merge with one further up. The fixture makes an older row
+        // reachable if that rule is broken: column 0 is admitted at row 1
+        // (points 0 and 1, 0.5 apart) and again at row 4 (points 0 and 4, 0.4
+        // apart), with nothing admitted at column 0 in between, since points 0
+        // and 2 are 5 apart and points 0 and 3 are 10 apart.
+        //
+        // Row 1's cell touches a self-comparison, so it carries the trivial
+        // cycle. Row 4's must not reach it. What it does reach is row 3 column
+        // 1, the pair of points 1 and 4 at distance 0.1, which reaches no
+        // self-comparison of its own: points 1 and 3 are 9.5 apart and points 2
+        // and 4 are 4.6 apart. So the two form one surviving component, and a
+        // merge into row 1 would drop it as trivial and empty the partition.
+        let points = array![[0.0, 0.0], [0.5, 0.0], [5.0, 0.0], [10.0, 0.0], [0.4, 0.0],];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let expected = vec![vec![0..5, 1..5]];
+
+        for owned_columns in [5, 2] {
+            let components = detect_euclidean(&trajectory, 0..5, 0.9, 5, owned_columns).unwrap();
+            assert_eq!(
+                components, expected,
+                "partition differs at owned_columns {owned_columns}",
+            );
+        }
     }
 
     #[test]
