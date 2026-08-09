@@ -206,6 +206,11 @@ jobs:
       - run: uv run --group examples ty check
       - run: uv run codespell cycling_signatures tests
       - run: uv run pytest
+      - name: Tests at the declared numpy floor
+        if: matrix.python-version == '3.11'
+        run: |
+          uv run --with 'numpy==2.2.*' python -c 'import numpy; print(numpy.__version__)'
+          uv run --with 'numpy==2.2.*' pytest
       - name: Cache example data
         if: matrix.python-version == '3.14'
         uses: actions/cache@v4

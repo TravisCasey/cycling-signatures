@@ -5,24 +5,30 @@ build-backend = "maturin"
 [project]
 name = "cycling-signatures"
 description = "Algebraic topological descriptions of recurrent motions in high-dimensional dynamical systems."
+readme = "README.md"
 requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
 ]
-dependencies = ["numpy>=1.23"]
+dependencies = ["numpy>=2.2"]
 dynamic = ["version"]
 
 [dependency-groups]
-dev = ["maturin>=1.9,<2.0", "pytest>=8", "ruff>=0.14", "ty", "codespell>=2.3"]
+dev = [
+    "codespell>=2.4.3",
+    "maturin>=1.9,<2.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.2",
+    "ty>=0.0.69",
+]
 examples = [
     "matplotlib>=3.10.9",
     "scipy>=1.17.1",
 ]
 docs = [
-    "matplotlib>=3.10.9",
-    "scipy>=1.17.1",
     "sphinx>=9.0.4",
     "sphinx-gallery>=0.21.0",
     "furo>=2025.12.19",

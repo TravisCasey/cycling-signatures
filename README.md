@@ -49,9 +49,8 @@ cd python
 uv run --group docs --group examples sphinx-build -b html docs docs/_build/html
 ```
 
-then open `docs/_build/html/index.html`. The gallery fetches its example
-trajectories from [Zenodo record 21794612](https://zenodo.org/records/21794612)
-on first use and caches them locally after that.
+then open `docs/_build/html/index.html`. The gallery downloads its example
+trajectories on first use and caches them locally after that.
 
 ## Python bindings
 
