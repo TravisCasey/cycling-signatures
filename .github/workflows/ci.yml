@@ -66,7 +66,7 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test
+      - run: cargo +${{ matrix.rust }} test
 
   docs:
     runs-on: ubuntu-latest
@@ -91,7 +91,7 @@ jobs:
       - name: Install MPI and libclang
         if: matrix.name == 'all'
         run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev libclang-dev
-      - run: cargo doc --no-deps ${{ matrix.flags }}
+      - run: cargo +nightly doc --no-deps ${{ matrix.flags }}
 
   features:
     runs-on: ubuntu-latest
@@ -141,7 +141,7 @@ jobs:
         with:
           toolchain: "1.88"
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --all-targets
+      - run: cargo +1.88 check --workspace --all-targets
 
   deny:
     runs-on: ubuntu-latest
