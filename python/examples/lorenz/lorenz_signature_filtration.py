@@ -25,7 +25,7 @@ than an artifact of one threshold choice.
 # of the stored detection band and bounds every filtration query below.
 
 import math
-from bisect import bisect_right
+from bisect import bisect_left
 from collections import Counter
 
 import matplotlib.pyplot as plt
@@ -141,7 +141,7 @@ OTHER_LABEL = len(library) + 1
 labels = np.zeros((ROW_COUNT, len(column_starts)), dtype=np.int8)
 for column, (births, spans) in enumerate(column_filtrations):
     for row, threshold in enumerate(row_thresholds):
-        born = bisect_right(births, threshold) - 1
+        born = bisect_left(births, threshold) - 1
         if born < 0:
             continue
         labels[row, column] = library_index.get(spans[born], OTHER_LABEL)

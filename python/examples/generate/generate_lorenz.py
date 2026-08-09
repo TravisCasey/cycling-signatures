@@ -20,7 +20,6 @@ under ``lorenz/data`` on first use; a file already present there is used as-is,
 and running ``integrate_lorenz.py`` regenerates the same file in place.
 """
 
-import math
 import sys
 from pathlib import Path
 
@@ -39,9 +38,9 @@ import _support
 # RESAMPLE_SPACING is the dense-placement spacing that feeds the cover: tuned
 # against the raw trajectory's own row spacing to stay fine enough that the
 # cover resolves the attractor, at the insertion cost `report` prints.
-# DOWNSAMPLE_SPACING is the detection resolution: the build detects at an
-# explicit threshold just under the cube side, so the stored band runs from
-# the achieved resolution up to the threshold. Detection points are spaced by
+# DOWNSAMPLE_SPACING is the detection resolution: the build detects at the
+# cube side, the top of the detection band, so the stored band runs from the
+# achieved resolution up to the threshold. Detection points are spaced by
 # distance rather than time, so MAX_LENGTH, a count of them, caps cycles by
 # their length through state space. The box size is large enough that
 # recurrences are frequent while the cover still resolves the attractor.
@@ -49,8 +48,8 @@ BOXSIZE = _support.LORENZ_BOXSIZE
 SPHERE_RADIUS = 3.5
 RESAMPLE_SPACING = 0.45
 MAX_LENGTH = 400
-THRESHOLD = math.nextafter(1.0, 0.0)
-DOWNSAMPLE_SPACING = THRESHOLD / 2
+THRESHOLD = 1.0
+DOWNSAMPLE_SPACING = 0.5
 
 
 def build() -> tuple[Path, Path, float, float]:

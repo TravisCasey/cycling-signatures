@@ -120,7 +120,7 @@ for component in COMPONENTS:
 
 # %%
 # **Build one label array per birth cap.** A cell is its class row index plus
-# one where any cycle born by the cap covers it, and zero (white) otherwise.
+# one where any cycle born below the cap covers it, and zero (white) otherwise.
 # The lower caps are quantiles of the windowed cycles' births and the last cap
 # is the band top, so the panels sweep the stored band from the tightest
 # recurrences up to everything the storage detected.
@@ -135,10 +135,10 @@ BIRTH_CAPS = (
 
 
 def coverage_labels(max_birth: float) -> np.ndarray:
-    """Return the label array for cycles born by ``max_birth``."""
+    """Return the label array for cycles born below ``max_birth``."""
     labels = np.zeros((num_rows, num_columns), dtype=np.int8)
     for row_index, first_time, last_time, cycle_birth in windowed_cycles:
-        if cycle_birth > max_birth:
+        if cycle_birth >= max_birth:
             continue
         # Columns whose time falls in the closed span [first_time, last_time].
         first_column = int(np.searchsorted(column_times, first_time, side="left"))
@@ -173,7 +173,7 @@ def build_figure() -> plt.Figure:
         )
         panel.set_yticks(range(num_rows))
         panel.set_yticklabels([f"class {row_index + 1}" for row_index in range(num_rows)])
-        panel.set_title(f"cycles born by t <= {cap:.3f}", loc="left")
+        panel.set_title(f"cycles born by t < {cap:.3f}", loc="left")
 
     panels[-1].set_xlabel("Time")
     figure.supylabel("Homology class (by frequency)")
