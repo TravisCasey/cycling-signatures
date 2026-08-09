@@ -8,6 +8,7 @@
 use std::ops::{Range, RangeBounds};
 
 use chomp3rs::ExecutionBackend;
+use rustc_hash::FxHashMap;
 
 use super::{Component, Cycle, CycleStorage};
 use crate::{
@@ -80,20 +81,26 @@ impl CycleStorage {
 
         let component_classes = embedded.component_classes(&raw_components)?;
 
-        // Deduplicate classes, recording the class index for each component.
-        let mut classes: Vec<F2Vector> = Vec::new();
+        // Deduplicate classes, recording the class id for each component. Ids
+        // are assigned in first-encounter order, which is the order the class
+        // table is serialized in and therefore the order every stored
+        // `class_id` is written against.
+        let mut class_ids: FxHashMap<F2Vector, u32> = FxHashMap::default();
         let mut component_class_ids: Vec<u32> = Vec::with_capacity(component_classes.len());
         for class in component_classes {
-            let class_index = classes
-                .iter()
-                .position(|existing| existing == &class)
-                .unwrap_or_else(|| {
-                    classes.push(class.clone());
-                    classes.len() - 1
-                });
-            component_class_ids
-                .push(u32::try_from(class_index).expect("class table size exceeds u32::MAX"));
+            let next_id =
+                u32::try_from(class_ids.len()).expect("class table size exceeds u32::MAX");
+            component_class_ids.push(*class_ids.entry(class).or_insert(next_id));
         }
+        let mut ordered_classes: Vec<(u32, F2Vector)> = class_ids
+            .into_iter()
+            .map(|(class, class_id)| (class_id, class))
+            .collect();
+        ordered_classes.sort_unstable_by_key(|&(class_id, _)| class_id);
+        let classes: Vec<F2Vector> = ordered_classes
+            .into_iter()
+            .map(|(_, class)| class)
+            .collect();
 
         // Compute birth and assemble Components.
         let mut components: Vec<Component> = Vec::with_capacity(raw_components.len());

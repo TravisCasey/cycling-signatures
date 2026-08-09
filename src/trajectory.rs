@@ -169,10 +169,7 @@ impl Trajectory {
     /// halves.
     #[must_use]
     pub fn resolution(&self, metric: Metric) -> f64 {
-        let measured = metric.over(self.points());
-        (0..self.len().saturating_sub(1))
-            .map(|point_index| measured.distance(point_index, point_index + 1))
-            .fold(0.0_f64, f64::max)
+        metric.over(self.points()).max_consecutive_distance()
     }
 
     /// A stable 64-bit fingerprint of this trajectory's content.

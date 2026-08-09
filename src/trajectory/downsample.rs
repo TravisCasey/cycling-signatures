@@ -66,7 +66,11 @@ impl Trajectory {
     )]
     pub fn downsample(&self, metric: Metric, spacing: f64) -> Result<Self> {
         let points = self.points();
-        let resolution = self.resolution(metric);
+        let row_count = points.nrows();
+        // One view serves both the resolution and the walk below, which
+        // measure the same points under the same metric.
+        let measured = metric.over(points);
+        let resolution = measured.max_consecutive_distance();
         // Negated: also rejects a NaN spacing.
         if !(spacing >= resolution) {
             return Err(Error::SpacingBelowResolution {
@@ -75,14 +79,12 @@ impl Trajectory {
             });
         }
 
-        let row_count = points.nrows();
-
         // Greedy forward walk: keep a point once the following one would
         // exceed `spacing` from the last kept point.
         let mut kept: Vec<usize> = vec![0];
         for row in 1..row_count {
             let anchor = *kept.last().expect("seeded with the first point");
-            if metric.distance(points.row(anchor), points.row(row)) > spacing {
+            if measured.distance(anchor, row) > spacing {
                 kept.push(row - 1);
             }
         }

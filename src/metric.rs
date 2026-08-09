@@ -182,6 +182,15 @@ impl MetricPoints<'_> {
         &self.coordinates[index * self.dimension..][..self.dimension]
     }
 
+    /// The largest distance between consecutive points in view, or `0.0` when
+    /// fewer than two points are in view.
+    #[must_use]
+    pub(crate) fn max_consecutive_distance(&self) -> f64 {
+        (0..self.count.saturating_sub(1))
+            .map(|row| self.distance(row, row + 1))
+            .fold(0.0_f64, f64::max)
+    }
+
     /// The distance between rows `left_row` and `right_row`, equal to
     /// [`Metric::distance`] evaluated on the corresponding original rows.
     ///

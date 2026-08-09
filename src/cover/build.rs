@@ -77,7 +77,11 @@ fn visited_cubes(trajectory: &Trajectory) -> Result<Array2<i64>> {
                 delta,
             });
         }
-        if !visited.contains(cube_buffer.as_slice()) {
+        // A point repeating the previous point's cube adds nothing, and on a
+        // densely resampled trajectory almost every point does. Testing the
+        // membership separately from the insert keeps the key from being cloned
+        // when the cube is already present.
+        if (row == 0 || previous_cube != cube_buffer) && !visited.contains(cube_buffer.as_slice()) {
             visited.insert(cube_buffer.clone());
         }
         mem::swap(&mut previous_cube, &mut cube_buffer);

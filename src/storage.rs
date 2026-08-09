@@ -236,33 +236,27 @@ impl CycleStorage {
         }
         let query = (range.start as u32)..(range.end as u32);
 
-        // One entry per contributing component at its minimum finite birth,
-        // in ascending component id: sorting by component id keeps the entry
-        // order deterministic and independent of the index's (begin, end)
-        // iteration order, and the finiteness filter drops components with no
-        // finite birth before the fold.
-        let mut admitted: Vec<(u32, f64)> = self
-            .index
-            .contained_in(query)
-            .map(|stored| (stored.payload, stored.birth))
-            .filter(|(_, birth)| birth.is_finite())
-            .collect();
-        admitted.sort_unstable_by_key(|&(component_id, _)| component_id);
-        let mut component_minima: Vec<(u32, f64)> = Vec::new();
-        for (component_id, birth) in admitted {
-            match component_minima.last_mut() {
-                Some((last_component_id, last_birth)) if *last_component_id == component_id => {
-                    *last_birth = last_birth.min(birth);
-                },
-                _ => component_minima.push((component_id, birth)),
-            }
+        // One entry per contributing component at its minimum finite birth, in
+        // ascending component id. Component ids are dense in `0..len`, so the
+        // fold indexes them directly and the sweep below emits them in order,
+        // independently of the index's own (begin, end) iteration order.
+        //
+        // Infinity doubles as the "nothing contributed" marker: a component
+        // with no contained cycle keeps it, and one whose every contained cycle
+        // has a non-finite birth cannot lower it, so the same test drops both.
+        let mut minimum_births: Vec<f64> = vec![f64::INFINITY; self.components.len()];
+        for stored in self.index.contained_in(query) {
+            let slot = &mut minimum_births[stored.payload as usize];
+            *slot = slot.min(stored.birth);
         }
-        let births = component_minima
+        let births = minimum_births
             .into_iter()
+            .enumerate()
+            .filter(|(_, birth)| birth.is_finite())
             .map(|(component_id, birth)| {
                 (
                     birth,
-                    self.classes[self.components[component_id as usize].class_id as usize].clone(),
+                    self.classes[self.components[component_id].class_id as usize].clone(),
                 )
             })
             .collect();
