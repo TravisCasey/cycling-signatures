@@ -75,7 +75,7 @@ use crate::{
 ///     embedded = cs.EmbeddedTrajectory(detection, cover, metric)
 #[pyclass(name = "EmbeddedTrajectory")]
 pub(crate) struct PyEmbeddedTrajectory {
-    pub(crate) inner: EmbeddedTrajectory,
+    pub(crate) inner: Arc<EmbeddedTrajectory>,
 }
 
 #[pymethods]
@@ -94,7 +94,9 @@ impl PyEmbeddedTrajectory {
         let inner = py
             .detach(move || EmbeddedTrajectory::new(trajectory, cover, metric))
             .map_err(to_pyerr)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
     /// Runs the entire embedding pipeline over ``interpolator`` in one call.
@@ -234,7 +236,7 @@ impl PyEmbeddedTrajectory {
     ) -> PyResult<PyCyclingSignature> {
         let range = segment_from_py(segment)?;
         let backend = parallel_backend(parallel);
-        let embedded = &self.inner;
+        let embedded = Arc::clone(&self.inner);
         let cycling_signature = py
             .detach(move || embedded.signature(range, threshold, &backend))
             .map_err(to_pyerr)?;
@@ -267,7 +269,7 @@ impl PyEmbeddedTrajectory {
     ///     cubes.
     /// ``IndexError``
     ///     If the segment indices are out of bounds.
-    fn cycle_class(&self, segment: &Bound<'_, PyAny>) -> PyResult<PyHomologyClass> {
+    fn cycle_class(&self, py: Python<'_>, segment: &Bound<'_, PyAny>) -> PyResult<PyHomologyClass> {
         let range = segment_from_py(segment)?;
         if range.end < range.start + 2 {
             return Err(PyValueError::new_err(format!(
@@ -275,7 +277,10 @@ impl PyEmbeddedTrajectory {
                 range.start, range.end
             )));
         }
-        let homology_class = self.inner.cycle_class(range).map_err(to_pyerr)?;
+        let embedded = Arc::clone(&self.inner);
+        let homology_class = py
+            .detach(move || embedded.cycle_class(range))
+            .map_err(to_pyerr)?;
         Ok(PyHomologyClass {
             inner: homology_class,
         })
@@ -382,12 +387,13 @@ impl PyEmbeddedTrajectory {
     ///     If any of the three files cannot be written.
     fn save(
         &self,
+        py: Python<'_>,
         embedded_path: PathBuf,
         trajectory_path: PathBuf,
         cover_path: PathBuf,
     ) -> PyResult<()> {
-        self.inner
-            .save(embedded_path, trajectory_path, cover_path)
+        let embedded = Arc::clone(&self.inner);
+        py.detach(move || embedded.save(embedded_path, trajectory_path, cover_path))
             .map_err(to_pyerr)
     }
 
@@ -423,13 +429,17 @@ impl PyEmbeddedTrajectory {
     ///     cover does not match the fingerprint the envelope recorded.
     #[staticmethod]
     fn load(
+        py: Python<'_>,
         embedded_path: PathBuf,
         trajectory_path: PathBuf,
         cover_path: PathBuf,
     ) -> PyResult<Self> {
-        let inner = EmbeddedTrajectory::load(embedded_path, trajectory_path, cover_path)
+        let inner = py
+            .detach(move || EmbeddedTrajectory::load(embedded_path, trajectory_path, cover_path))
             .map_err(to_pyerr)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 }
 
@@ -455,7 +465,9 @@ impl PyEmbeddedTrajectory {
                 )
             })
             .map_err(to_pyerr)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 }
 

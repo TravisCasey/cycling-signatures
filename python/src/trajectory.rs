@@ -267,8 +267,9 @@ impl PyTrajectory {
     /// ------
     /// ``OSError``
     ///     If the file cannot be written.
-    fn save(&self, path: PathBuf) -> PyResult<()> {
-        self.inner.save(path).map_err(to_pyerr)
+    fn save(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+        let trajectory = Arc::clone(&self.inner);
+        py.detach(move || trajectory.save(path)).map_err(to_pyerr)
     }
 
     /// Loads a trajectory from the file at ``path``.
@@ -291,8 +292,10 @@ impl PyTrajectory {
     /// ``ValueError``
     ///     If the stored data cannot be decoded.
     #[staticmethod]
-    fn load(path: PathBuf) -> PyResult<Self> {
-        let inner = Trajectory::load(path).map_err(to_pyerr)?;
+    fn load(py: Python<'_>, path: PathBuf) -> PyResult<Self> {
+        let inner = py
+            .detach(move || Trajectory::load(path))
+            .map_err(to_pyerr)?;
         Ok(Self {
             inner: Arc::new(inner),
         })

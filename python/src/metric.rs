@@ -52,17 +52,27 @@ fn pairwise_matrix<'py>(
     let array = points.as_array();
     check_even_dimension(metric, array.ncols())?;
     let count = array.nrows();
-    let pairs: Vec<(usize, usize)> = (0..count)
-        .flat_map(|left| (left + 1..count).map(move |right| (left, right)))
-        .collect();
 
-    let mut distances = vec![0.0_f64; pairs.len()];
-    metric.fill_distances(array, &pairs, &mut distances);
-    let mut matrix = Array2::zeros((count, count));
-    for (index, &(left, right)) in pairs.iter().enumerate() {
-        matrix[[left, right]] = distances[index];
-        matrix[[right, left]] = distances[index];
-    }
+    // The coordinates are copied because the fill runs with the interpreter
+    // detached, and a view into the caller's array would be open to mutation
+    // from another Python thread while it does.
+    let coordinates = array.to_owned();
+    let matrix = py.detach(move || {
+        let array = coordinates.view();
+        let mut matrix = Array2::zeros((count, count));
+        let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(count);
+        let mut distances = vec![0.0_f64; count];
+        for left in 0..count {
+            pairs.clear();
+            pairs.extend((left + 1..count).map(|right| (left, right)));
+            metric.fill_distances(array, &pairs, &mut distances[..pairs.len()]);
+            for (index, &(_, right)) in pairs.iter().enumerate() {
+                matrix[[left, right]] = distances[index];
+                matrix[[right, left]] = distances[index];
+            }
+        }
+        matrix
+    });
     Ok(matrix.to_pyarray(py))
 }
 

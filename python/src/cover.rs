@@ -148,8 +148,9 @@ impl PyCubicalCover {
     /// ------
     /// ``OSError``
     ///     If the file cannot be written.
-    fn save(&self, path: PathBuf) -> PyResult<()> {
-        self.inner.save(path).map_err(to_pyerr)
+    fn save(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+        let cover = Arc::clone(&self.inner);
+        py.detach(move || cover.save(path)).map_err(to_pyerr)
     }
 
     /// Loads a cover from the file at ``path``.
@@ -174,8 +175,10 @@ impl PyCubicalCover {
     /// ``ValueError``
     ///     If the stored data cannot be decoded.
     #[staticmethod]
-    fn load(path: PathBuf) -> PyResult<Self> {
-        let inner = CubicalCover::load(path).map_err(to_pyerr)?;
+    fn load(py: Python<'_>, path: PathBuf) -> PyResult<Self> {
+        let inner = py
+            .detach(move || CubicalCover::load(path))
+            .map_err(to_pyerr)?;
         Ok(Self {
             inner: Arc::new(inner),
         })

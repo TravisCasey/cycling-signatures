@@ -3,7 +3,7 @@
 
 //! Python wrappers for the `CycleStorage` type and its query results.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use cycling_signatures::{Component, Cycle, CycleStorage};
 use pyo3::{exceptions::PyIndexError, prelude::*};
@@ -75,7 +75,7 @@ pub(crate) struct PyComponent {
 /// ``Component`` with that component id (negative indices count from the end).
 #[pyclass(name = "CycleStorage")]
 pub(crate) struct PyCycleStorage {
-    pub(crate) inner: CycleStorage,
+    pub(crate) inner: Arc<CycleStorage>,
 }
 
 #[pymethods]
@@ -168,7 +168,8 @@ impl PyComponent {
     /// Returns
     /// -------
     /// list of ``Cycle``
-    ///     Ordered by ``(start, stop)``.
+    ///     Ordered by ``(start, stop)``. Each is a copy, so the call costs the
+    ///     component's cycle count.
     #[must_use]
     fn cycles(&self) -> Vec<PyCycle> {
         self.inner
@@ -304,13 +305,13 @@ impl PyCycleStorage {
     ) -> PyResult<Self> {
         let range = segment_from_py(segment)?;
         let backend = parallel_backend(parallel);
-        let embedded_ref = &embedded.borrow().inner;
+        let embedded = Arc::clone(&embedded.borrow().inner);
         let inner = py
-            .detach(move || {
-                CycleStorage::build(embedded_ref, range, max_length, threshold, &backend)
-            })
+            .detach(move || CycleStorage::build(&embedded, range, max_length, threshold, &backend))
             .map_err(to_pyerr)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
     /// Returns the half-open point-index range ``(start, stop)`` covered by
@@ -402,6 +403,10 @@ impl PyCycleStorage {
     /// accept. Components are ordered by their least cycle under
     /// ``(start, stop)``, with each component's cycles in that order.
     ///
+    /// Each returned component carries a copy of its cycles, so this call
+    /// costs the storage's whole cycle count. Reach for ``component`` when a
+    /// few components are wanted, and for ``len`` when only the count is.
+    ///
     /// Returns
     /// -------
     /// list of ``Component``
@@ -426,6 +431,8 @@ impl PyCycleStorage {
     /// Returns
     /// -------
     /// ``Component``
+    ///     Carries a copy of the component's cycles, so the call costs that
+    ///     component's cycle count.
     ///
     /// Raises
     /// ------
@@ -484,9 +491,16 @@ impl PyCycleStorage {
     ///     If ``segment`` is not a valid range.
     /// ``IndexError``
     ///     If ``segment`` falls outside the stored extent.
-    fn signature(&self, segment: &Bound<'_, PyAny>) -> PyResult<PyCyclingSignature> {
+    fn signature(
+        &self,
+        py: Python<'_>,
+        segment: &Bound<'_, PyAny>,
+    ) -> PyResult<PyCyclingSignature> {
         let range = segment_from_py(segment)?;
-        let signature = self.inner.signature(range).map_err(to_pyerr)?;
+        let storage = Arc::clone(&self.inner);
+        let signature = py
+            .detach(move || storage.signature(range))
+            .map_err(to_pyerr)?;
         Ok(PyCyclingSignature { inner: signature })
     }
 
@@ -556,8 +570,9 @@ impl PyCycleStorage {
     /// ------
     /// ``OSError``
     ///     If the file cannot be written.
-    fn save(&self, path: PathBuf) -> PyResult<()> {
-        self.inner.save(path).map_err(to_pyerr)
+    fn save(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+        let storage = Arc::clone(&self.inner);
+        py.detach(move || storage.save(path)).map_err(to_pyerr)
     }
 
     /// Loads a ``CycleStorage`` from a previously saved file at ``path``.
@@ -581,9 +596,13 @@ impl PyCycleStorage {
     /// ``ValueError``
     ///     If the stored data cannot be decoded.
     #[staticmethod]
-    fn load(path: PathBuf) -> PyResult<Self> {
-        let inner = CycleStorage::load(path).map_err(to_pyerr)?;
-        Ok(Self { inner })
+    fn load(py: Python<'_>, path: PathBuf) -> PyResult<Self> {
+        let inner = py
+            .detach(move || CycleStorage::load(path))
+            .map_err(to_pyerr)?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 }
 
