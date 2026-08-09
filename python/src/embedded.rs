@@ -30,8 +30,8 @@ use crate::{
 /// cubes. The result can be saved with ``save`` and reloaded with ``load``.
 ///
 /// The ``resolution`` method reports the largest distance between consecutive
-/// points; any adjacency threshold passed to ``signature`` must be at least
-/// this value.
+/// points; any adjacency threshold passed to ``signature`` must be above this
+/// value.
 ///
 /// Parameters
 /// ----------
@@ -203,8 +203,9 @@ impl PyEmbeddedTrajectory {
     ///     A half-open range of point indices, given as a Python ``range`` or
     ///     a ``(start, stop)`` integer tuple.
     /// threshold : float
-    ///     The largest endpoint distance admitted as a cycle. Must be at
-    ///     least ``resolution`` and strictly below ``1.0`` (the cube side).
+    ///     Point pairs strictly closer than this are admitted as cycle
+    ///     endpoints. Must be above ``resolution`` and at most ``1.0`` (the
+    ///     cube side).
     /// parallel : bool, optional
     ///     Whether to distribute the work across a thread pool. Defaults to
     ///     ``True``; pass ``False`` to run sequentially on the calling
@@ -218,8 +219,8 @@ impl PyEmbeddedTrajectory {
     /// Raises
     /// ------
     /// ``ValueError``
-    ///     If ``segment`` is not a valid range, if ``threshold`` is below
-    ///     ``resolution`` or not below ``1.0``, or if a detected cycle's
+    ///     If ``segment`` is not a valid range, if ``threshold`` is at or
+    ///     below ``resolution`` or above ``1.0``, or if a detected cycle's
     ///     endpoint points fall in non-adjacent cubes.
     /// ``IndexError``
     ///     If the segment indices are out of range.
@@ -283,7 +284,7 @@ impl PyEmbeddedTrajectory {
     /// Returns the largest distance between consecutive points in the
     /// embedded trajectory: its detection resolution.
     ///
-    /// Any adjacency threshold passed to ``signature`` must be at least this
+    /// Any adjacency threshold passed to ``signature`` must be above this
     /// value. Equals ``Trajectory.resolution`` under the embedded metric.
     ///
     /// Returns

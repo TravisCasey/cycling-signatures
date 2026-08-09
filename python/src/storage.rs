@@ -97,7 +97,8 @@ impl PyCycle {
     /// Returns
     /// -------
     /// float
-    ///     The smallest adjacency threshold that admits this cycle.
+    ///     The cycle is admitted at every adjacency threshold above this
+    ///     distance.
     #[must_use]
     fn birth(&self) -> f64 {
         self.inner.birth()
@@ -269,9 +270,9 @@ impl PyCycleStorage {
     /// max_length : int
     ///     The largest cycle point count to detect. Must be at least ``2``.
     /// threshold : float
-    ///     The largest endpoint distance admitted as a cycle. Must be at
-    ///     least the embedded trajectory's ``resolution`` and strictly below
-    ///     ``1.0`` (the cube side).
+    ///     Point pairs strictly closer than this are admitted as cycle
+    ///     endpoints. Must be above the embedded trajectory's ``resolution``
+    ///     and at most ``1.0`` (the cube side).
     /// parallel : bool, optional
     ///     Whether to distribute the work across a thread pool. Defaults to
     ///     ``True``; pass ``False`` to run sequentially on the calling
@@ -286,9 +287,9 @@ impl PyCycleStorage {
     /// ------
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if ``max_length`` is less
-    ///     than ``2``, if ``threshold`` is below the embedded trajectory's
-    ///     ``resolution`` or not below ``1.0``, or if a detected cycle's
-    ///     endpoint points fall in non-adjacent cubes.
+    ///     than ``2``, if ``threshold`` is at or below the embedded
+    ///     trajectory's ``resolution`` or above ``1.0``, or if a detected
+    ///     cycle's endpoint points fall in non-adjacent cubes.
     /// ``IndexError``
     ///     If the segment indices are out of bounds.
     #[staticmethod]

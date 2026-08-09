@@ -84,9 +84,9 @@ Cycles, classes, and signatures
 ---------------------------------
 
 A **cycle** is a detected near-recurrent segment of the detection trajectory:
-its first and last points are within the adjacency threshold (defined below) of
-each other. Its **birth** is the metric distance between those two endpoints,
-the smallest threshold at which the cycle is admitted.
+its first and last points are strictly closer to each other than the adjacency
+threshold (defined below). Its **birth** is the metric distance between those
+two endpoints, and the cycle is admitted at every threshold above it.
 
 Every cycle has a **class**: the homology object recording which cover
 generators the cycle wraps. A **class vector** is that class's coordinates in
@@ -106,7 +106,7 @@ per-generator births at which each independent class first enters, ordered by
 birth, together with those classes and the subspace they span. `span` returns
 the subspace spanned by every one of them, complete up to the signature's
 `threshold_max`; `span_at` returns the subspace spanned by only the classes
-born at or below a smaller threshold, and `rank_at` its rank. The **signature**
+born below a smaller threshold, and `rank_at` its rank. The **signature**
 is the invariant this library computes.
 
 Windows, segments, and the storage extent
@@ -127,20 +127,29 @@ Adjacency threshold, detection band, birth cap, and box size
 ---------------------------------------------------------------
 
 The **adjacency threshold** is the metric distance at which near-recurrent
-cycles are detected: point pairs at metric distance at most the threshold are
+cycles are detected: point pairs strictly closer than the threshold are
 admitted as cycle endpoints. Its valid interval is the **detection band**,
-`resolution() <= threshold < 1`: the lower end is the detection trajectory's own
-resolution (the largest gap between its consecutive points, below which
-recurrence is meaningless), and the upper end is strict because a pair within
-metric distance 1 lands in cubes differing by at most one position per axis,
-which is what keeps a cycle's closing step (the walk between its two endpoints)
-well defined in the cubical cover. A `CycleStorage` is filtered at one
-threshold; its signature queries can restrict further, to any
-`t <= threshold_max()`, but never exceed the threshold detection ran at.
+`resolution() < threshold <= 1`.
+
+The lower end is the detection trajectory's own resolution, the largest gap
+between its consecutive points. Above it every consecutive pair of detection
+points is admitted, so cycles a single step apart are comparable. Sampling a
+trajectory finer than the threshold it will undergo detection at lowers this
+resolution and increases the size of the filtration band.
+
+The upper end is the cube side. Two points farther apart than one cube side can
+land in cubes two positions apart on an axis, which would leave a cycle's
+closing step (the walk between its two endpoints) undefined in the cubical
+cover; within one cube side the cubes differ by at most one position per axis
+and meet.
+
+A `CycleStorage` is filtered at one threshold; its signature queries can
+restrict further, to any `t <= threshold_max()`, but never exceed the threshold
+detection ran at.
 
 **Birth cap** is a presentation term the gallery uses: the threshold a single
 figure or panel restricts its signatures to, passed to `span_at` or `rank_at`.
-A panel admits every class born at or below its cap and hides the rest, so a
+A panel admits every class born below its cap and hides the rest, so a
 figure stacked by birth cap shows one window at a sequence of caps. Every cap
 sits at or below the threshold the storage was detected at.
 

@@ -50,7 +50,7 @@ impl PyCyclingSignature {
         self.inner.rank()
     }
 
-    /// Returns the number of independent loop types with birth at most
+    /// Returns the number of independent loop types with birth below
     /// ``threshold``.
     ///
     /// Parameters
@@ -71,7 +71,7 @@ impl PyCyclingSignature {
         self.inner.rank_at(threshold).map_err(to_pyerr)
     }
 
-    /// Returns the subspace spanned by generators with birth at most
+    /// Returns the subspace spanned by generators with birth below
     /// ``threshold``.
     ///
     /// Parameters

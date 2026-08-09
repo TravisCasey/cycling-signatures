@@ -4,11 +4,11 @@
 //! Connected components of recurrent cycles over a trajectory segment.
 //!
 //! Detection reads the grid of endpoint pairs `(start, end)` over the segment
-//! and admits the pairs whose two points lie within the adjacency threshold.
-//! An admitted pair is the cycle that runs along the trajectory from `start`
-//! to `end` and closes back to `start`. A component is a connected region of
-//! the admitted set in that grid: two admitted pairs are neighbors when they
-//! share one endpoint and their other two endpoints are consecutive
+//! and admits the pairs whose two points lie strictly within the adjacency
+//! threshold. An admitted pair is the cycle that runs along the trajectory from
+//! `start` to `end` and closes back to `start`. A component is a connected
+//! region of the admitted set in that grid: two admitted pairs are neighbors
+//! when they share one endpoint and their other two endpoints are consecutive
 //! trajectory points.
 //!
 //! Neighboring cycles are homologous in the cover, so a component carries a
