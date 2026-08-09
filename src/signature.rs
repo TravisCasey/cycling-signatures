@@ -6,8 +6,8 @@
 //! A [`CyclingSignature`] is the filtered `F_2` subspace of cubical-cover
 //! homology classes spanned by a trajectory's recurrent cycles: at
 //! adjacency threshold `t`, the signature is the span of every retained
-//! generator whose birth (the adjacency threshold at which it first becomes
-//! independent of the generators before it) is at most `t`.
+//! generator whose birth (the endpoint distance at which it first becomes
+//! independent of the generators before it) is below `t`.
 
 use chomp3rs::{F2, Ring};
 
@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// One retained generator of a filtered [`CyclingSignature`]: a homology
-/// class together with the adjacency threshold ("birth") at which it enters
+/// class together with the endpoint distance ("birth") above which it enters
 /// the filtration.
 ///
 /// The specific class a generator carries is an implementation detail of the
@@ -30,8 +30,9 @@ pub struct SignatureGenerator {
 }
 
 impl SignatureGenerator {
-    /// The adjacency threshold at which this generator's class first becomes
-    /// independent of the generators with smaller birth.
+    /// The endpoint distance at which this generator's class first becomes
+    /// independent of the generators with smaller birth. The class enters the
+    /// filtration at every threshold above it.
     #[must_use]
     pub fn birth(&self) -> f64 {
         self.birth
@@ -125,8 +126,7 @@ impl CyclingSignature {
         &self.span
     }
 
-    /// The number of independent cycling classes with birth at most
-    /// `threshold`.
+    /// The number of independent cycling classes with birth below `threshold`.
     ///
     /// # Errors
     ///
@@ -142,10 +142,10 @@ impl CyclingSignature {
         }
         Ok(self
             .generators
-            .partition_point(|generator| generator.birth <= threshold))
+            .partition_point(|generator| generator.birth < threshold))
     }
 
-    /// The `F_2` subspace spanned by every generator with birth at most
+    /// The `F_2` subspace spanned by every generator with birth below
     /// `threshold`.
     ///
     /// # Errors
@@ -218,10 +218,14 @@ mod tests {
             .collect();
         assert_eq!(retained, vec![0.2, 0.5, 0.7]);
 
+        // A generator enters the filtration strictly above its birth, so the
+        // step sits between 0.2 and the next representable value above it.
         assert_eq!(signature.rank_at(0.1).unwrap(), 0);
-        assert_eq!(signature.rank_at(0.2).unwrap(), 1);
+        assert_eq!(signature.rank_at(0.2).unwrap(), 0);
+        assert_eq!(signature.rank_at(0.2_f64.next_up()).unwrap(), 1);
+        assert_eq!(signature.rank_at(0.5).unwrap(), 1);
         assert_eq!(signature.rank_at(0.6).unwrap(), 2);
-        assert_eq!(signature.rank_at(1.0).unwrap(), 3);
+        // A query at the top of the band returns every retained generator.
         assert_eq!(signature.rank_at(1.0).unwrap(), signature.rank());
 
         let expected_span_at_0_6 = F2Subspace::new(vec![basis_two, basis_zero_one], 3).unwrap();

@@ -234,14 +234,15 @@ pub enum Error {
         point_count: usize,
     },
 
-    /// A cycle-detection threshold below the embedded trajectory's
-    /// consecutive-point resolution under its metric: cycles below this
-    /// resolution are not meaningfully detectable.
+    /// A cycle-detection threshold at or below the embedded trajectory's
+    /// consecutive-point resolution under its metric: a threshold above the
+    /// resolution admits every consecutive pair of points, which is what makes
+    /// cycles a single step apart comparable.
     #[error(
-        "adjacency threshold {threshold} is below the trajectory's consecutive-point resolution \
-         {resolution}"
+        "adjacency threshold {threshold} is not above the trajectory's consecutive-point \
+         resolution {resolution}"
     )]
-    ThresholdBelowResolution {
+    ThresholdNotAboveResolution {
         /// The threshold the caller supplied.
         threshold: f64,
         /// The embedded trajectory's consecutive-point resolution under its
@@ -249,14 +250,16 @@ pub enum Error {
         resolution: f64,
     },
 
-    /// A cycle-detection threshold at or above the cube side, 1.
+    /// A cycle-detection threshold above the cube side, 1.
     ///
     /// Points within the cube side of each other land in cubes differing by
     /// at most one position per axis, so those cubes meet: a cycle's closing
     /// step is then a well-defined staircase, and the cubes of mutually
     /// admitted points span a block sharing a common vertex, which is what
-    /// makes the cycles of one component homologous.
-    #[error("adjacency threshold {threshold} is not below the cube side")]
+    /// makes the cycles of one component homologous. Two points farther apart
+    /// than the cube side can land in cubes two positions apart on an axis,
+    /// leaving the closing step undefined.
+    #[error("adjacency threshold {threshold} is above the cube side")]
     ThresholdAboveCubeSide {
         /// The threshold the caller supplied.
         threshold: f64,

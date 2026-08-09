@@ -30,8 +30,8 @@ impl EmbeddedTrajectory {
     /// ([`CyclingSignature::threshold_max`]).
     ///
     /// `threshold` is the adjacency threshold for cycle detection: pairs of
-    /// trajectory points with metric distance `<= threshold` are admitted as
-    /// cycle endpoints. Detection is dispatched across `backend`.
+    /// trajectory points with metric distance strictly below `threshold` are
+    /// admitted as cycle endpoints. Detection is dispatched across `backend`.
     ///
     /// This is not a cheap query. A signature has no cycle-length cap, so it
     /// evaluates the metric over every pair of points in the segment, a cost
@@ -43,10 +43,10 @@ impl EmbeddedTrajectory {
     ///
     /// - [`Error::SegmentOutOfBounds`](crate::Error::SegmentOutOfBounds) if
     ///   `segment` does not normalize to a valid sub-range of the trajectory.
-    /// - [`Error::ThresholdBelowResolution`](crate::Error::ThresholdBelowResolution)
-    ///   if `threshold < self.resolution()`.
+    /// - [`Error::ThresholdNotAboveResolution`](crate::Error::ThresholdNotAboveResolution)
+    ///   if `threshold <= self.resolution()`.
     /// - [`Error::ThresholdAboveCubeSide`](crate::Error::ThresholdAboveCubeSide)
-    ///   if `threshold` is at or above the cube side.
+    ///   if `threshold` is above the cube side.
     pub fn signature(
         &self,
         segment: impl RangeBounds<usize>,

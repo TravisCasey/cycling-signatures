@@ -16,7 +16,7 @@
 //! the block of cubes spanned by their three distinct endpoints. Those three
 //! points are pairwise within the threshold (two by admission, the
 //! consecutive pair because a valid threshold clears the trajectory's own
-//! resolution), and a valid threshold also stays below 1, the cube side
+//! resolution), and a valid threshold also does not exceed 1, the cube side
 //! ([`Error::ThresholdAboveCubeSide`]): together these make the loop
 //! confined to their cubes contract.
 

@@ -49,11 +49,11 @@ def test_sequential_backend_agrees_with_default(square_loop_embedded):
     assert sequential_signature.rank_at(0.5) == default_signature.rank_at(0.5)
 
 
-def test_threshold_below_resolution_raises(square_loop_embedded):
+def test_threshold_not_above_resolution_raises(square_loop_embedded):
+    segment = (0, len(square_loop_embedded))
+    resolution = square_loop_embedded.resolution()
     with pytest.raises(ValueError):
-        square_loop_embedded.signature(
-            (0, len(square_loop_embedded)), square_loop_embedded.resolution() / 2.0
-        )
+        square_loop_embedded.signature(segment, resolution)
 
 
 def test_save_load_roundtrip(tmp_path, square_loop_embedded):
@@ -77,9 +77,12 @@ def test_cycle_class_rejects_short_segment(square_loop_embedded):
         square_loop_embedded.cycle_class((0, 1))
 
 
-def test_signature_rejects_threshold_at_cube_side(square_loop_embedded):
+def test_signature_rejects_threshold_above_cube_side(square_loop_embedded):
+    # The band closes at the cube side, so 1.0 itself is in band.
+    segment = range(0, len(square_loop_embedded))
+    assert square_loop_embedded.signature(segment, 1.0).rank() == 1
     with pytest.raises(ValueError):
-        square_loop_embedded.signature(range(0, len(square_loop_embedded)), 1.0)
+        square_loop_embedded.signature(segment, 1.001)
 
 
 def test_cover_missing_the_trajectory_cubes_is_rejected(square_loop_points):

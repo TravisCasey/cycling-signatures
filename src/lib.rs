@@ -53,7 +53,7 @@
 //! cube units before constructing it; the crate does not scale or center them
 //! itself. The resample spacing sets cover fidelity; the downsample spacing
 //! sets detection resolution and is the primary cost lever. The detection
-//! band is `resolution() <= threshold < 1`, where `resolution()` is
+//! band is `resolution() < threshold <= 1`, where `resolution()` is
 //! [`EmbeddedTrajectory::resolution`]; see [`Error::ThresholdAboveCubeSide`]
 //! for why the upper bound is what it is.
 //!

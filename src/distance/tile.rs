@@ -75,7 +75,7 @@ fn partition_tile(tile: ArrayView2<'_, f64>, base: usize, threshold: f64) -> Til
     // Row-major pass, which suits the predecessor convention (both required
     // predecessors are at `row - 1`).
     for ((row, column), &distance) in tile.indexed_iter() {
-        if distance > threshold {
+        if distance >= threshold {
             continue;
         }
         let id = disjoint.insert();
@@ -108,9 +108,10 @@ fn partition_tile(tile: ArrayView2<'_, f64>, base: usize, threshold: f64) -> Til
         }
     }
 
-    // Row 0 is the self-comparison at every column and is always admitted, so
-    // the components carrying the trivial cycle are exactly those holding a
-    // row-0 entry.
+    // Row 0 is the self-comparison at every column, at distance 0, and a legal
+    // threshold exceeds the trajectory's consecutive-point resolution, which is
+    // never negative. Row 0 is therefore admitted throughout, so the components
+    // carrying the trivial cycle are exactly those holding a row-0 entry.
     let mut trivial_roots: FxHashSet<usize> = FxHashSet::default();
     for &id in &entry_ids[..width] {
         assert_ne!(

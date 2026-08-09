@@ -191,26 +191,26 @@ impl EmbeddedTrajectory {
     /// detection resolution of this embedding, equal to
     /// [`Trajectory::resolution`] under the embedded metric.
     ///
-    /// This is the smallest usable cycle-detection threshold: below it some
-    /// consecutive pair of points is farther apart than the threshold, and
-    /// cycles a single step apart can no longer be shown to be homologous.
+    /// A cycle-detection threshold must exceed this value: above it every
+    /// consecutive pair of points is admitted, so cycles a single step apart
+    /// can be shown to be homologous.
     #[must_use]
     pub fn resolution(&self) -> f64 {
         self.resolution
     }
 
-    /// Returns an error if `threshold` is below the embedded trajectory's
-    /// consecutive-point resolution under its metric (including when it is
-    /// NaN), or at or above 1, the cube side.
+    /// Returns an error if `threshold` is at or below the embedded
+    /// trajectory's consecutive-point resolution under its metric (including
+    /// when it is NaN), or above 1, the cube side.
     pub(crate) fn check_threshold(&self, threshold: f64) -> Result<()> {
         // Negated: rejects a NaN threshold before the plain check below runs.
-        if !(threshold >= self.resolution) {
-            return Err(Error::ThresholdBelowResolution {
+        if !(threshold > self.resolution) {
+            return Err(Error::ThresholdNotAboveResolution {
                 threshold,
                 resolution: self.resolution,
             });
         }
-        if threshold >= 1.0 {
+        if threshold > 1.0 {
             return Err(Error::ThresholdAboveCubeSide { threshold });
         }
         Ok(())

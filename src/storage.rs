@@ -500,21 +500,28 @@ mod tests {
         let birth_one = births[0];
         let birth_two = births[1];
 
+        // A filtered query restricts an already-computed filtration rather than
+        // re-detecting, so it answers at thresholds detection itself rejects,
+        // the trajectory's own resolution among them.
         assert_eq!(
             storage
                 .signature(..)
                 .unwrap()
-                .rank_at(birth_one.next_down())
+                .rank_at(embedded.resolution())
                 .unwrap(),
             0
         );
 
-        // From `birth_one` through the top of the band, every discontinuity
-        // threshold is inside the embedded path's valid domain, so both
-        // paths are compared directly.
-        for (threshold, expected_rank) in
-            [(birth_one, 1), (birth_two.next_down(), 1), (birth_two, 2)]
-        {
+        // A class enters the filtration strictly above its birth, so each rank
+        // steps between a birth and the next representable value above it.
+        // Every threshold here is inside the embedded path's valid domain, so
+        // both paths are compared directly.
+        for (threshold, expected_rank) in [
+            (birth_one, 0),
+            (birth_one.next_up(), 1),
+            (birth_two, 1),
+            (birth_two.next_up(), 2),
+        ] {
             let storage_signature = storage.signature(..).unwrap();
             let embedded_signature = embedded
                 .signature(.., threshold, &ExecutionBackend::Sequential)
@@ -580,7 +587,13 @@ mod tests {
         .unwrap();
 
         let segments: &[Range<usize>] = &[0..max_length, 0..8, 8..max_length, 4..13];
-        let thresholds = [resolution, f64::midpoint(resolution, band_top), band_top];
+        // The band opens above the resolution, so the lowest threshold
+        // detection can answer at is the next representable value above it.
+        let thresholds = [
+            resolution.next_up(),
+            f64::midpoint(resolution, band_top),
+            band_top,
+        ];
 
         for segment in segments {
             let storage_signature = storage.signature(segment.clone()).unwrap();
@@ -668,7 +681,7 @@ mod tests {
     }
 
     #[test]
-    fn threshold_below_resolution_is_rejected() {
+    fn threshold_not_above_resolution_is_rejected() {
         let embedded = loop_trajectory();
         let lower_threshold = embedded.resolution() - 0.1;
         let outcome = CycleStorage::build(
@@ -680,9 +693,25 @@ mod tests {
         );
         assert!(matches!(
             outcome,
-            Err(Error::ThresholdBelowResolution { threshold, resolution })
+            Err(Error::ThresholdNotAboveResolution { threshold, resolution })
                 if (threshold - lower_threshold).abs() < 1e-12
                     && (resolution - embedded.resolution()).abs() < 1e-12
+        ));
+
+        // The band opens strictly above the resolution, so the resolution
+        // itself is out of band: at it, the widest consecutive pair of points
+        // is not admitted.
+        let boundary_outcome = CycleStorage::build(
+            &embedded,
+            ..,
+            25,
+            embedded.resolution(),
+            &ExecutionBackend::Sequential,
+        );
+        assert!(matches!(
+            boundary_outcome,
+            Err(Error::ThresholdNotAboveResolution { threshold, .. })
+                if (threshold - embedded.resolution()).abs() < 1e-12
         ));
 
         // A NaN threshold triggers the same negated guard.
@@ -690,33 +719,48 @@ mod tests {
             CycleStorage::build(&embedded, .., 25, f64::NAN, &ExecutionBackend::Sequential);
         assert!(matches!(
             nan_outcome,
-            Err(Error::ThresholdBelowResolution { threshold, .. }) if threshold.is_nan()
+            Err(Error::ThresholdNotAboveResolution { threshold, .. }) if threshold.is_nan()
         ));
     }
 
     #[test]
-    fn threshold_at_cube_side_is_rejected() {
-        // A threshold of exactly 1.0 (the cube side) is never valid: the
-        // thickening that justifies a detected class has half-threshold
-        // radius, which must stay strictly below 1/2. The largest
-        // representable value below it is still in-band for this fixture
-        // (the resolution is far below 1) and must succeed.
+    fn threshold_above_cube_side_is_rejected() {
+        // The band closes at the cube side: a pair is admitted only when it
+        // is strictly closer than the threshold, so a threshold of exactly
+        // 1.0 still leaves every admitted distance below the cube side.
         let embedded = loop_trajectory();
-        let outcome = CycleStorage::build(&embedded, .., 25, 1.0, &ExecutionBackend::Sequential);
+        assert!(CycleStorage::build(&embedded, .., 25, 1.0, &ExecutionBackend::Sequential).is_ok());
+
+        let outcome = CycleStorage::build(
+            &embedded,
+            ..,
+            25,
+            1.0 + f64::EPSILON,
+            &ExecutionBackend::Sequential,
+        );
         assert!(matches!(
             outcome,
-            Err(Error::ThresholdAboveCubeSide { threshold }) if (threshold - 1.0).abs() < 1e-12
+            Err(Error::ThresholdAboveCubeSide { threshold })
+                if (threshold - (1.0 + f64::EPSILON)).abs() < 1e-12
         ));
-        assert!(
-            CycleStorage::build(
-                &embedded,
-                ..,
-                25,
-                1.0_f64.next_down(),
-                &ExecutionBackend::Sequential,
-            )
-            .is_ok()
-        );
+    }
+
+    #[test]
+    fn coincident_points_reject_a_zero_threshold() {
+        // A trajectory whose points all coincide has a resolution of zero, so
+        // every threshold is out of band and the lowest one a caller can name
+        // is reported rather than reaching detection, where the tile's
+        // self-comparisons sit at distance zero.
+        let points = Array2::from_shape_vec((4, 2), vec![0.5; 8]).unwrap();
+        let embedded = embed_euclidean(Trajectory::new(points.view()).unwrap()).unwrap();
+        assert!((embedded.resolution() - 0.0).abs() < 1e-12);
+
+        let outcome = CycleStorage::build(&embedded, .., 3, 0.0, &ExecutionBackend::Sequential);
+        assert!(matches!(
+            outcome,
+            Err(Error::ThresholdNotAboveResolution { threshold, resolution })
+                if threshold.abs() < 1e-12 && resolution.abs() < 1e-12
+        ));
     }
 
     #[test]

@@ -43,15 +43,15 @@ impl Trajectory {
     /// let values =
     ///     array![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0], [4.0, 0.0]];
     /// let spline = CubicSpline::new(knots, values.view()).unwrap();
-    /// let threshold = 0.5;
+    /// let spacing = 0.5;
     ///
     /// let dense = Trajectory::resample(&spline, Metric::Euclidean, 0.05).unwrap();
     /// let cover =
     ///     CubicalCover::build(&dense, &ExecutionBackend::default()).unwrap();
-    /// let detection = dense.downsample(Metric::Euclidean, threshold).unwrap();
+    /// let detection = dense.downsample(Metric::Euclidean, spacing).unwrap();
     /// let embedded =
     ///     EmbeddedTrajectory::new(detection, cover, Metric::Euclidean).unwrap();
-    /// assert!(embedded.resolution() <= threshold);
+    /// assert!(embedded.resolution() <= spacing);
     /// ```
     ///
     /// # Errors
