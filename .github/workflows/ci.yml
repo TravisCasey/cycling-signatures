@@ -1,4 +1,4 @@
-name: Rust CI
+name: CI
 
 on:
   push:
@@ -8,10 +8,16 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   format:
@@ -37,7 +43,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets
+      - run: cargo clippy -p cycling_signatures --all-targets -- -D warnings
+      - run: cargo clippy -p cycling-signatures-py --all-targets -- -D warnings
 
   tests:
     runs-on: ${{ matrix.os }}
@@ -61,18 +68,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
 
-  # The rayon and mpi features gate no source in this crate; they only select a
-  # chomp3rs execution backend. Documenting without serde and with it therefore
-  # covers every configuration rustdoc can distinguish.
   docs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - name: none
-            flags: ""
+            flags: "--document-private-items"
           - name: serde
-            flags: "--features serde"
+            flags: "--document-private-items --features serde"
+          - name: all
+            flags: "--all-features"
     name: docs/${{ matrix.name }}
     env:
       RUSTDOCFLAGS: "-Dwarnings --cfg docsrs"
@@ -82,12 +88,11 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      - run: cargo doc --no-deps --document-private-items ${{ matrix.flags }}
+      - name: Install MPI and libclang
+        if: matrix.name == 'all'
+        run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev libclang-dev
+      - run: cargo doc --no-deps ${{ matrix.flags }}
 
-  # The format, clippy, and tests jobs cover the featureless build. These are
-  # the remaining feature selections that reach a distinct compilation or a
-  # distinct backend. An mpi row is deliberately absent: it needs a system MPI
-  # implementation and compiles the same source as serde.
   features:
     runs-on: ubuntu-latest
     strategy:
@@ -95,8 +100,10 @@ jobs:
         include:
           - name: serde
             flags: "--features serde"
+            lint: true
           - name: rayon
             flags: "--features rayon"
+            lint: false
     name: features/${{ matrix.name }}
     steps:
       - uses: actions/checkout@v5
@@ -106,8 +113,35 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets ${{ matrix.flags }}
+      - if: matrix.lint
+        run: cargo clippy -p cycling_signatures --all-targets ${{ matrix.flags }} -- -D warnings
       - run: cargo test ${{ matrix.flags }}
+
+  mpi:
+    runs-on: ubuntu-latest
+    name: mpi
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install MPI and libclang
+        run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev libclang-dev
+      - run: cargo check --features mpi
+
+  msrv:
+    runs-on: ubuntu-latest
+    name: msrv
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets
 
   deny:
     runs-on: ubuntu-latest
@@ -187,7 +221,19 @@ jobs:
     name: Success
     runs-on: ubuntu-latest
     needs:
-      [format, clippy, tests, docs, features, deny, machete, spellcheck, python]
+      [
+        format,
+        clippy,
+        tests,
+        docs,
+        features,
+        mpi,
+        msrv,
+        deny,
+        machete,
+        spellcheck,
+        python,
+      ]
     if: always()
     steps:
       - name: check if any dependency failed

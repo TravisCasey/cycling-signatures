@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # CI verification script for cycling_signatures.
+# Requires cargo, a nightly toolchain, cargo-deny, cargo-machete,
+# cargo-spellcheck and uv. An MPI implementation is optional: without mpicc the
+# MPI steps are skipped rather than failed.
 
 set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,13 +44,21 @@ skip_step() {
     echo -e "${YELLOW}  SKIPPED: $2${RESET}"
 }
 
+missing=()
+command -v uv >/dev/null 2>&1 || missing+=("uv")
+cargo +nightly --version >/dev/null 2>&1 || missing+=("the nightly toolchain (rustup toolchain install nightly)")
+for subcommand in deny machete spellcheck; do
+    cargo "$subcommand" --version >/dev/null 2>&1 || missing+=("cargo-$subcommand")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+    echo -e "${RED}Missing required tools:${RESET}" >&2
+    printf '  %s\n' "${missing[@]}" >&2
+    exit 1
+fi
+
 run_step "Format check" \
     cargo +nightly fmt --all --check
 
-# The rayon and mpi features gate no source in this crate; they only select a
-# chomp3rs execution backend. Compile-time checking therefore has just two
-# configurations to cover: without serde and with it. There is no default
-# feature, so the first is what a plain `cargo build` compiles.
 for features in "--no-default-features" "--features serde"; do
     run_step "Build ($features)" \
         cargo build $features
@@ -54,14 +67,18 @@ for features in "--no-default-features" "--features serde"; do
         cargo test $features
 
     run_step "Clippy ($features)" \
-        cargo clippy --workspace --all-targets $features -- -D warnings
+        cargo clippy -p cycling_signatures --all-targets $features -- -D warnings
 
     RUSTDOCFLAGS="-Dwarnings --cfg docsrs" run_step "Documentation ($features)" \
         cargo +nightly doc --no-deps --document-private-items $features
 done
 
-# The backend features build and run the same source against a different
-# chomp3rs backend, so they are worth linking and exercising once each.
+run_step "Clippy (Python bindings)" \
+    cargo clippy -p cycling-signatures-py --all-targets -- -D warnings
+
+RUSTDOCFLAGS="-Dwarnings --cfg docsrs" run_step "Documentation (--all-features)" \
+    cargo +nightly doc --no-deps --all-features
+
 run_step "Build (rayon backend)" \
     cargo build --features rayon
 
@@ -89,7 +106,10 @@ run_step "Unused dependencies" \
 run_step "Spellcheck" \
     cargo spellcheck check -m 1
 
-# Python binding checks, run from the python crate.
+# Python binding checks, run from the python crate. The subshell keeps the
+# directory change from reaching anything after it; every path below is relative
+# to python/.
+(
 cd python
 
 run_step "Python build" \
@@ -156,5 +176,6 @@ else
     mkdir -p "$(dirname "$gallery_stamp_path")"
     printf '%s\n' "$current_stamp" > "$gallery_stamp_path"
 fi
+)
 
 echo -e "\n${GREEN}${BOLD}All checks passed.${RESET}"
