@@ -32,7 +32,7 @@ use crate::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct CubicSpline {
-    knots: Array1<f64>,
+    knots: Vec<f64>,
     coefficients: Array3<f64>,
 }
 
@@ -52,10 +52,6 @@ impl CubicSpline {
     ///   `values` does not match the number of knots.
     /// - [`Error::InterpolationKnotsNotIncreasing`] if `knots` is not strictly
     ///   increasing.
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "internal panic call is guarded, so the method advertises no panic"
-    )]
     pub fn new(knots: Array1<f64>, values: ArrayView2<'_, f64>) -> Result<Self> {
         let num_knots = knots.len();
         if num_knots < 2 {
@@ -70,14 +66,14 @@ impl CubicSpline {
             });
         }
 
-        let knots_slice = knots.as_slice().expect("knots stored contiguously");
+        let knots = knots.to_vec();
         for index in 0..num_knots - 1 {
-            if knots_slice[index + 1] <= knots_slice[index] {
+            if knots[index + 1] <= knots[index] {
                 return Err(Error::InterpolationKnotsNotIncreasing { index });
             }
         }
 
-        let coefficients = compute_coefficients(knots_slice, values);
+        let coefficients = compute_coefficients(&knots, values);
         Ok(Self {
             knots,
             coefficients,
@@ -106,7 +102,7 @@ impl CubicSpline {
     /// Panics if `parameter` is outside `[knots[0], knots[last]]`.
     #[must_use]
     pub fn sample_with_order(&self, parameter: f64, order: usize) -> Array1<f64> {
-        let knots = self.knots.as_slice().expect("knots stored contiguously");
+        let knots = &self.knots;
         let first_knot = knots[0];
         let last_knot = *knots.last().expect("at least two knots");
         assert!(
@@ -114,7 +110,8 @@ impl CubicSpline {
             "parameter {parameter} outside of domain [{first_knot}, {last_knot}]",
         );
 
-        // Binary search for the interval index.
+        // Binary search for the interval whose lower knot is the last at or
+        // below `parameter`.
         let num_intervals = knots.len() - 1;
         let mut low = 0_usize;
         let mut high = num_intervals - 1;
@@ -245,7 +242,7 @@ impl Interpolator for CubicSpline {
     }
 
     fn knots(&self) -> &[f64] {
-        self.knots.as_slice().expect("knots stored contiguously")
+        &self.knots
     }
 }
 

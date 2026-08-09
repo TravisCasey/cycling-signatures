@@ -55,8 +55,16 @@ impl PyTrajectory {
     ) -> PyResult<Self> {
         let inner = match parameters {
             Some(parameters) => {
-                let parameters: Vec<f64> = parameters.as_array().iter().copied().collect();
-                Trajectory::with_parameters(points.as_array(), &parameters).map_err(to_pyerr)?
+                let parameters = parameters.as_array();
+                // A contiguous array is passed straight through; only a
+                // strided one has to be gathered into order first.
+                if let Some(contiguous) = parameters.as_slice() {
+                    Trajectory::with_parameters(points.as_array(), contiguous)
+                } else {
+                    let gathered: Vec<f64> = parameters.iter().copied().collect();
+                    Trajectory::with_parameters(points.as_array(), &gathered)
+                }
+                .map_err(to_pyerr)?
             },
             None => Trajectory::new(points.as_array()).map_err(to_pyerr)?,
         };

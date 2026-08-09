@@ -5,6 +5,8 @@
 //! interpolator, inserting points between its knots until consecutive ones
 //! meet a metric spacing.
 
+use std::rc::Rc;
+
 use ndarray::{Array1, Array2};
 
 use super::Trajectory;
@@ -92,7 +94,7 @@ impl Trajectory {
         let dimension = first_sample.len();
         let mut coordinates: Vec<f64> = first_sample.iter().copied().collect();
         let mut parameters: Vec<f64> = vec![knots[0]];
-        let mut last_sample = first_sample;
+        let mut last_sample = Rc::new(first_sample);
 
         for pair in knots.windows(2) {
             let (parameter_lower, parameter_upper) = (pair[0], pair[1]);
@@ -100,9 +102,9 @@ impl Trajectory {
             check_finite_sample(&sample_upper, parameter_upper)?;
             let mut stack = vec![Interval {
                 parameter_lower,
-                sample_lower: last_sample.clone(),
+                sample_lower: Rc::clone(&last_sample),
                 parameter_upper,
-                sample_upper,
+                sample_upper: Rc::new(sample_upper),
                 depth: 0,
             }];
             while let Some(interval) = stack.pop() {
@@ -122,7 +124,7 @@ impl Trajectory {
                 }
                 let sample_mid = interpolator.sample(parameter_mid);
                 check_finite_sample(&sample_mid, parameter_mid)?;
-                let (left, right) = interval.split(parameter_mid, sample_mid);
+                let (left, right) = interval.split(parameter_mid, Rc::new(sample_mid));
                 // Push right first so left is popped (and emitted) first.
                 stack.push(right);
                 stack.push(left);
@@ -145,9 +147,9 @@ const MAX_DEPTH: u32 = 40;
 /// interpolator samples at its endpoints.
 struct Interval {
     parameter_lower: f64,
-    sample_lower: Array1<f64>,
+    sample_lower: Rc<Array1<f64>>,
     parameter_upper: f64,
-    sample_upper: Array1<f64>,
+    sample_upper: Rc<Array1<f64>>,
     depth: u32,
 }
 
@@ -168,12 +170,12 @@ impl Interval {
 
     /// Splits at `parameter_mid` (where the inner sample is `sample_mid`).
     /// Consumes `self`; returns the left and right halves.
-    fn split(self, parameter_mid: f64, sample_mid: Array1<f64>) -> (Self, Self) {
+    fn split(self, parameter_mid: f64, sample_mid: Rc<Array1<f64>>) -> (Self, Self) {
         let left = Self {
             parameter_lower: self.parameter_lower,
             sample_lower: self.sample_lower,
             parameter_upper: parameter_mid,
-            sample_upper: sample_mid.clone(),
+            sample_upper: Rc::clone(&sample_mid),
             depth: self.depth + 1,
         };
         let right = Self {

@@ -92,15 +92,15 @@ impl<Inner: DerivativeInterpolator> Interpolator for SphereBundleInterpolator<In
         let l2_norm = derivative.dot(&derivative).sqrt();
         assert!(l2_norm > 0.0, "zero derivative at parameter {parameter}");
 
-        let scaled: Array1<f64> =
-            derivative.mapv(|component| component / l2_norm * self.direction_radius);
+        let mut coordinates: Vec<f64> = Vec::with_capacity(2 * position.len());
+        coordinates.extend(position.iter().copied());
+        coordinates.extend(
+            derivative
+                .iter()
+                .map(|&component| component / l2_norm * self.direction_radius),
+        );
 
-        let dimension = position.len();
-        let mut result = Array1::<f64>::zeros(2 * dimension);
-        result.slice_mut(ndarray::s![..dimension]).assign(&position);
-        result.slice_mut(ndarray::s![dimension..]).assign(&scaled);
-
-        result
+        Array1::from_vec(coordinates)
     }
 
     fn knots(&self) -> &[f64] {
