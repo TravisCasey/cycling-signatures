@@ -102,7 +102,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chomp3rs"
 version = "0.3.12"
-source = "git+https://github.com/TravisCasey/CHomP3-rs.git?rev=455eb70#455eb703f0245899b894507e4d2dd197af040ad9"
+source = "git+https://github.com/TravisCasey/CHomP3-rs.git?rev=455eb703f0245899b894507e4d2dd197af040ad9#455eb703f0245899b894507e4d2dd197af040ad9"
 dependencies = [
  "itertools",
  "mpi",
