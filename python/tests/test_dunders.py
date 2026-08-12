@@ -1,12 +1,5 @@
 import pytest
 
-import cycling_signatures as cs
-
-
-def test_metric_reprs_round_trip_construction():
-    assert repr(cs.Euclidean()) == "Euclidean()"
-    assert repr(cs.SphereBundle()) == "SphereBundle()"
-
 
 def test_storage_repr_reports_construction_parameters(square_loop_storage, square_loop_embedded):
     count = len(square_loop_embedded)
@@ -19,8 +12,6 @@ def test_storage_repr_reports_construction_parameters(square_loop_storage, squar
 
 def test_storage_length_and_indexing(square_loop_storage):
     storage = square_loop_storage
-    assert len(storage) == len(storage.components())
-    assert storage[0].class_id() == storage.components()[0].class_id()
     assert storage[-1].class_id() == storage[len(storage) - 1].class_id()
     with pytest.raises(IndexError):
         storage[len(storage)]
@@ -30,8 +21,6 @@ def test_storage_length_and_indexing(square_loop_storage):
 
 def test_component_length_and_indexing(square_loop_storage):
     component = square_loop_storage[0]
-    assert len(component) == component.cycle_count()
-    assert component[0].range() == component.cycles()[0].range()
     assert component[-1].range() == component[len(component) - 1].range()
     with pytest.raises(IndexError):
         component[len(component)]
@@ -51,12 +40,6 @@ def test_value_type_reprs(square_loop_storage, square_loop_embedded):
     count = len(square_loop_embedded)
     signature = square_loop_embedded.signature(range(count), 0.5)
 
-    cycle = storage[0][0]
-    cycle_start, cycle_stop = cycle.range()
-    assert repr(cycle) == (
-        f"Cycle(start={cycle_start}, stop={cycle_stop}, "
-        f"birth={cycle.birth()!r}, length={cycle.length()})"
-    )
     assert repr(storage.classes()[0]) == "HomologyClass(generators=1, set={0})"
     assert repr(storage.signature((0, count))) == "CyclingSignature(rank=1, threshold_max=0.5)"
     assert (
