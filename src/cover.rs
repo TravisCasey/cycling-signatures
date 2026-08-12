@@ -297,6 +297,26 @@ mod tests {
     use crate::serialization::{load_from_reader, save_to_writer};
     use crate::{error::Error, f2_vector::F2Vector};
 
+    /// The twelve cubes on the boundary of a `4x4` grid, leaving a `2x2` hole
+    /// in the middle. A cover of these cubes and no others has exactly one
+    /// 1-dimensional generator.
+    fn ring_cubes() -> Array2<i64> {
+        array![
+            [0_i64, 0],
+            [1, 0],
+            [2, 0],
+            [3, 0],
+            [3, 1],
+            [3, 2],
+            [3, 3],
+            [2, 3],
+            [1, 3],
+            [0, 3],
+            [0, 2],
+            [0, 1],
+        ]
+    }
+
     #[test]
     fn from_cubes_sorts_and_deduplicates() {
         // Arbitrary order with a duplicate; expect lex-sorted, unique output.
@@ -356,22 +376,7 @@ mod tests {
 
     #[test]
     fn generators_for_loop_with_hole() {
-        // Walk the boundary of a 4x4 grid, leaving a 2x2 hole in the middle.
-        // Expected: exactly one 1-dimensional generator.
-        let cubes = array![
-            [0_i64, 0],
-            [1, 0],
-            [2, 0],
-            [3, 0],
-            [3, 1],
-            [3, 2],
-            [3, 3],
-            [2, 3],
-            [1, 3],
-            [0, 3],
-            [0, 2],
-            [0, 1],
-        ];
+        let cubes = ring_cubes();
         let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
 
         assert_eq!(cover.num_generators(), 1);
@@ -379,23 +384,10 @@ mod tests {
 
     #[test]
     fn chain_class_matches_known_loop() {
-        // 4x4 with hole: one generator. Each of its edges, taken individually,
-        // is in that generator (and only that generator), so chain_class on
-        // a single such edge yields the unit F2Vector at index 0.
-        let cubes = array![
-            [0_i64, 0],
-            [1, 0],
-            [2, 0],
-            [3, 0],
-            [3, 1],
-            [3, 2],
-            [3, 3],
-            [2, 3],
-            [1, 3],
-            [0, 3],
-            [0, 2],
-            [0, 1]
-        ];
+        // Each edge of the single generator, taken individually, is in that
+        // generator (and only that generator), so chain_class on a single such
+        // edge yields the unit F2Vector at index 0.
+        let cubes = ring_cubes();
         let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
         assert_eq!(cover.num_generators(), 1);
 
@@ -413,23 +405,9 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn generators_match_after_save_load_roundtrip() {
-        // 4x4 with hole: one generator. A cover loaded from a save carries the
-        // exact generator chains it was saved with, not merely chains
-        // spanning the same cohomology class.
-        let cubes = array![
-            [0_i64, 0],
-            [1, 0],
-            [2, 0],
-            [3, 0],
-            [3, 1],
-            [3, 2],
-            [3, 3],
-            [2, 3],
-            [1, 3],
-            [0, 3],
-            [0, 2],
-            [0, 1]
-        ];
+        // A cover loaded from a save carries the exact generator chains it was
+        // saved with, not merely chains spanning the same cohomology class.
+        let cubes = ring_cubes();
         let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
         assert_eq!(cover.num_generators(), 1);
 
@@ -442,22 +420,9 @@ mod tests {
 
     #[test]
     fn chain_class_off_generator_edges_return_zero() {
-        // 4x4 with hole, one generator. Construct an edge with coordinates
-        // far outside the cover so it cannot be in any generator chain.
-        let cubes = array![
-            [0_i64, 0],
-            [1, 0],
-            [2, 0],
-            [3, 0],
-            [3, 1],
-            [3, 2],
-            [3, 3],
-            [2, 3],
-            [1, 3],
-            [0, 3],
-            [0, 2],
-            [0, 1]
-        ];
+        // Construct an edge with coordinates far outside the cover so it
+        // cannot be in any generator chain.
+        let cubes = ring_cubes();
         let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
 
         let base: Orthant = [100_i32, 100_i32].into();

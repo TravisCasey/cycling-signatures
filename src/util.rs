@@ -5,4 +5,6 @@
 
 pub(crate) mod disjoint;
 pub(crate) mod fingerprint;
+#[cfg(test)]
+pub(crate) mod fixtures;
 pub(crate) mod range;
