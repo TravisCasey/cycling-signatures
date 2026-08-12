@@ -64,3 +64,59 @@ where
     let bytes = deserializer.deserialize_bytes(ByteBufferVisitor)?;
     Array2::<A>::read_npy(&bytes[..]).map_err(D::Error::custom)
 }
+
+#[cfg(test)]
+mod tests {
+    use ndarray::{Array2, array};
+    use serde::{Deserialize, Serialize};
+
+    use crate::{
+        error::Error,
+        serialization::{load_from_reader, save_to_writer},
+    };
+
+    /// A payload whose single field rides the wire as an `.npy` array.
+    #[derive(Serialize, Deserialize)]
+    struct ArrayCarrier {
+        #[serde(with = "crate::serialization::npy_field")]
+        array: Array2<f64>,
+    }
+
+    /// A payload matching [`ArrayCarrier`]'s wire shape whose array carries a
+    /// narrower element type.
+    #[derive(Serialize)]
+    struct NarrowArrayCarrier {
+        #[serde(with = "crate::serialization::npy_field")]
+        array: Array2<f32>,
+    }
+
+    #[test]
+    fn array_round_trips_through_the_wire_format() {
+        // A non-square array with mixed signs and fractional values: shape,
+        // row order and element values all have to survive the encoding.
+        let carrier = ArrayCarrier {
+            array: array![[1.0, -2.5, 3.25], [4.0, 5.5, -6.75]],
+        };
+
+        let mut buffer = Vec::new();
+        save_to_writer(&mut buffer, &carrier).unwrap();
+        let loaded: ArrayCarrier = load_from_reader(&buffer[..]).unwrap();
+
+        assert_eq!(loaded.array, carrier.array);
+    }
+
+    #[test]
+    fn a_field_holding_another_element_type_is_refused() {
+        // The container decodes and the byte field is a valid `.npy` array;
+        // only its element type disagrees with the one being read. A file
+        // written against different element types reports rather than panics.
+        let narrow = NarrowArrayCarrier {
+            array: array![[1.0_f32, 2.0]],
+        };
+        let mut buffer = Vec::new();
+        save_to_writer(&mut buffer, &narrow).unwrap();
+
+        let result = load_from_reader::<ArrayCarrier, _>(&buffer[..]);
+        assert!(matches!(result, Err(Error::Deserialize { .. })));
+    }
+}

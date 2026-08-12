@@ -45,6 +45,8 @@ pub(crate) fn normalize_segment(
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Bound;
+
     use super::normalize_segment;
     use crate::error::Error;
 
@@ -52,6 +54,17 @@ mod tests {
     fn bounded_range_normalizes() {
         assert_eq!(normalize_segment(2..7, 10).unwrap(), 2..7);
         assert_eq!(normalize_segment(2..=6, 10).unwrap(), 2..7);
+    }
+
+    #[test]
+    fn excluded_start_bound_resolves_past_its_value() {
+        // No range syntax produces an excluded start, so it arrives only as an
+        // explicit bound pair, and the first point it names is the one after
+        // the bound.
+        assert_eq!(
+            normalize_segment((Bound::Excluded(2), Bound::Excluded(7)), 10).unwrap(),
+            3..7
+        );
     }
 
     #[test]

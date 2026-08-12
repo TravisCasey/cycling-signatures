@@ -375,6 +375,17 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "cycle segment 1..2 must contain at least two points")]
+    fn walk_cycle_panics_on_a_segment_of_one_point() {
+        // A cycle needs at least one forward edge
+        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = embed_euclidean(trajectory).unwrap();
+
+        let _ = embedded.walk_cycle(1..2);
+    }
+
+    #[test]
     fn new_maps_each_point_to_its_cover_cube() {
         // Four points landing in three distinct cubes, which the cover holds
         // in sorted order as (0, 0), (1, 0), (2, 0). Rows 0 and 1 share a
@@ -555,6 +566,32 @@ mod tests {
             .signature(.., 0.6, &ExecutionBackend::Sequential)
             .unwrap();
         assert_eq!(signature.rank(), 1);
+    }
+
+    #[test]
+    fn signature_rejects_thresholds_outside_the_detection_band() {
+        // Four collinear points spaced 0.5 apart, so the resolution is 0.5.
+        // Both band ends are checked here.
+        let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = embed_euclidean(trajectory).unwrap();
+
+        let below_band = embedded.resolution() / 2.0;
+        let below_outcome = embedded.signature(.., below_band, &ExecutionBackend::Sequential);
+        assert!(matches!(
+            below_outcome,
+            Err(Error::ThresholdNotAboveResolution { threshold, resolution })
+                if (threshold - below_band).abs() < 1e-12
+                    && (resolution - embedded.resolution()).abs() < 1e-12
+        ));
+
+        let above_band = 1.0 + f64::EPSILON;
+        let above_outcome = embedded.signature(.., above_band, &ExecutionBackend::Sequential);
+        assert!(matches!(
+            above_outcome,
+            Err(Error::ThresholdAboveCubeSide { threshold })
+                if (threshold - above_band).abs() < 1e-12
+        ));
     }
 
     /// Builds a densely sampled Euclidean square loop (a solid two-by-two

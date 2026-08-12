@@ -132,4 +132,22 @@ mod tests {
         let result = load_from_reader::<u32, _>(malformed);
         assert!(matches!(result, Err(Error::Deserialize { .. })));
     }
+
+    #[test]
+    fn payload_from_another_format_version_is_refused() {
+        let foreign_version = FORMAT_VERSION + 1;
+        let envelope = Versioned {
+            format_version: foreign_version,
+            payload: 7_u32,
+        };
+        let mut buffer = Vec::new();
+        rmp_serde::encode::write_named(&mut buffer, &envelope).unwrap();
+
+        let result = load_from_reader::<u32, _>(&buffer[..]);
+        assert!(matches!(
+            result,
+            Err(Error::FormatVersionMismatch { expected, found })
+                if expected == FORMAT_VERSION && found == foreign_version
+        ));
+    }
 }

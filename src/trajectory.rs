@@ -236,9 +236,9 @@ mod tests {
     use ndarray::{Array2, array};
 
     use super::Trajectory;
-    use crate::error::Error;
     #[cfg(feature = "serde")]
     use crate::serialization::{load_from_reader, save_to_writer};
+    use crate::{error::Error, metric::Metric};
 
     #[test]
     fn with_parameters_returns_err_on_count_mismatch() {
@@ -283,6 +283,34 @@ mod tests {
             outcome.unwrap_err(),
             Error::TrajectoryNonFinite { row: 1, column: 1 },
         ));
+    }
+
+    #[test]
+    fn fingerprint_separates_equal_points_under_different_parameterizations() {
+        // The parameters are a short tail behind a much larger point payload,
+        // so a feed that stopped at the points would still agree here.
+        let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]];
+        let indexed = Trajectory::new(points.view()).unwrap();
+        let timed = Trajectory::with_parameters(points.view(), &[0.0, 0.5, 2.0]).unwrap();
+
+        assert_ne!(indexed.fingerprint(), timed.fingerprint());
+    }
+
+    #[test]
+    fn resolution_reports_the_largest_consecutive_gap() {
+        // Gaps of 1.0, 3.0 and 1.5. The largest is neither the first nor the
+        // last, and differs from their mean, so each of those readings would
+        // report something else.
+        let points = array![[0.0, 0.0], [1.0, 0.0], [4.0, 0.0], [5.5, 0.0]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+
+        assert!((trajectory.resolution(Metric::Euclidean) - 3.0).abs() < 1e-12);
+
+        // A lone point has no consecutive pair to measure.
+        let single_point = array![[0.0, 0.0]];
+        let single = Trajectory::new(single_point.view()).unwrap();
+
+        assert!(single.resolution(Metric::Euclidean).abs() < 1e-12);
     }
 
     #[cfg(feature = "serde")]

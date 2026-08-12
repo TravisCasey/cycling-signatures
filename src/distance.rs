@@ -189,6 +189,20 @@ mod tests {
     }
 
     #[test]
+    fn a_zero_length_cap_detects_nothing() {
+        // A cap of zero admits no cycle at all, so the partition is empty and
+        // detection returns before any tile is laid out. Tiles require at
+        // least one row and reject a zero cap outright.
+        let trajectory = small_trajectory();
+        let components = detect_euclidean(&trajectory, 0..5, 0.5, 0, 5).unwrap();
+
+        assert!(
+            components.is_empty(),
+            "expected no components under a zero-length cap, got {components:?}",
+        );
+    }
+
+    #[test]
     fn straight_line_trajectory_emits_no_real_recurrence() {
         let trajectory = small_trajectory();
         let components = detect_euclidean(&trajectory, 0..5, 0.5, 5, 5).unwrap();

@@ -587,6 +587,36 @@ mod tests {
     }
 
     #[test]
+    fn signature_past_the_extent_end_is_rejected() {
+        // Queries normalize against the extent's end rather than the
+        // trajectory's length, so a segment reaching one point beyond the
+        // extent is out of bounds even though the trajectory has points there.
+        let embedded = loop_trajectory();
+        let sub_segment = 4_usize..13_usize;
+        assert!(embedded.trajectory().len() > sub_segment.end);
+        let storage = CycleStorage::build(
+            &embedded,
+            sub_segment.clone(),
+            sub_segment.len(),
+            0.95,
+            &ExecutionBackend::Sequential,
+        )
+        .unwrap();
+
+        let error = storage
+            .signature(sub_segment.start..=sub_segment.end)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::SegmentOutOfBounds {
+                start: 4,
+                end: 14,
+                point_count: 13
+            }
+        ));
+    }
+
+    #[test]
     fn max_length_below_minimum_is_rejected() {
         let embedded = loop_trajectory();
         let outcome = CycleStorage::build(&embedded, .., 1, 0.95, &ExecutionBackend::Sequential);
