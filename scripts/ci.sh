@@ -104,7 +104,7 @@ run_step "Unused dependencies" \
     cargo machete
 
 run_step "Spellcheck" \
-    cargo spellcheck check -m 1
+    cargo spellcheck check -m 1 Cargo.toml python/README.md
 
 # Python binding checks, run from the python crate. The subshell keeps the
 # directory change from reaching anything after it; every path below is relative

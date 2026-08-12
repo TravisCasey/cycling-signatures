@@ -56,15 +56,19 @@ impl Trajectory {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::SpacingBelowResolution`] if `spacing` is less than the
-    /// trajectory's own maximum consecutive-point distance (including when
-    /// `spacing` is NaN): no subset of the points is spaced more finely than
-    /// the points themselves are.
+    /// - [`Error::SphereBundleDimensionOdd`] if `metric` is
+    ///   [`Metric::SphereBundle`] and this trajectory's coordinate count is
+    ///   odd, so no point splits into a position half and a direction half.
+    /// - [`Error::SpacingBelowResolution`] if `spacing` is less than the
+    ///   trajectory's own maximum consecutive-point distance (including when
+    ///   `spacing` is NaN): no subset of the points is spaced more finely than
+    ///   the points themselves are.
     #[expect(
         clippy::missing_panics_doc,
         reason = "internal panic call is guarded, so the method advertises no panic"
     )]
     pub fn downsample(&self, metric: Metric, spacing: f64) -> Result<Self> {
+        metric.check_dimension(self.dimension())?;
         let points = self.points();
         let row_count = points.nrows();
         // One view serves both the resolution and the walk below, which

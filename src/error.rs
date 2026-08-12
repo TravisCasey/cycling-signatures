@@ -133,6 +133,15 @@ pub enum Error {
         found: u64,
     },
 
+    /// Points with an odd coordinate count were paired with
+    /// [`Metric::SphereBundle`](crate::Metric::SphereBundle), which splits
+    /// every point into a position half and a direction half of equal lengths.
+    #[error("sphere bundle metric requires an even coordinate count, got {dimension}")]
+    SphereBundleDimensionOdd {
+        /// The coordinate count of the offending points.
+        dimension: usize,
+    },
+
     /// Trajectory input had zero rows.
     #[error("trajectory input has zero rows")]
     TrajectoryEmpty,

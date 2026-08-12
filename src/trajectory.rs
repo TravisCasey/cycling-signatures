@@ -238,7 +238,7 @@ mod tests {
     use super::Trajectory;
     #[cfg(feature = "serde")]
     use crate::serialization::{load_from_reader, save_to_writer};
-    use crate::{error::Error, metric::Metric};
+    use crate::{error::Error, interpolation::CubicSpline, metric::Metric};
 
     #[test]
     fn with_parameters_returns_err_on_count_mismatch() {
@@ -311,6 +311,24 @@ mod tests {
         let single = Trajectory::new(single_point.view()).unwrap();
 
         assert!(single.resolution(Metric::Euclidean).abs() < 1e-12);
+    }
+
+    #[test]
+    fn odd_coordinate_count_is_rejected_under_the_sphere_bundle_metric() {
+        let values = array![[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 1.0]];
+        let spline = CubicSpline::new(array![0.0, 1.0, 2.0], values.view()).unwrap();
+
+        assert!(matches!(
+            Trajectory::resample(&spline, Metric::SphereBundle, 0.5),
+            Err(Error::SphereBundleDimensionOdd { dimension: 3 })
+        ));
+
+        let trajectory = Trajectory::new(values.view()).unwrap();
+
+        assert!(matches!(
+            trajectory.downsample(Metric::SphereBundle, 4.0),
+            Err(Error::SphereBundleDimensionOdd { dimension: 3 })
+        ));
     }
 
     #[cfg(feature = "serde")]

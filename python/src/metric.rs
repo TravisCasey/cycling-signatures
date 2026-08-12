@@ -11,17 +11,7 @@ use pyo3::{
     prelude::*,
 };
 
-/// Rejects an odd coordinate count under the sphere-bundle metric, which
-/// requires an even count to split into a position half and a direction
-/// half. A no-op under the Euclidean metric.
-pub(crate) fn check_even_dimension(metric: Metric, coordinate_count: usize) -> PyResult<()> {
-    if metric == Metric::SphereBundle && !coordinate_count.is_multiple_of(2) {
-        return Err(PyValueError::new_err(format!(
-            "sphere-bundle metric requires an even coordinate count, got {coordinate_count}"
-        )));
-    }
-    Ok(())
-}
+use crate::errors::to_pyerr;
 
 /// Computes the scalar distance between two coordinate vectors.
 ///
@@ -38,7 +28,9 @@ fn scalar_distance(
             other.as_array().len()
         )));
     }
-    check_even_dimension(metric, point.as_array().len())?;
+    metric
+        .check_dimension(point.as_array().len())
+        .map_err(to_pyerr)?;
     Ok(metric.distance(point.as_array(), other.as_array()))
 }
 
@@ -50,7 +42,7 @@ fn pairwise_matrix<'py>(
     py: Python<'py>,
 ) -> PyResult<Bound<'py, PyArray2<f64>>> {
     let array = points.as_array();
-    check_even_dimension(metric, array.ncols())?;
+    metric.check_dimension(array.ncols()).map_err(to_pyerr)?;
     let count = array.nrows();
 
     // The coordinates are copied because the fill runs with the interpreter

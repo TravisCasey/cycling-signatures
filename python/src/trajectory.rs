@@ -12,7 +12,7 @@ use pyo3::{exceptions::PyTypeError, prelude::*};
 use crate::{
     errors::to_pyerr,
     interpolation::{PyCubicSpline, PySphereBundleInterpolator},
-    metric::{check_even_dimension, metric_from_py},
+    metric::metric_from_py,
 };
 
 /// An ordered array of points together with a strictly increasing
@@ -101,7 +101,8 @@ impl PyTrajectory {
     /// ``ValueError``
     ///     If ``spacing`` is not positive (including if it is NaN), if the
     ///     interpolator has fewer than two knots, if a sampled value is not
-    ///     finite, or if bisection cannot reach ``spacing``.
+    ///     finite, if bisection cannot reach ``spacing``, or if ``metric`` is
+    ///     ``SphereBundle`` and the interpolator emits an odd coordinate count.
     /// ``TypeError``
     ///     If ``interpolator`` or ``metric`` is not a recognized type.
     #[staticmethod]
@@ -166,7 +167,6 @@ impl PyTrajectory {
         spacing: f64,
     ) -> PyResult<Self> {
         let metric = metric_from_py(metric)?;
-        check_even_dimension(metric, self.inner.dimension())?;
         let trajectory = Arc::clone(&self.inner);
         let inner = py
             .detach(move || trajectory.downsample(metric, spacing))
@@ -202,7 +202,9 @@ impl PyTrajectory {
     ///     If ``metric`` is not a recognized type.
     fn resolution(&self, metric: &Bound<'_, PyAny>) -> PyResult<f64> {
         let metric = metric_from_py(metric)?;
-        check_even_dimension(metric, self.inner.dimension())?;
+        metric
+            .check_dimension(self.inner.dimension())
+            .map_err(to_pyerr)?;
         Ok(self.inner.resolution(metric))
     }
 

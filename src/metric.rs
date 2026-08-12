@@ -12,6 +12,8 @@ mod sphere_bundle;
 
 use sphere_bundle::{assert_even_dimension, sphere_bundle_distance, sphere_bundle_distance_slices};
 
+use crate::error::{Error, Result};
+
 /// A distance mode over rows of a trajectory.
 ///
 /// The crate supports exactly two modes. [`Metric::Euclidean`] measures
@@ -90,6 +92,24 @@ pub enum Metric {
 }
 
 impl Metric {
+    /// Checks that points of `dimension` coordinates can be measured under
+    /// this metric.
+    ///
+    /// [`Metric::Euclidean`] accepts any coordinate count.
+    /// [`Metric::SphereBundle`] requires an even one, since it splits every
+    /// point into a position half and a direction half of equal length.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::SphereBundleDimensionOdd`] if this is
+    ///   [`Metric::SphereBundle`] and `dimension` is odd.
+    pub fn check_dimension(self, dimension: usize) -> Result<()> {
+        if self == Metric::SphereBundle && !dimension.is_multiple_of(2) {
+            return Err(Error::SphereBundleDimensionOdd { dimension });
+        }
+        Ok(())
+    }
+
     /// The distance from `point` to `other` under this metric.
     ///
     /// # Panics

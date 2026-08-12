@@ -45,8 +45,9 @@ use crate::{
 /// Raises
 /// ------
 /// ``ValueError``
-///     If the trajectory and cover disagree on dimension, if a point's cube
-///     is absent from the cover, or if consecutive points fall in
+///     If the trajectory and cover disagree on dimension, if ``metric`` is
+///     ``SphereBundle`` and the trajectory has an odd coordinate count, if a
+///     point's cube is absent from the cover, or if consecutive points fall in
 ///     non-adjacent cubes.
 /// ``TypeError``
 ///     If ``metric`` is not a recognized metric type.
@@ -137,12 +138,14 @@ impl PyEmbeddedTrajectory {
     /// ``ValueError``
     ///     If ``resample_spacing`` is not positive (including NaN), if the
     ///     interpolator has fewer than two knots, if a sampled value is not
-    ///     finite, if bisection cannot reach ``resample_spacing``, if the
-    ///     interpolator's samples have zero columns, if a cube coordinate falls
-    ///     outside the supported integer range, if consecutive dense points
-    ///     fall in non-adjacent cubes, if ``downsample_spacing`` is below the
-    ///     dense trajectory's own consecutive-point distance, or if consecutive
-    ///     thinned points fall in non-adjacent cubes.
+    ///     finite, if bisection cannot reach ``resample_spacing``, if
+    ///     ``metric`` is ``SphereBundle`` and the interpolator emits an odd
+    ///     coordinate count, if the interpolator's samples have zero columns,
+    ///     if a cube coordinate falls outside the supported integer range, if
+    ///     consecutive dense points fall in non-adjacent cubes, if
+    ///     ``downsample_spacing`` is below the dense trajectory's own
+    ///     consecutive-point distance, or if consecutive thinned points fall in
+    ///     non-adjacent cubes.
     /// ``TypeError``
     ///     If ``interpolator`` or ``metric`` is not a recognized type.
     #[staticmethod]

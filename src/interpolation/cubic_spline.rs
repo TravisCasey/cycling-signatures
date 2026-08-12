@@ -91,6 +91,13 @@ impl CubicSpline {
         Self::new(knots, values)
     }
 
+    /// The number of coordinates each sample carries: the width of the values
+    /// the spline was fit through.
+    #[must_use]
+    pub fn dimension(&self) -> usize {
+        self.coefficients.dim().2
+    }
+
     /// Evaluates the spline value or one of its derivatives at `parameter`.
     ///
     /// `order` 0 returns the sampled value, `1` the first derivative, `2` the
@@ -126,7 +133,7 @@ impl CubicSpline {
         let interval = low;
 
         let offset = parameter - knots[interval];
-        let dimension = self.coefficients.dim().2;
+        let dimension = self.dimension();
         let mut result = Array1::<f64>::zeros(dimension);
 
         match order {

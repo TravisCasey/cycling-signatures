@@ -52,6 +52,9 @@ impl EmbeddedTrajectory {
     ///
     /// - [`Error::EmbeddedDimensionMismatch`] if the trajectory and the cover
     ///   disagree on dimension.
+    /// - [`Error::SphereBundleDimensionOdd`] if `metric` is
+    ///   [`Metric::SphereBundle`] and the trajectory's coordinate count is odd,
+    ///   so no point splits into a position half and a direction half.
     /// - [`Error::EmbeddedCubeNotInCover`] if a point maps to a cube absent
     ///   from the cover.
     /// - [`Error::ConsecutiveCubesNonAdjacent`] if consecutive trajectory
@@ -69,6 +72,7 @@ impl EmbeddedTrajectory {
                 cover: cover.dimension(),
             });
         }
+        metric.check_dimension(trajectory.dimension())?;
 
         let points = trajectory.points();
         let point_to_cube = cover.cube_indices(points)?;
@@ -142,6 +146,9 @@ impl EmbeddedTrajectory {
     /// - [`Error::ResampleNonFinite`] if any interpolator output is not finite.
     /// - [`Error::ResampleStagnation`] if bisection cannot reach
     ///   `resample_spacing` at machine precision.
+    /// - [`Error::SphereBundleDimensionOdd`] if `metric` is
+    ///   [`Metric::SphereBundle`] and the interpolator emits an odd coordinate
+    ///   count, so no sample splits into a position half and a direction half.
     /// - [`Error::SpacingBelowResolution`] if `downsample_spacing` is below the
     ///   resampled trajectory's own consecutive-point distance.
     /// - [`Error::CubicalCoverZeroDimension`] if the interpolator's samples
@@ -439,6 +446,20 @@ mod tests {
                 trajectory: 3,
                 cover: 2,
             },
+        ));
+    }
+
+    #[test]
+    fn new_rejects_odd_coordinate_count_under_the_sphere_bundle_metric() {
+        let points = array![[0.5, 0.5, 0.5], [1.5, 0.5, 0.5]];
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let cover = CubicalCover::build(&trajectory, &ExecutionBackend::default()).unwrap();
+
+        let outcome = EmbeddedTrajectory::new(trajectory, cover, Metric::SphereBundle);
+
+        assert!(matches!(
+            outcome.unwrap_err(),
+            Error::SphereBundleDimensionOdd { dimension: 3 },
         ));
     }
 

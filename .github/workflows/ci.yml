@@ -178,7 +178,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-spellcheck@0.15.7
-      - run: cargo spellcheck check -m 1
+      - run: cargo spellcheck check -m 1 Cargo.toml python/README.md
 
   python:
     runs-on: ubuntu-latest

@@ -60,6 +60,9 @@ impl Trajectory {
     /// - [`Error::SpacingNotPositive`] if `spacing` is zero, negative or NaN.
     /// - [`Error::InterpolationKnotCount`] if `interpolator.knots().len() < 2`.
     /// - [`Error::ResampleNonFinite`] if any interpolator output is not finite.
+    /// - [`Error::SphereBundleDimensionOdd`] if `metric` is
+    ///   [`Metric::SphereBundle`] and `interpolator` emits an odd coordinate
+    ///   count, so no sample splits into a position half and a direction half.
     /// - [`Error::ResampleStagnation`] if bisection cannot reduce the metric
     ///   distance below `spacing` at machine precision.
     ///
@@ -92,6 +95,10 @@ impl Trajectory {
         let first_sample = interpolator.sample(knots[0]);
         check_finite_sample(&first_sample, knots[0])?;
         let dimension = first_sample.len();
+        // The interpolator's output width is only known once it has been
+        // sampled, so the metric is matched against it here rather than up
+        // front, before any distance is measured.
+        metric.check_dimension(dimension)?;
         let mut coordinates: Vec<f64> = first_sample.iter().copied().collect();
         let mut parameters: Vec<f64> = vec![knots[0]];
         let mut last_sample = Rc::new(first_sample);

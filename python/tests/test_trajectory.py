@@ -72,6 +72,14 @@ def test_resolution_rejects_odd_dimension_under_sphere_bundle():
         trajectory.resolution(cs.SphereBundle())
 
 
+def test_resample_rejects_odd_dimension_under_sphere_bundle():
+    knots = np.array([0.0, 1.0, 2.0])
+    values = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 1.0]])
+    spline = cs.CubicSpline(knots, values)
+    with pytest.raises(ValueError):
+        cs.Trajectory.resample(spline, cs.SphereBundle(), 0.5)
+
+
 def test_save_load_roundtrip(tmp_path):
     trajectory = cs.Trajectory(np.array([[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]]))
     path = str(tmp_path / "trajectory.cyc")
