@@ -326,6 +326,23 @@ mod tests {
     }
 
     #[test]
+    fn with_integer_knots_fits_at_consecutive_indices() {
+        let values = array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]];
+        let implicit = CubicSpline::with_integer_knots(values.view()).unwrap();
+        let explicit = CubicSpline::new(array![0.0, 1.0, 2.0, 3.0], values.view()).unwrap();
+
+        assert_eq!(implicit.knots(), [0.0, 1.0, 2.0, 3.0]);
+
+        for parameter in [0.0, 0.75, 1.5, 3.0] {
+            let from_implicit = implicit.sample(parameter);
+            let from_explicit = explicit.sample(parameter);
+            for axis in 0..2 {
+                assert!((from_implicit[axis] - from_explicit[axis]).abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
     fn linear_data_interpolates_linearly() {
         // Natural cubic spline through linear knots is linear, including in
         // the two-knot case.

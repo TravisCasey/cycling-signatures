@@ -113,7 +113,7 @@ mod tests {
     use ndarray::array;
 
     use super::SphereBundleInterpolator;
-    use crate::interpolation::{CubicSpline, Interpolator};
+    use crate::interpolation::{CubicSpline, DerivativeInterpolator, Interpolator};
 
     #[test]
     fn sample_concatenates_position_and_scaled_direction() {
@@ -147,6 +147,42 @@ mod tests {
                  {radius}"
             );
         }
+    }
+
+    #[test]
+    fn direction_separation_follows_the_angular_resolution_formula() {
+        // Two directions separated by an angle theta are stored
+        // `2 * radius * sin(theta / 2)` apart.
+        let knots = array![0.0, 1.0, 2.0, 3.0];
+        let values = array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]];
+        let inner = CubicSpline::new(knots, values.view()).unwrap();
+        let radius = 2.5;
+        let bundle = SphereBundleInterpolator::new(inner.clone(), radius);
+
+        let first_parameter = 0.5;
+        let second_parameter = 2.0;
+        let first_derivative = inner.derivative(first_parameter);
+        let second_derivative = inner.derivative(second_parameter);
+        let angle = (first_derivative.dot(&second_derivative)
+            / (first_derivative.dot(&first_derivative).sqrt()
+                * second_derivative.dot(&second_derivative).sqrt()))
+        .acos();
+        assert!(
+            angle > 0.1,
+            "the two headings must differ for the formula to take effect, got {angle}"
+        );
+
+        let first_sample = bundle.sample(first_parameter);
+        let second_sample = bundle.sample(second_parameter);
+        let separation = ((first_sample[2] - second_sample[2]).powi(2)
+            + (first_sample[3] - second_sample[3]).powi(2))
+        .sqrt();
+
+        let expected = 2.0 * radius * (angle / 2.0).sin();
+        assert!(
+            (separation - expected).abs() < 1e-10,
+            "direction separation: got {separation}, expected {expected}"
+        );
     }
 
     #[test]

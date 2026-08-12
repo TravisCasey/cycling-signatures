@@ -203,6 +203,18 @@ impl F2Subspace {
     /// let other =
     ///     F2Subspace::new(vec![F2Vector::from_nonzero(3, [2])], 3).unwrap();
     /// assert_eq!(small.inclusion(&other).unwrap(), None);
+    ///
+    /// // Equal rank alone does not decide the comparison: these two spanning
+    /// // sets differ but span the same space, so each contains the other.
+    /// let rewritten = F2Subspace::new(
+    ///     vec![
+    ///         F2Vector::from_nonzero(3, [0, 1]),
+    ///         F2Vector::from_nonzero(3, [1]),
+    ///     ],
+    ///     3,
+    /// )
+    /// .unwrap();
+    /// assert_eq!(big.inclusion(&rewritten).unwrap(), Some(Ordering::Equal));
     /// ```
     pub fn inclusion(&self, other: &Self) -> Result<Option<Ordering>> {
         if self.num_generators != other.num_generators {
@@ -330,6 +342,18 @@ mod tests {
                 second: 4
             }
         ));
+    }
+
+    #[test]
+    fn display_shows_the_header_and_one_line_per_basis_vector() {
+        // Built from a spanning set that is not already reduced, so the
+        // rendered lines are the canonical basis rather than the input.
+        let subspace = F2Subspace::new(vec![vector(3, &[0, 1]), vector(3, &[1])], 3).unwrap();
+
+        assert_eq!(
+            subspace.to_string(),
+            "F2Subspace(rank=2, generators=3)\n100\n010"
+        );
     }
 
     #[test]

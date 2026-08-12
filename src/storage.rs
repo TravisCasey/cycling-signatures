@@ -307,7 +307,7 @@ mod tests {
     use chomp3rs::ExecutionBackend;
     use ndarray::Array2;
 
-    use super::CycleStorage;
+    use super::{Component, Cycle, CycleStorage};
     #[cfg(feature = "serde")]
     use crate::serialization::{load_from_reader, save_to_writer};
     use crate::{
@@ -584,6 +584,38 @@ mod tests {
 
         let error = storage.signature(0..sub_segment.end).unwrap_err();
         assert!(matches!(error, Error::SegmentOutOfBounds { start: 0, .. }));
+    }
+
+    #[test]
+    fn longest_and_shortest_cycle_break_ties_by_lowest_start() {
+        // Two cycles at the maximum length and two at the minimum, each pair
+        // tied and listed with the higher start first, so a comparator that
+        // keeps the wrong end of a tie is visible.
+        let component = Component {
+            class_id: 0,
+            coverage: 5..40,
+            cycles: vec![
+                Cycle {
+                    range: 30..40,
+                    birth: 0.4,
+                },
+                Cycle {
+                    range: 25..27,
+                    birth: 0.3,
+                },
+                Cycle {
+                    range: 10..20,
+                    birth: 0.2,
+                },
+                Cycle {
+                    range: 5..7,
+                    birth: 0.1,
+                },
+            ],
+        };
+
+        assert_eq!(component.longest_cycle().range(), 10..20);
+        assert_eq!(component.shortest_cycle().range(), 5..7);
     }
 
     #[test]

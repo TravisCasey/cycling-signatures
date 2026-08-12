@@ -357,6 +357,14 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "vector length mismatch: first has length 64, second 65")]
+    fn xor_operator_dimension_mismatch_panics() {
+        let left = F2Vector::zeros(64);
+        let right = F2Vector::zeros(65);
+        let _ = &left ^ &right;
+    }
+
+    #[test]
     #[should_panic(expected = "index 10 out of bounds for F2Vector of length 10")]
     fn set_out_of_bounds_panics() {
         let mut vector = F2Vector::zeros(10);
