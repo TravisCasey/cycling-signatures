@@ -1,4 +1,4 @@
-58
+55
 2D
 Hien
 Junge
@@ -8,7 +8,6 @@ RREF
 Serde
 XORs
 backend
-canonicalize
 deduplicated
 deduplicates
 deserialization
@@ -17,7 +16,6 @@ homological
 homology
 interpolator
 interpolator's
-invariants
 iterator's
 lexicographically
 positionally
@@ -55,5 +53,4 @@ subspace's
 glyphs
 downsample
 arXiv
-Zenodo
 maturin
