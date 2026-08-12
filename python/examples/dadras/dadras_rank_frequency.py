@@ -35,8 +35,8 @@ PARAMETERS = TRAJECTORY.parameters()
 # ``signature(...).rank()`` call queries the number of independent loop types
 # this window contains.
 
-LENGTH_STEP = 10
-SCAN_STEP = 125
+LENGTH_STEP = 30
+SCAN_STEP = 1500
 
 extent_start, extent_stop = STORAGE.extent()
 extent_length = extent_stop - extent_start
