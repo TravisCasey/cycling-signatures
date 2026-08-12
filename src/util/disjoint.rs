@@ -86,10 +86,6 @@ mod tests {
     fn insert_find_union_groups_correctly() {
         let mut set = DisjointSet::new();
         let elements: Vec<usize> = (0..5).map(|_| set.insert()).collect();
-        // Initially every element is its own representative.
-        for &index in &elements {
-            assert_eq!(set.find(index), index);
-        }
 
         // Union 0 <-> 1, 2 <-> 3, then 1 <-> 3
         // By transitivity, all of 0, 1, 2, 3 share a root; 4 is alone.

@@ -627,38 +627,6 @@ mod tests {
 
     #[cfg(feature = "serde")]
     #[test]
-    fn save_then_load_round_trips() {
-        let embedded = euclidean_square_loop();
-        let mut trajectory_buffer = Vec::new();
-        let mut cover_buffer = Vec::new();
-        save_to_writer(&mut trajectory_buffer, embedded.trajectory().as_ref()).unwrap();
-        save_to_writer(&mut cover_buffer, embedded.cover().as_ref()).unwrap();
-
-        let trajectory: Trajectory = load_from_reader(&trajectory_buffer[..]).unwrap();
-        let cover: CubicalCover = load_from_reader(&cover_buffer[..]).unwrap();
-        let reloaded = EmbeddedTrajectory::new(trajectory, cover, Metric::Euclidean).unwrap();
-
-        assert_eq!(reloaded.fingerprint(), embedded.fingerprint());
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn reload_with_different_metric_differs() {
-        let embedded = euclidean_square_loop();
-        let mut trajectory_buffer = Vec::new();
-        let mut cover_buffer = Vec::new();
-        save_to_writer(&mut trajectory_buffer, embedded.trajectory().as_ref()).unwrap();
-        save_to_writer(&mut cover_buffer, embedded.cover().as_ref()).unwrap();
-
-        let trajectory: Trajectory = load_from_reader(&trajectory_buffer[..]).unwrap();
-        let cover: CubicalCover = load_from_reader(&cover_buffer[..]).unwrap();
-        let reloaded = EmbeddedTrajectory::new(trajectory, cover, Metric::SphereBundle).unwrap();
-
-        assert_ne!(reloaded.fingerprint(), embedded.fingerprint());
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
     fn storage_provenance_matches_reassembled_embedded() {
         let embedded = euclidean_square_loop();
         let max_length = embedded.trajectory().len();

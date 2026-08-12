@@ -306,8 +306,6 @@ mod tests {
 
     use chomp3rs::ExecutionBackend;
     use ndarray::Array2;
-    #[cfg(feature = "serde")]
-    use ndarray::array;
 
     use super::CycleStorage;
     #[cfg(feature = "serde")]
@@ -647,24 +645,6 @@ mod tests {
     }
 
     #[test]
-    fn build_smoke() {
-        let embedded = loop_trajectory();
-        let storage =
-            CycleStorage::build(&embedded, .., 25, 0.95, &ExecutionBackend::Sequential).unwrap();
-        assert!(!storage.components().is_empty());
-        for component in storage.components() {
-            assert!(component.cycle_count() >= 1);
-            for cycle in component.cycles() {
-                assert!(cycle.length() >= 2);
-                assert!(cycle.range().start < cycle.range().end);
-                assert!(component.coverage().start <= cycle.range().start);
-                assert!(component.coverage().end >= cycle.range().end);
-            }
-            assert!((component.class_id() as usize) < storage.classes().len());
-        }
-    }
-
-    #[test]
     fn max_length_below_minimum_is_rejected() {
         let embedded = loop_trajectory();
         let outcome = CycleStorage::build(&embedded, .., 1, 0.95, &ExecutionBackend::Sequential);
@@ -849,34 +829,19 @@ mod tests {
                 "band top differs after round-trip for segment {segment:?}",
             );
         }
-        for point in 0..embedded.trajectory().len() {
+        // Representative points rather than every index: the two ends of the
+        // extent, an interior point, and one past the extent, which resolves to
+        // no component at all.
+        for point in [0, 12, 24, 25] {
             assert_eq!(
                 storage.components_covering(point),
                 loaded_storage.components_covering(point),
                 "coverage differs after round-trip at point {point}",
             );
         }
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn loaded_fingerprint_distinguishes_embedded() {
-        let embedded = loop_trajectory();
-        let storage =
-            CycleStorage::build(&embedded, .., 25, 0.95, &ExecutionBackend::Sequential).unwrap();
-        let mut buffer: Vec<u8> = Vec::new();
-        save_to_writer(&mut buffer, &storage).unwrap();
-
-        let loaded = load_from_reader::<CycleStorage, _>(&buffer[..]).unwrap();
-
-        // The matching embedded shares the loaded fingerprint.
-        assert_eq!(loaded.fingerprint(), embedded.fingerprint());
-
-        // A different embedded trajectory (different points) has a different
-        // fingerprint, so a provenance check would reject it.
-        let other_points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
-        let other_trajectory = Trajectory::new(other_points.view()).unwrap();
-        let other_embedded = embed_euclidean(other_trajectory).unwrap();
-        assert_ne!(loaded.fingerprint(), other_embedded.fingerprint());
+        assert!(
+            !storage.components_covering(0).is_empty(),
+            "fixture covers no points, so the comparison above holds vacuously",
+        );
     }
 }

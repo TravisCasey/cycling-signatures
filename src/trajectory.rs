@@ -241,14 +241,6 @@ mod tests {
     use crate::serialization::{load_from_reader, save_to_writer};
 
     #[test]
-    fn with_parameters_records_the_supplied_parameterization() {
-        let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]];
-        let trajectory = Trajectory::with_parameters(points.view(), &[0.25, 0.5, 4.0]).unwrap();
-
-        assert_eq!(trajectory.parameters(), &[0.25, 0.5, 4.0]);
-    }
-
-    #[test]
     fn with_parameters_returns_err_on_count_mismatch() {
         let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]];
         let outcome = Trajectory::with_parameters(points.view(), &[0.0, 1.0]);

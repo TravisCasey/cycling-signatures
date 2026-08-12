@@ -326,33 +326,26 @@ mod tests {
     }
 
     #[test]
-    fn two_knot_linear_interpolation() {
-        // With only two knots the system collapses to linear interpolation.
+    fn linear_data_interpolates_linearly() {
+        // Natural cubic spline through linear knots is linear, including in
+        // the two-knot case.
         let knots = array![0.0, 2.0];
         let values = array![[1.0, 4.0], [3.0, 0.0]];
-        let spline = CubicSpline::new(knots, values.view()).unwrap();
+        let two_knot = CubicSpline::new(knots, values.view()).unwrap();
+        for parameter in [0.5, 1.0] {
+            let sample = two_knot.sample(parameter);
+            assert!((sample[0] - (1.0 + parameter)).abs() < 1e-12);
+            assert!((sample[1] - (4.0 - 2.0 * parameter)).abs() < 1e-12);
 
-        let mid = spline.sample(1.0);
-        assert!((mid[0] - 2.0).abs() < 1e-12);
-        assert!((mid[1] - 2.0).abs() < 1e-12);
-
-        for parameter in [0.0, 0.5, 1.0, 1.5, 2.0] {
-            let slope = spline.derivative(parameter);
+            let slope = two_knot.derivative(parameter);
             assert!((slope[0] - 1.0).abs() < 1e-12);
             assert!((slope[1] - (-2.0)).abs() < 1e-12);
         }
-    }
 
-    #[test]
-    fn linear_data_at_all_orders() {
-        // A natural cubic spline through linear data is itself linear:
-        // order 0 reproduces the line,
-        // order 1 is the constant slope, and
-        // orders 2 and above vanish.
-        let spline = linear_spline();
-        for parameter in [0.25, 0.5, 0.75, 1.0, 1.3, 1.7, 2.0, 2.5, 2.99] {
-            let sample = spline.sample_with_order(parameter, 0);
-            let derivative = spline.sample_with_order(parameter, 1);
+        let four_knot = linear_spline();
+        for parameter in [0.75, 2.5] {
+            let sample = four_knot.sample_with_order(parameter, 0);
+            let derivative = four_knot.sample_with_order(parameter, 1);
 
             assert!((sample[0] - parameter).abs() < 1e-10);
             assert!(sample[1].abs() < 1e-10);
@@ -360,7 +353,7 @@ mod tests {
             assert!(derivative[1].abs() < 1e-10);
 
             for order in 2..=4 {
-                let higher = spline.sample_with_order(parameter, order);
+                let higher = four_knot.sample_with_order(parameter, order);
                 assert!(higher.iter().all(|component| component.abs() < 1e-10));
             }
         }

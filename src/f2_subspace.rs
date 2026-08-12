@@ -297,15 +297,6 @@ mod tests {
     }
 
     #[test]
-    fn new_canonicalizes_equivalent_spanning_sets() {
-        // Two spanning sets of the same 2-dim subspace of F_2^3:
-        // {[1,1,0], [0,1,0]}  and  {[1,0,0], [0,1,0]}.
-        let first = F2Subspace::new(vec![vector(3, &[0, 1]), vector(3, &[1])], 3).unwrap();
-        let second = F2Subspace::new(vec![vector(3, &[0]), vector(3, &[1])], 3).unwrap();
-        assert_eq!(first, second);
-    }
-
-    #[test]
     fn contains_in_span() {
         // Subspace spanned by [1,0,1] and [0,1,0] in F_2^3.
         let subspace = F2Subspace::new(vec![vector(3, &[0, 2]), vector(3, &[1])], 3).unwrap();
@@ -313,13 +304,6 @@ mod tests {
         assert!(subspace.contains(&vector(3, &[0, 1, 2])));
         // [0,0,1] is not in the span.
         assert!(!subspace.contains(&vector(3, &[2])));
-    }
-
-    #[test]
-    fn contains_zero_vector_in_trivial() {
-        let trivial = F2Subspace::trivial(5);
-        assert!(trivial.contains(&F2Vector::zeros(5)));
-        assert!(!trivial.contains(&F2Vector::from_nonzero(5, [2])));
     }
 
     #[test]

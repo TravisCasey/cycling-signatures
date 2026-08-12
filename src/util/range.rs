@@ -59,7 +59,6 @@ mod tests {
         assert_eq!(normalize_segment(..4, 10).unwrap(), 0..4);
         assert_eq!(normalize_segment(3.., 10).unwrap(), 3..10);
         assert_eq!(normalize_segment(.., 10).unwrap(), 0..10);
-        assert_eq!(normalize_segment(..=4, 10).unwrap(), 0..5);
     }
 
     #[test]

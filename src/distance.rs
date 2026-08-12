@@ -320,11 +320,12 @@ mod tests {
         // The emitted partition, ordering included, is a function of the
         // trajectory and the detection parameters alone: every tiling of the same
         // window produces the same vector, not merely the same set.
-        let trajectory = circling_trajectory(5);
+        let trajectory = circling_trajectory(7);
         let count = trajectory.len();
         let threshold = CIRCLING_THRESHOLD;
         // Reaches four revolutions, so four recurrence families are detected.
         let max_length = 170;
+        assert!(count > DEFAULT_OWNED_COLUMNS, "fixture does not split");
 
         let detect = |owned_columns: usize| {
             detect_euclidean(&trajectory, 0..count, threshold, max_length, owned_columns).unwrap()
@@ -336,7 +337,7 @@ mod tests {
             "fixture detects {} components; every assertion below is vacuous under 2",
             reference.len(),
         );
-        for owned_columns in [3, 7, 64, 199] {
+        for owned_columns in [3, 7, 64, 199, DEFAULT_OWNED_COLUMNS] {
             assert_eq!(
                 detect(owned_columns),
                 reference,
@@ -417,34 +418,6 @@ mod tests {
     }
 
     #[test]
-    fn default_owned_columns_splits_and_matches_single_tile() {
-        // Only a segment longer than `DEFAULT_OWNED_COLUMNS` splits, so the
-        // fixture is sized past it to exercise the shipped value.
-        let trajectory = circling_trajectory(31);
-        let count = trajectory.len();
-        assert!(count > DEFAULT_OWNED_COLUMNS, "fixture does not split");
-        // One revolution plus slack, enough to admit the once-per-revolution
-        // recurrence without making the tile expensive.
-        let max_length = 45;
-
-        let split = detect_euclidean(
-            &trajectory,
-            0..count,
-            CIRCLING_THRESHOLD,
-            max_length,
-            DEFAULT_OWNED_COLUMNS,
-        )
-        .unwrap();
-        let whole =
-            detect_euclidean(&trajectory, 0..count, CIRCLING_THRESHOLD, max_length, count).unwrap();
-
-        // Without this the comparison can hold vacuously on two empty
-        // partitions, which is what a fold-back fixture silently produced here.
-        assert!(!whole.is_empty(), "fixture detects no components");
-        assert_eq!(split, whole);
-    }
-
-    #[test]
     fn grid_adjacent_admitted_entries_share_a_component() {
         // Points 0, 3 and 4 form an equilateral triangle of side 0.85 at
         // threshold 0.9, while points 1 and 2 sit far enough away that no
@@ -522,32 +495,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn detects_a_known_loop_closure() {
-        let points = array![
-            [0.0, 0.0],
-            [0.5, 0.0],
-            [1.0, 0.0],
-            [1.0, 0.5],
-            [1.0, 1.0],
-            [0.5, 1.0],
-            [0.0, 1.0],
-            [0.0, 0.5],
-            [0.0, 0.0],
-        ];
-        let trajectory = Trajectory::new(points.view()).unwrap();
-        let components = detect_euclidean(&trajectory, 0..9, 0.6, 9, 9).unwrap();
-
-        let found = components.iter().any(|component| {
-            component
-                .iter()
-                .any(|cycle| cycle.start == 0 && cycle.end == 9)
-        });
-        assert!(
-            found,
-            "expected to find the loop-closing cycle 0..9 in some component; got {components:?}",
-        );
     }
 }

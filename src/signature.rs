@@ -230,6 +230,12 @@ mod tests {
 
         let expected_span_at_0_6 = F2Subspace::new(vec![basis_two, basis_zero_one], 3).unwrap();
         assert_eq!(signature.span_at(0.6).unwrap(), expected_span_at_0_6);
+    }
+
+    #[test]
+    fn rank_at_rejects_thresholds_outside_the_band() {
+        let births = vec![(0.2, F2Vector::from_nonzero(3, [0]))];
+        let signature = CyclingSignature::from_births(births, 3, 1.0);
 
         assert!(matches!(
             signature.rank_at(1.5).unwrap_err(),

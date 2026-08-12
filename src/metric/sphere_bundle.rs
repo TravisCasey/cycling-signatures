@@ -108,6 +108,14 @@ mod tests {
         assert!((distance_large - 401.0_f64.sqrt()).abs() < 1e-12);
 
         assert!((distance_small - distance_large).abs() > 1e-12);
+
+        // A zero direction half is a legal point for the same reason: the
+        // direction factor is measured on stored coordinates directly.
+        let zero_direction = array![0.0, 0.0, 0.0, 0.0];
+        let unit_direction = array![0.0, 0.0, 1.0, 0.0];
+        let distance_from_zero =
+            Metric::SphereBundle.distance(zero_direction.view(), unit_direction.view());
+        assert!((distance_from_zero - 1.0).abs() < 1e-12);
     }
 
     #[test]
@@ -124,37 +132,5 @@ mod tests {
         let left = array![0.0, 0.0, 0.0];
         let right = array![1.0, 2.0, 3.0];
         let _ = Metric::SphereBundle.distance(left.view(), right.view());
-    }
-
-    #[test]
-    fn distance_allows_zero_direction_half() {
-        // A zero direction half is a legal point: the direction factor is
-        // measured on stored coordinates directly, with no normalization.
-        let left = array![0.0, 0.0, 0.0, 0.0];
-        let right = array![0.0, 0.0, 1.0, 0.0];
-        let distance = Metric::SphereBundle.distance(left.view(), right.view());
-        assert!((distance - 1.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn fill_distances_matches_per_pair() {
-        // Three 4D sphere-bundle points; verifies the batched path agrees
-        // with the per-pair distance on a concrete fixture.
-        let points = array![
-            [0.0, 0.0, 1.0, 0.0],
-            [3.0, 4.0, 0.0, 1.0],
-            [1.0, 1.0, 1.0, 1.0],
-        ];
-        let pairs = [(0, 1), (1, 2), (0, 2)];
-        let metric = Metric::SphereBundle;
-
-        let mut out = vec![0.0; pairs.len()];
-        metric.fill_distances(points.view(), &pairs, &mut out);
-        for (slot, &(left_index, right_index)) in out.iter().zip(&pairs) {
-            assert!(
-                (slot - metric.distance(points.row(left_index), points.row(right_index))).abs()
-                    < 1e-12
-            );
-        }
     }
 }

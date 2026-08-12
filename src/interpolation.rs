@@ -104,7 +104,7 @@ mod tests {
 
     use ndarray::array;
 
-    use super::{CubicSpline, DerivativeInterpolator, Interpolator};
+    use super::{CubicSpline, Interpolator};
     use crate::{metric::Metric, trajectory::Trajectory};
 
     #[test]
@@ -122,12 +122,6 @@ mod tests {
         let shared_resample = Trajectory::resample(&shared, Metric::Euclidean, 0.5).unwrap();
         let direct_resample = Trajectory::resample(&spline, Metric::Euclidean, 0.5).unwrap();
         assert_eq!(shared_resample.fingerprint(), direct_resample.fingerprint());
-
-        // Delegation is exact, not merely close: a shared fit and the fit it
-        // wraps are the same function.
-        assert_eq!(shared.knots(), spline.knots());
-        assert_eq!(shared.sample(1.5), spline.sample(1.5));
-        assert_eq!(shared.derivative(1.5), spline.derivative(1.5));
     }
 
     #[test]

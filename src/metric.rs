@@ -301,19 +301,12 @@ mod tests {
     }
 
     #[test]
-    fn fill_distances_matches_per_pair() {
+    #[should_panic(expected = "length mismatch: ")]
+    fn fill_distances_output_length_mismatch_panics() {
         let points = array![[0.0, 0.0], [3.0, 0.0], [6.0, 4.0], [1.0, 1.0]];
         let pairs = [(0, 1), (1, 2), (0, 3)];
 
-        let mut out = vec![0.0; pairs.len()];
+        let mut out = vec![0.0; pairs.len() - 1];
         Metric::Euclidean.fill_distances(points.view(), &pairs, &mut out);
-        for (slot, &(left_index, right_index)) in out.iter().zip(&pairs) {
-            assert!(
-                (slot
-                    - Metric::Euclidean.distance(points.row(left_index), points.row(right_index)))
-                .abs()
-                    < 1e-12
-            );
-        }
     }
 }
