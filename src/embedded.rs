@@ -198,9 +198,11 @@ impl EmbeddedTrajectory {
     /// detection resolution of this embedding, equal to
     /// [`Trajectory::resolution`] under the embedded metric.
     ///
-    /// A cycle-detection threshold must exceed this value: above it every
-    /// consecutive pair of points is admitted, so cycles a single step apart
-    /// can be shown to be homologous.
+    /// A cycle-detection threshold must exceed this value. The cycles of one
+    /// component are homologous because the three endpoints involved in each
+    /// merge lie pairwise within the threshold: two of those distances are
+    /// below it by admission, and the third is a consecutive pair, which this
+    /// value bounds.
     #[must_use]
     pub fn resolution(&self) -> f64 {
         self.resolution

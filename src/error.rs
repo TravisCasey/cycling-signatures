@@ -244,9 +244,9 @@ pub enum Error {
     },
 
     /// A cycle-detection threshold at or below the embedded trajectory's
-    /// consecutive-point resolution under its metric: a threshold above the
-    /// resolution admits every consecutive pair of points, which is what makes
-    /// cycles a single step apart comparable.
+    /// consecutive-point resolution under its metric. The component merge rule
+    /// requires a merge's three endpoint lie pairwise within the threshold; one
+    /// pair is consecutive which would not satisfy the requirement.
     #[error(
         "adjacency threshold {threshold} is not above the trajectory's consecutive-point \
          resolution {resolution}"
