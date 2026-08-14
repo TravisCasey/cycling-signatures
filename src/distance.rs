@@ -147,7 +147,7 @@ mod tests {
     use chomp3rs::ExecutionBackend;
     use ndarray::{Array2, array};
 
-    use super::{DEFAULT_OWNED_COLUMNS, detect_components};
+    use super::{DEFAULT_OWNED_COLUMNS, detect_components, tile::detect_tile_components};
     use crate::{
         Trajectory,
         error::{Error, Result},
@@ -452,42 +452,62 @@ mod tests {
 
     #[test]
     fn globally_trivial_component_dropped_across_tiles() {
-        // The two tiles are 0..7 and 6..10, sharing column 6, and cycle 6..9
-        // is reported by both. In the first it joins 6..10 and 5..10 into a
-        // component carrying no self-comparison, so it looks non-trivial there.
-        // The second tile is decisive: 6..9 reaches the self-comparisons
-        // through 6..10, 7..10 and 7..9, so the cycle is trivial globally.
-        // Deciding triviality per tile would therefore make the partition
-        // depend on the tiling.
+        // Whether a component carries the trivial cycle is decided over the
+        // whole window rather than inside each tile, so the emitted partition
+        // does not depend on how the window was tiled.
+        //
+        // Six owned columns split this window into the tiles 0..7 and 6..10,
+        // which share column 6. Two components take the same shape in the first
+        // tile: a cycle merged with the one step longer cycle beside it, and no
+        // other admitted neighbor. On column 4 they are 4..9 and 4..10, whose
+        // remaining neighbors 4..8, 5..9 and 5..10 are not admitted, so the
+        // component reaches no self-comparison and survives. On column 6 they
+        // are 6..9 and 6..10, where 6..8 is not admitted either and the
+        // neighbors that start at point 7 lie on a column the first tile does
+        // not carry.
+        //
+        // The second tile owns that column. Points 7 and 8 lie within the cube
+        // side, so 7..9 is admitted there, merges with 6..9, and brings the
+        // self-comparisons of both its endpoints into the component. The
+        // stitching pass therefore drops it, and neither tiling emits 6..9 or
+        // 6..10.
         let points = array![
-            [0.6, 1.2],
-            [1.2, 0.8],
-            [1.0, 1.2],
-            [0.6, 0.8],
+            [0.5, 0.75],
+            [0.75, 0.75],
+            [1.0, 0.5],
+            [1.25, 0.75],
             [1.0, 1.0],
-            [0.4, 0.0],
-            [0.2, 0.2],
-            [0.0, 0.4],
-            [0.8, 1.0],
-            [0.6, 0.6],
+            [1.25, 0.25],
+            [0.5, 1.0],
+            [0.0, 0.0],
+            [0.25, 0.5],
+            [0.25, 1.25],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let max_length = 34;
+        // No cap below the window, so every cycle the window holds is reached.
+        let max_length = points.nrows();
         let range = 0..points.nrows();
+
+        // The first tile's own view, which the stitching pass overrules.
+        let measured = Metric::Euclidean.over(trajectory.points());
+        let first_tile = detect_tile_components(&measured, 0..7, points.nrows(), max_length);
+        let looks_non_trivial = (0..first_tile.len()).any(|index| {
+            !first_tile.contains_trivial(index) && first_tile.cycles(index) == [(6, 9), (6, 10)]
+        });
+        assert!(
+            looks_non_trivial,
+            "the first tile must report 6..9 and 6..10 as a component carrying no trivial cycle",
+        );
 
         let single_tile =
             detect_euclidean(&trajectory, range.clone(), max_length, points.nrows()).unwrap();
-
         let multi_tile = detect_euclidean(&trajectory, range, max_length, 6).unwrap();
 
         assert_eq!(single_tile, multi_tile);
-        for component in &single_tile {
-            for cycle in component {
-                assert!(
-                    !(cycle.start == 6 && cycle.end == 9),
-                    "globally trivial cycle 6..9 survived into {single_tile:?}",
-                );
-            }
-        }
+        assert_eq!(
+            multi_tile,
+            vec![vec![4..9, 4..10]],
+            "expected only the component on column 4 to survive",
+        );
     }
 }
