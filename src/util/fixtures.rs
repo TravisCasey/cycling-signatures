@@ -37,7 +37,7 @@ pub(crate) fn ring_waypoints() -> [[f64; 2]; 9] {
 }
 
 /// Stacks `points` into a two-column array, one row per point.
-pub(crate) fn stack_points(points: &[[f64; 2]]) -> Array2<f64> {
+fn stack_points(points: &[[f64; 2]]) -> Array2<f64> {
     let flat: Vec<f64> = points.iter().flatten().copied().collect();
     Array2::from_shape_vec((points.len(), 2), flat)
         .expect("flattened point rows form a valid two-column matrix")

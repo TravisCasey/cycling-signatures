@@ -14,7 +14,7 @@
 //!
 //! The pipeline runs in four stages: resample to a dense trajectory, build
 //! the cover from it, downsample to the sparser detection trajectory, then
-//! embed and store cycles at an explicit adjacency threshold.
+//! embed and store its cycles.
 //!
 //! ```no_run
 //! use cycling_signatures::prelude::*;
@@ -35,8 +35,7 @@
 //! let cover = CubicalCover::build(&dense, &backend).unwrap();
 //! let detection = dense.downsample(metric, DOWNSAMPLE_SPACING).unwrap();
 //! let embedded = EmbeddedTrajectory::new(detection, cover, metric).unwrap();
-//! let storage =
-//!     CycleStorage::build(&embedded, .., 100, 0.5, &backend).unwrap();
+//! let storage = CycleStorage::build(&embedded, .., 100, &backend).unwrap();
 //! assert!(!storage.components().is_empty());
 //! ```
 //!
@@ -47,15 +46,18 @@
 //! the cover, leaving spurious holes that report first-homology classes the
 //! curve does not have.
 //!
-//! # Resolution and threshold
+//! # Resolution and the cube side
 //!
 //! Cubes have unit side length. Callers scale a trajectory's coordinates into
 //! cube units before constructing it; the crate does not scale or center them
 //! itself. The resample spacing sets cover fidelity; the downsample spacing
-//! sets detection resolution and is the primary cost lever. The detection
-//! band is `resolution() < threshold <= 1`, where `resolution()` is
-//! [`EmbeddedTrajectory::resolution`]; see [`Error::ThresholdAboveCubeSide`]
-//! for why the upper bound is what it is.
+//! sets detection resolution and is the primary cost-affecting parameter.
+//!
+//! Detected cycles have endpoints strictly closer than 1 in the designated
+//! metrics. A signature admits queries over the filtration band `[0, 1]`,
+//! which closes at the same value. An embedded trajectory's own resolution
+//! ([`EmbeddedTrajectory::resolution`]) must stay below the cube side as well;
+//! see [`Error::ResolutionNotBelowCubeSide`] for details.
 //!
 //! # Comparing output between runs
 //!

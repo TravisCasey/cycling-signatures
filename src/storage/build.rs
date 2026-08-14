@@ -1,9 +1,9 @@
 // This file is part of cycling-signatures, licensed under the GPL-3.0-or-later.
 // See LICENSE or <https://www.gnu.org/licenses/gpl-3.0.html>.
 
-//! Construction pipeline for [`CycleStorage`]: explicit-threshold cycle
-//! detection over a trajectory segment, followed by per-component class
-//! deduplication and assembly.
+//! Construction pipeline for [`CycleStorage`]: cycle detection over a
+//! trajectory segment, followed by per-component class deduplication and
+//! assembly.
 
 use std::ops::{Range, RangeBounds};
 
@@ -20,50 +20,42 @@ use crate::{
 };
 
 impl CycleStorage {
-    /// Builds the storage by running cycle detection over `segment` at an
-    /// explicit adjacency `threshold`, storing each surviving component's
-    /// homology class and per-cycle birth.
+    /// Builds the storage by running cycle detection over `segment`, storing
+    /// each surviving component's homology class and per-cycle birth.
     ///
-    /// The returned storage's [`threshold`](Self::threshold) is `threshold`
-    /// itself.
+    /// Detected cycles have endpoints with metric distance strictly below 1,
+    /// the cube side length.
     ///
     /// # Errors
     ///
     /// - [`Error::SegmentOutOfBounds`] if `segment` does not fit inside
     ///   `0..embedded.trajectory().len()`.
     /// - [`Error::MaxLengthBelowMinimum`] if `max_length < 2`.
-    /// - [`Error::ThresholdNotAboveResolution`] if `threshold <=
-    ///   embedded.resolution()`.
-    /// - [`Error::ThresholdAboveCubeSide`] if `threshold` is above 1, the cube
-    ///   side.
+    /// - [`Error::CycleEndpointsNonAdjacent`] if a detected cycle's endpoint
+    ///   cubes differ by more than 1 in some axis.
     pub fn build(
         embedded: &EmbeddedTrajectory,
         segment: impl RangeBounds<usize>,
         max_length: usize,
-        threshold: f64,
         backend: &ExecutionBackend,
     ) -> Result<Self> {
         let range = normalize_segment(segment, embedded.trajectory().len())?;
         if max_length < 2 {
             return Err(Error::MaxLengthBelowMinimum { max_length });
         }
-        embedded.check_threshold(threshold)?;
 
-        Self::assemble(embedded, range, threshold, max_length, backend)
+        Self::assemble(embedded, range, max_length, backend)
     }
 
     /// Assembly path for [`build`](Self::build): runs cycle detection over
-    /// the already-validated `range` at `threshold`, then walks
-    /// representatives, computes births, deduplicates classes, and builds the
-    /// containment index.
+    /// the already-validated `range`, then walks representatives, computes
+    /// births, deduplicates classes, and builds the containment index.
     ///
     /// `range` must already be normalized and `max_length` already validated
-    /// as at least 2; `threshold` must already be above the embedded
-    /// trajectory's consecutive-point resolution and at most 1, the cube side.
+    /// as at least 2.
     fn assemble(
         embedded: &EmbeddedTrajectory,
         range: Range<usize>,
-        threshold: f64,
         max_length: usize,
         backend: &ExecutionBackend,
     ) -> Result<Self> {
@@ -73,7 +65,6 @@ impl CycleStorage {
         let raw_components = detect_components(
             &metric_points,
             range.clone(),
-            threshold,
             max_length,
             DEFAULT_OWNED_COLUMNS,
             backend,
@@ -147,7 +138,6 @@ impl CycleStorage {
             extent: u32::try_from(range.start).expect("extent start exceeds u32::MAX")
                 ..u32::try_from(range.end).expect("extent end exceeds u32::MAX"),
             max_length: u32::try_from(max_length).expect("cycle length cap exceeds u32::MAX"),
-            threshold,
             num_generators,
             classes,
             components,

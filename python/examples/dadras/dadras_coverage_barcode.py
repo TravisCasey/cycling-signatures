@@ -9,7 +9,7 @@ one frequent homology class of the Dadras attractor over time, colored where
 some cycle of that class born by the panel's threshold spans the time. A
 cycle's birth is the metric distance between its endpoint detection points, so
 low caps admit only the tightest recurrences; raising the cap toward the top of
-the stored detection band fills the rows in. All panels admit only cycles up to
+the filtration band fills the rows in. All panels admit only cycles up to
 one fixed length, counted in detection points rather than in time, so coverage
 always means participation in a recurrence no longer than that cap.
 """
@@ -20,10 +20,9 @@ always means participation in a recurrence no longer than that cap.
 # the half-open point range covered by all stored components, in indices into
 # the detection trajectory, and that trajectory's ``parameters()`` give the
 # integration time of each detection point, which turns a cycle's point range
-# into the span of time it covers. ``threshold()`` is the top of the stored
-# detection band; the per-panel birth caps below sit at or under it.
+# into the stretch of time it covers. Every stored birth lies below the cube
+# side length, 1, and so does every per-panel birth cap below.
 
-import math
 from collections import Counter
 
 import matplotlib.pyplot as plt
@@ -36,8 +35,6 @@ import cycling_signatures as cs
 TRAJECTORY = cs.Trajectory.load(_support.dadras_trajectory())
 STORAGE = cs.CycleStorage.load(_support.dadras_storage())
 PARAMETERS = TRAJECTORY.parameters()
-BAND_TOP = STORAGE.threshold()
-assert math.isfinite(BAND_TOP)
 EXTENT_START, EXTENT_STOP = STORAGE.extent()
 COMPONENTS = STORAGE.components()
 
@@ -78,13 +75,13 @@ CLASS_COLORS = _support.class_color_map([class_keys[class_id] for class_id in or
 # %%
 # **Collect the cycles in the time window.** Each ``Component`` exposes its
 # cycles through ``cycles()``, and every ``Cycle`` carries its point
-# ``range()`` and ``birth()``. A cycle's point range becomes the closed span of
-# time between its first and last detection point. Filtering cycles by birth
-# matches the cycles a detection capped at that threshold would admit. Cycles
-# longer than ``LENGTH_CAP`` detection points are excluded; that cap is a point
-# count, not a duration, so the time a capped cycle covers varies with the
-# local speed of the flow. The window restricts the figure to a legible span
-# of the full extent, and its columns are a uniform width in time.
+# ``range()`` and ``birth()``. A cycle's point range becomes the closed stretch
+# of time between its first and last detection point. Filtering cycles by birth
+# keeps exactly the cycles whose endpoints close within that cap. Cycles longer
+# than ``LENGTH_CAP`` detection points are excluded; that cap is a point count,
+# not a duration, so the time a capped cycle covers varies with the local speed
+# of the flow. The window restricts the figure to a legible span of the full
+# extent, and its columns are a uniform width in time.
 
 LENGTH_CAP = 800
 WINDOW_DURATION = 192.0
@@ -122,7 +119,7 @@ for component in COMPONENTS:
 # **Build one label array per birth cap.** A cell is its class row index plus
 # one where any cycle born below the cap covers it, and zero (white) otherwise.
 # The lower caps are quantiles of the windowed cycles' births and the last cap
-# is the band top, so the panels sweep the stored band from the tightest
+# is the band top, so the panels sweep the filtration band from the tightest
 # recurrences up to everything the storage detected.
 
 BIRTH_QUANTILE_LEVELS = (0.25, 0.50)
@@ -130,7 +127,7 @@ BIRTH_QUANTILE_LEVELS = (0.25, 0.50)
 all_births = np.array([birth for _, _, _, birth in windowed_cycles])
 BIRTH_CAPS = (
     *(float(np.quantile(all_births, level)) for level in BIRTH_QUANTILE_LEVELS),
-    BAND_TOP,
+    1.0,
 )
 
 
@@ -140,7 +137,7 @@ def coverage_labels(max_birth: float) -> np.ndarray:
     for row_index, first_time, last_time, cycle_birth in windowed_cycles:
         if cycle_birth >= max_birth:
             continue
-        # Columns whose time falls in the closed span [first_time, last_time].
+        # Columns whose time falls in [first_time, last_time], inclusive.
         first_column = int(np.searchsorted(column_times, first_time, side="left"))
         last_column = int(np.searchsorted(column_times, last_time, side="right"))
         labels[row_index, first_column:last_column] = row_index + 1

@@ -13,12 +13,13 @@ use crate::{
 };
 
 /// The cycling signature of a trajectory window: a filtered ``F_2`` subspace
-/// of cover homology, ordered by the adjacency threshold ("birth") at which
-/// each independent class first enters.
+/// of cover homology, ordered by birth, the endpoint distance at which each
+/// independent class first enters.
 ///
-/// ``span`` is the full-band subspace, complete up to ``threshold_max``;
-/// ``span_at`` and ``rank_at`` restrict to a smaller threshold. ``births``
-/// and ``classes`` give the per-generator breakdown, aligned by index.
+/// The filtration band is ``[0, 1]``: ``span`` is the subspace of every class
+/// detected; ``span_at`` and ``rank_at`` restrict to a smaller threshold inside
+/// the band. ``births`` and ``classes`` give the per-generator breakdown,
+/// aligned by index.
 #[pyclass(name = "CyclingSignature")]
 pub(crate) struct PyCyclingSignature {
     pub(crate) inner: CyclingSignature,
@@ -31,7 +32,7 @@ impl PyCyclingSignature {
     /// Returns
     /// -------
     /// ``Subspace``
-    ///     The cycle space, complete up to ``threshold_max``.
+    ///     The cycle space over the full filtration band.
     #[must_use]
     fn span(&self) -> PySubspace {
         PySubspace {
@@ -66,7 +67,7 @@ impl PyCyclingSignature {
     /// Raises
     /// ------
     /// ``ValueError``
-    ///     If ``threshold`` exceeds ``threshold_max``, or is NaN.
+    ///     If ``threshold`` falls outside ``[0, 1]``, or is NaN.
     fn rank_at(&self, threshold: f64) -> PyResult<usize> {
         self.inner.rank_at(threshold).map_err(to_pyerr)
     }
@@ -87,7 +88,7 @@ impl PyCyclingSignature {
     /// Raises
     /// ------
     /// ``ValueError``
-    ///     If ``threshold`` exceeds ``threshold_max``, or is NaN.
+    ///     If ``threshold`` falls outside ``[0, 1]``, or is NaN.
     fn span_at(&self, threshold: f64) -> PyResult<PySubspace> {
         self.inner
             .span_at(threshold)
@@ -95,7 +96,7 @@ impl PyCyclingSignature {
             .map_err(to_pyerr)
     }
 
-    /// Returns the birth threshold of every generator, ascending.
+    /// Returns the birth of every generator, ascending.
     ///
     /// Returns
     /// -------
@@ -127,17 +128,6 @@ impl PyCyclingSignature {
             .collect()
     }
 
-    /// Returns the largest adjacency threshold this signature is complete for.
-    ///
-    /// Returns
-    /// -------
-    /// float
-    ///     The inclusive upper end of the valid query range.
-    #[must_use]
-    fn threshold_max(&self) -> f64 {
-        self.inner.threshold_max()
-    }
-
     /// Returns the number of cover generators, the ambient dimension of the
     /// spanned subspace.
     ///
@@ -151,11 +141,7 @@ impl PyCyclingSignature {
 
     /// Returns a string representation of the signature.
     fn __repr__(&self) -> String {
-        format!(
-            "CyclingSignature(rank={}, threshold_max={:?})",
-            self.inner.rank(),
-            self.inner.threshold_max()
-        )
+        format!("CyclingSignature(rank={})", self.inner.rank())
     }
 }
 

@@ -14,11 +14,9 @@
 //! Neighboring cycles are homologous in the cover, so a component carries a
 //! single homology class. The two cycles differ by a loop that stays inside
 //! the block of cubes spanned by their three distinct endpoints. Those three
-//! points are pairwise within the threshold (two by admission, the
-//! consecutive pair because a valid threshold clears the trajectory's own
-//! resolution), and a valid threshold also does not exceed 1, the cube side
-//! ([`Error::ThresholdAboveCubeSide`]): together these make the loop
-//! confined to their cubes contract.
+//! points are pairwise below the cube side (two by admission, the consecutive
+//! pair because an embedded trajectory's resolution clears it), which makes the
+//! loop confined to their cubes contract.
 
 mod stitch;
 mod tile;
@@ -83,8 +81,8 @@ fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Ve
 /// Components are returned ordered by their least cycle under `(start, end)`,
 /// with each component's cycles in that order. Since no two components share a
 /// cycle, that order is total, which makes the whole returned partition a
-/// function of the measured points, range, threshold and cap alone: it
-/// depends neither on `owned_columns` nor on `backend`.
+/// function of the measured points, range and cap alone: it depends neither on
+/// `owned_columns` nor on `backend`.
 ///
 /// # Panics
 ///
@@ -98,7 +96,6 @@ fn enumerate_tile_column_ranges(range: Range<usize>, owned_columns: usize) -> Ve
 pub(crate) fn detect_components(
     points: &MetricPoints<'_>,
     range: Range<usize>,
-    threshold: f64,
     max_length: usize,
     owned_columns: usize,
     backend: &ExecutionBackend,
@@ -132,7 +129,7 @@ pub(crate) fn detect_components(
         |column_range: Range<usize>| {
             let start = column_range.start;
             let components =
-                detect_tile_components(points, column_range, window_end, capped_length, threshold);
+                detect_tile_components(points, column_range, window_end, capped_length);
             vec![(start, components)]
         },
     );
@@ -161,7 +158,6 @@ mod tests {
     fn detect_euclidean(
         trajectory: &Trajectory,
         range: Range<usize>,
-        threshold: f64,
         max_length: usize,
         owned_columns: usize,
     ) -> Result<Vec<Vec<Range<usize>>>> {
@@ -169,7 +165,6 @@ mod tests {
         detect_components(
             &points,
             range,
-            threshold,
             max_length,
             owned_columns,
             &ExecutionBackend::Sequential,
@@ -177,14 +172,14 @@ mod tests {
     }
 
     fn small_trajectory() -> Trajectory {
-        let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0], [2.0, 0.0]];
+        let points = array![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0], [4.0, 0.0]];
         Trajectory::new(points.view()).unwrap()
     }
 
     #[test]
     fn rejects_segment_out_of_bounds() {
         let trajectory = small_trajectory();
-        let err = detect_euclidean(&trajectory, 0..10, 0.5, 5, 5).unwrap_err();
+        let err = detect_euclidean(&trajectory, 0..10, 5, 5).unwrap_err();
         assert!(matches!(err, Error::SegmentOutOfBounds { .. }));
     }
 
@@ -194,7 +189,7 @@ mod tests {
         // detection returns before any tile is laid out. Tiles require at
         // least one row and reject a zero cap outright.
         let trajectory = small_trajectory();
-        let components = detect_euclidean(&trajectory, 0..5, 0.5, 0, 5).unwrap();
+        let components = detect_euclidean(&trajectory, 0..5, 0, 5).unwrap();
 
         assert!(
             components.is_empty(),
@@ -205,7 +200,7 @@ mod tests {
     #[test]
     fn straight_line_trajectory_emits_no_real_recurrence() {
         let trajectory = small_trajectory();
-        let components = detect_euclidean(&trajectory, 0..5, 0.5, 5, 5).unwrap();
+        let components = detect_euclidean(&trajectory, 0..5, 5, 5).unwrap();
         assert!(
             components.is_empty(),
             "expected no non-trivial components for a straight-line trajectory, got {components:?}",
@@ -213,9 +208,9 @@ mod tests {
     }
 
     #[test]
-    fn admission_is_strict_at_an_exact_threshold_distance() {
-        // Points 0 and 2 sit exactly `threshold` apart, which is the only
-        // distance at which the admission comparison's direction is visible.
+    fn admission_is_strict_at_an_exact_cube_side_distance() {
+        // Points 0 and 2 sit exactly one cube side apart, the only distance at
+        // which the admission comparison's direction is visible.
         // The pair is not admitted, so nothing outside the self-comparisons is,
         // and every component carries the trivial cycle and is dropped.
         //
@@ -226,11 +221,11 @@ mod tests {
         let points = array![[0.0, 0.0], [5.0, 0.0], [1.0, 0.0]];
         let trajectory = Trajectory::new(points.view()).unwrap();
 
-        let components = detect_euclidean(&trajectory, 0..3, 1.0, 3, 3).unwrap();
+        let components = detect_euclidean(&trajectory, 0..3, 3, 3).unwrap();
 
         assert!(
             components.is_empty(),
-            "a pair exactly `threshold` apart must not be admitted; got {components:?}",
+            "a pair exactly one cube side apart must not be admitted; got {components:?}",
         );
     }
 
@@ -254,7 +249,7 @@ mod tests {
         let expected = vec![vec![0..5, 1..5]];
 
         for owned_columns in [5, 2] {
-            let components = detect_euclidean(&trajectory, 0..5, 0.9, 5, owned_columns).unwrap();
+            let components = detect_euclidean(&trajectory, 0..5, 5, owned_columns).unwrap();
             assert_eq!(
                 components, expected,
                 "partition differs at owned_columns {owned_columns}",
@@ -272,17 +267,17 @@ mod tests {
         // any emitted segment.
         let points = ndarray::array![
             [0.0, 0.0],
-            [0.5, 0.0],
-            [1.0, 0.0],
-            [1.0, 0.5],
-            [1.0, 1.0],
-            [0.5, 1.0],
-            [0.0, 1.0],
-            [0.0, 0.5],
+            [0.8, 0.0],
+            [1.6, 0.0],
+            [1.6, 0.8],
+            [1.6, 1.6],
+            [0.8, 1.6],
+            [0.0, 1.6],
+            [0.0, 0.8],
             [0.0, 0.0],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let components = detect_euclidean(&trajectory, 0..9, 0.6, 15, 9).unwrap();
+        let components = detect_euclidean(&trajectory, 0..9, 15, 9).unwrap();
 
         let found = components.iter().any(|component| {
             component
@@ -305,11 +300,12 @@ mod tests {
     }
 
     const SAMPLES_PER_REVOLUTION: usize = 40;
-    /// Consecutive samples of [`circling_trajectory`] sit this far apart, so
-    /// any threshold above it clears the trajectory's own resolution.
-    const CIRCLING_THRESHOLD: f64 = 0.5;
 
-    /// A radius-3 circle traversed `revolutions` times at 40 samples each.
+    /// A radius-6 circle traversed `revolutions` times at 40 samples each.
+    ///
+    /// The radius sets what the sweep admits: consecutive samples sit 0.94
+    /// apart, so every consecutive pair is admitted and every wider one on a
+    /// revolution is not.
     ///
     /// A cycle spanning whole revolutions closes on itself while its
     /// mid-revolution points stay far apart, so its merge chain does not reach
@@ -322,8 +318,8 @@ mod tests {
         let mut coordinates = Vec::with_capacity(count * 2);
         for index in 0..count {
             let angle = index as f64 * std::f64::consts::TAU / SAMPLES_PER_REVOLUTION as f64;
-            coordinates.push(3.0 * angle.cos());
-            coordinates.push(3.0 * angle.sin());
+            coordinates.push(6.0 * angle.cos());
+            coordinates.push(6.0 * angle.sin());
         }
         let points = Array2::from_shape_vec((count, 2), coordinates).unwrap();
         Trajectory::new(points.view()).unwrap()
@@ -336,13 +332,12 @@ mod tests {
         // window produces the same vector, not merely the same set.
         let trajectory = circling_trajectory(7);
         let count = trajectory.len();
-        let threshold = CIRCLING_THRESHOLD;
         // Reaches four revolutions, so four recurrence families are detected.
         let max_length = 170;
         assert!(count > DEFAULT_OWNED_COLUMNS, "fixture does not split");
 
         let detect = |owned_columns: usize| {
-            detect_euclidean(&trajectory, 0..count, threshold, max_length, owned_columns).unwrap()
+            detect_euclidean(&trajectory, 0..count, max_length, owned_columns).unwrap()
         };
 
         let reference = detect(count);
@@ -401,19 +396,12 @@ mod tests {
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
         let max_length = 34;
-        let threshold = 1.0;
         let range = 0..points.nrows();
 
-        let single_tile = detect_euclidean(
-            &trajectory,
-            range.clone(),
-            threshold,
-            max_length,
-            points.nrows(),
-        )
-        .unwrap();
+        let single_tile =
+            detect_euclidean(&trajectory, range.clone(), max_length, points.nrows()).unwrap();
 
-        let multi_tile = detect_euclidean(&trajectory, range, threshold, max_length, 8).unwrap();
+        let multi_tile = detect_euclidean(&trajectory, range, max_length, 8).unwrap();
 
         assert_eq!(single_tile, multi_tile);
 
@@ -433,8 +421,8 @@ mod tests {
 
     #[test]
     fn grid_adjacent_admitted_entries_share_a_component() {
-        // Points 0, 3 and 4 form an equilateral triangle of side 0.85 at
-        // threshold 0.9, while points 1 and 2 sit far enough away that no
+        // Points 0, 3 and 4 form an equilateral triangle whose side is inside
+        // the cube side, while points 1 and 2 sit far enough away that no
         // other pair is admitted. The pairs (0, 3) and (0, 4) are therefore
         // both admitted, share the endpoint at index 0, and are one row apart
         // in the endpoint-pair grid, so they belong to one component.
@@ -450,7 +438,6 @@ mod tests {
         let components = detect_euclidean(
             &trajectory,
             0..points.nrows(),
-            0.9,
             points.nrows(),
             points.nrows(),
         )
@@ -473,32 +460,25 @@ mod tests {
         // Deciding triviality per tile would therefore make the partition
         // depend on the tiling.
         let points = array![
-            [0.75, 1.5],
-            [1.5, 1.0],
-            [1.25, 1.5],
-            [0.75, 1.0],
-            [1.25, 1.25],
-            [0.5, 0.0],
-            [0.25, 0.25],
-            [0.0, 0.5],
-            [1.0, 1.25],
-            [0.75, 0.75],
+            [0.6, 1.2],
+            [1.2, 0.8],
+            [1.0, 1.2],
+            [0.6, 0.8],
+            [1.0, 1.0],
+            [0.4, 0.0],
+            [0.2, 0.2],
+            [0.0, 0.4],
+            [0.8, 1.0],
+            [0.6, 0.6],
         ];
         let trajectory = Trajectory::new(points.view()).unwrap();
         let max_length = 34;
-        let threshold = 1.25;
         let range = 0..points.nrows();
 
-        let single_tile = detect_euclidean(
-            &trajectory,
-            range.clone(),
-            threshold,
-            max_length,
-            points.nrows(),
-        )
-        .unwrap();
+        let single_tile =
+            detect_euclidean(&trajectory, range.clone(), max_length, points.nrows()).unwrap();
 
-        let multi_tile = detect_euclidean(&trajectory, range, threshold, max_length, 6).unwrap();
+        let multi_tile = detect_euclidean(&trajectory, range, max_length, 6).unwrap();
 
         assert_eq!(single_tile, multi_tile);
         for component in &single_tile {

@@ -38,17 +38,16 @@ import _support
 # RESAMPLE_SPACING is the dense-placement spacing that feeds the cover: tuned
 # against the raw trajectory's own row spacing to stay fine enough that the
 # cover resolves the attractor, at the insertion cost `report` prints.
-# DOWNSAMPLE_SPACING is the detection resolution: the build detects at the
-# cube side, the top of the detection band, so the stored band runs from the
-# achieved resolution up to the threshold. Detection points are spaced by
-# distance rather than time, so MAX_LENGTH, a count of them, caps cycles by
-# their length through state space. The box size is large enough that
-# recurrences are frequent while the cover still resolves the attractor.
+# DOWNSAMPLE_SPACING bounds the detection resolution, which must stay below the
+# cube side length, 1; `report` prints the resolution actually achieved.
+# Detection points are spaced by distance rather than time, so MAX_LENGTH caps
+# cycles by their length through state space. The box size is
+# large enough that recurrences are sufficiently frequent while the cover still
+# resolves the attractor.
 BOXSIZE = _support.LORENZ_BOXSIZE
 SPHERE_RADIUS = 3.5
 RESAMPLE_SPACING = 0.45
 MAX_LENGTH = 400
-THRESHOLD = 1.0
 DOWNSAMPLE_SPACING = 0.5
 
 
@@ -58,7 +57,7 @@ def build() -> tuple[Path, Path, float, float]:
     The two paths are the detection trajectory and the storage built over it.
     The fraction is the share of resample-inserted rows relative to the raw
     row count. The resolution is the detection trajectory's achieved
-    consecutive-point resolution, the recorded band's lower end.
+    consecutive-point resolution, which stays below the cube side length, 1.
     """
     raw_path = _support.lorenz_raw()
     points = np.load(raw_path)
@@ -81,7 +80,7 @@ def build() -> tuple[Path, Path, float, float]:
     detection.save(trajectory_target)
 
     embedded = cs.EmbeddedTrajectory(detection, cover, metric)
-    storage = cs.CycleStorage.build(embedded, range(0, len(detection)), MAX_LENGTH, THRESHOLD)
+    storage = cs.CycleStorage.build(embedded, range(0, len(detection)), MAX_LENGTH)
     storage_target = raw_path.parent / "lorenz_storage.cyc"
     storage.save(storage_target)
     return trajectory_target, storage_target, inserted_fraction, embedded.resolution()
@@ -93,7 +92,7 @@ def report(
     inserted_fraction: float,
     achieved_resolution: float,
 ) -> None:
-    """Print an artifact summary: sizes, contents, band, and resample cost."""
+    """Print an artifact summary: sizes, contents, resolution, resample cost."""
     trajectory = cs.Trajectory.load(trajectory_path)
     storage = cs.CycleStorage.load(storage_path)
     print(f"lorenz_trajectory.cyc  {trajectory_path.stat().st_size / 1e6:.1f} MB")
@@ -103,7 +102,7 @@ def report(
         f"generators {storage.num_generators()}, "
         f"classes {len(storage.classes())}, components {len(storage.components())}"
     )
-    print(f"band [{achieved_resolution:.6f}, {storage.threshold():.6f}]")
+    print(f"detection resolution {achieved_resolution:.6f}")
     print(f"inserted points {inserted_fraction:.2%} of raw rows")
 
 

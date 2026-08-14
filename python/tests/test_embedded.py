@@ -7,7 +7,7 @@ import cycling_signatures as cs
 
 
 def test_signature_of_square_loop(square_loop_embedded):
-    signature = square_loop_embedded.signature(range(0, len(square_loop_embedded)), 0.5)
+    signature = square_loop_embedded.signature(range(0, len(square_loop_embedded)))
     assert signature.rank() == 1
     generator_class = signature.classes()[0]
     assert signature.span().contains(generator_class)
@@ -36,24 +36,16 @@ def test_from_interpolator_matches_four_stage_composition():
     assert combined.resolution() == pytest.approx(composed.resolution())
     whole_trajectory = range(len(combined))
     assert (
-        combined.signature(whole_trajectory, 0.5).span()
-        == composed.signature(whole_trajectory, 0.5).span()
+        combined.signature(whole_trajectory).span() == composed.signature(whole_trajectory).span()
     )
 
 
 def test_sequential_backend_agrees_with_default(square_loop_embedded):
     segment = range(0, len(square_loop_embedded))
-    default_signature = square_loop_embedded.signature(segment, 0.5)
-    sequential_signature = square_loop_embedded.signature(segment, 0.5, parallel=False)
+    default_signature = square_loop_embedded.signature(segment)
+    sequential_signature = square_loop_embedded.signature(segment, parallel=False)
     assert sequential_signature.span() == default_signature.span()
     assert sequential_signature.rank_at(0.5) == default_signature.rank_at(0.5)
-
-
-def test_threshold_not_above_resolution_raises(square_loop_embedded):
-    segment = (0, len(square_loop_embedded))
-    resolution = square_loop_embedded.resolution()
-    with pytest.raises(ValueError):
-        square_loop_embedded.signature(segment, resolution)
 
 
 def test_save_load_roundtrip(tmp_path, square_loop_embedded):
@@ -67,9 +59,9 @@ def test_save_load_roundtrip(tmp_path, square_loop_embedded):
 
 def test_signature_rejects_invalid_segment(square_loop_embedded):
     with pytest.raises(ValueError):
-        square_loop_embedded.signature(cast(Any, "not a segment"), 0.5)
+        square_loop_embedded.signature(cast(Any, "not a segment"))
     with pytest.raises(ValueError):
-        square_loop_embedded.signature((5, 2), 0.5)
+        square_loop_embedded.signature((5, 2))
 
 
 def test_cycle_class_rejects_short_segment(square_loop_embedded):
@@ -77,12 +69,14 @@ def test_cycle_class_rejects_short_segment(square_loop_embedded):
         square_loop_embedded.cycle_class((0, 1))
 
 
-def test_signature_rejects_threshold_above_cube_side(square_loop_embedded):
-    # The band closes at the cube side, so 1.0 itself is in band.
-    segment = range(0, len(square_loop_embedded))
-    assert square_loop_embedded.signature(segment, 1.0).rank() == 1
+def test_resolution_reaching_the_cube_side_is_rejected():
+    # Two points 1.5 apart in one axis land in adjacent cubes, so the cube
+    # adjacency check passes and the resolution check is what rejects them.
+    points = np.array([[0.25, 0.5], [1.75, 0.5]])
+    trajectory = cs.Trajectory(points)
+    cover = cs.CubicalCover(trajectory)
     with pytest.raises(ValueError):
-        square_loop_embedded.signature(segment, 1.001)
+        cs.EmbeddedTrajectory(trajectory, cover, cs.Euclidean())
 
 
 def test_cover_missing_the_trajectory_cubes_is_rejected(square_loop_points):

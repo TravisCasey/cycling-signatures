@@ -30,9 +30,10 @@ use crate::{metric::MetricPoints, util::disjoint::DisjointSet};
 /// length `L` registers at row `L - 1`; `max_length = 1` leaves only the
 /// self-comparisons, which detection treats as trivial.
 ///
-/// Two entries adjacent in the tile are merged into the same component
-/// whenever both are admitted. Each emitted component is a list of cycle
-/// segments.
+/// An entry is admitted when its two points lie strictly closer together than
+/// 1, the cube side length. Two entries adjacent in the tile are merged into
+/// the same component whenever both are admitted. Each emitted component is a
+/// list of cycle segments.
 ///
 /// # Panics
 ///
@@ -45,7 +46,6 @@ pub(super) fn detect_tile_components(
     columns: Range<usize>,
     window_end: usize,
     max_length: usize,
-    threshold: f64,
 ) -> TileComponents {
     assert!(
         columns.start <= columns.end && columns.end <= window_end && window_end <= points.len(),
@@ -74,16 +74,12 @@ pub(super) fn detect_tile_components(
     // proceeds row-major, so a cell's index in this list is its entry id.
     let mut admitted: Vec<(u32, u32)> = Vec::new();
 
-    // Row 0 is the self-comparison at every column, at distance 0. It has no
-    // predecessors to merge with and is not subject to the read-ahead bound
-    // below, since `base + column` is inside the window for every column the
-    // tile carries. Sweeping it here keeps its two special cases out of the
-    // loop that does the measuring.
+    // Row 0 is the self-comparison at every column, at distance 0, so it is
+    // always admitted. It has no predecessors to merge with and is not subject
+    // to the read-ahead bound below, since `base + column` is inside the window
+    // for every column the tile carries. Sweeping it here keeps its three
+    // special cases out of the loop that does the measuring.
     for (column, slot) in current_row.iter_mut().enumerate() {
-        // Negated, so a NaN distance is admitted rather than skipped.
-        if 0.0 >= threshold {
-            continue;
-        }
         let id = disjoint.insert();
         *slot = id as u32;
         admitted.push((0, column as u32));
@@ -101,7 +97,7 @@ pub(super) fn detect_tile_components(
         for column in 0..measured_columns {
             let distance = points.distance(base + column, base + column + row);
             // Negated, so a NaN distance is admitted rather than skipped.
-            if distance >= threshold {
+            if distance >= 1.0 {
                 continue;
             }
             let id = disjoint.insert();
@@ -135,11 +131,9 @@ pub(super) fn detect_tile_components(
         mem::swap(&mut previous_row, &mut current_row);
     }
 
-    // Row 0 is the self-comparison at every column, at distance 0, and a legal
-    // threshold exceeds the trajectory's consecutive-point resolution, which is
-    // never negative. Row 0 is therefore admitted throughout, so ids `0..width`
-    // are exactly its cells and the components carrying the trivial cycle are
-    // those holding one.
+    // Row 0 is admitted at every column, so ids `0..width` are exactly its
+    // cells and the components carrying the trivial cycle are those holding
+    // one.
     let mut trivial_roots: FxHashSet<usize> = FxHashSet::default();
     for id in 0..width {
         assert!(

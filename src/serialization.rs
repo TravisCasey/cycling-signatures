@@ -22,8 +22,8 @@ use crate::error::{Error, Result};
 pub(crate) mod npy_field;
 
 /// The on-disk format version. Every saved file carries it; loaders refuse
-/// a value other than this one.
-pub(crate) const FORMAT_VERSION: u32 = 3;
+/// any value other than this one.
+pub(crate) const FORMAT_VERSION: u32 = 4;
 
 /// The envelope wrapping every saved payload with its format version.
 #[derive(Serialize, Deserialize)]

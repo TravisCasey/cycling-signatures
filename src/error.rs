@@ -231,6 +231,28 @@ pub enum Error {
         delta: i64,
     },
 
+    /// An embedded trajectory whose largest distance between consecutive points
+    /// reaches 1, the cube side length.
+    ///
+    /// Cycle detection admits point pairs strictly closer than the cube side
+    /// length, so that their cubes differ by at most one position per axis and
+    /// therefore must meet. This ensures that a cycle's closing step is a
+    /// well-defined "staircase", and that the cubes of the three endpoints
+    /// involved in a component merge meet at a common vertex, which is what
+    /// makes that component's cycles admit constant homology class. Two of a
+    /// merge's three distances stay below the cube side by admission; the
+    /// third is a consecutive pair of points, bounded by nothing but the
+    /// resolution, so the resolution must be less than the cube side as well.
+    ///
+    /// Resample the trajectory at a finer spacing, or scale its coordinates so
+    /// that consecutive points sit less than one cube apart.
+    #[error("consecutive-point resolution {resolution} is not below the cube side")]
+    ResolutionNotBelowCubeSide {
+        /// The trajectory's maximum distance between consecutive points under
+        /// the embedded metric.
+        resolution: f64,
+    },
+
     /// A trajectory segment passed to a window or cycle query falls outside
     /// the valid range of the trajectory.
     #[error("segment {start}..{end} does not lie within {point_count} points")]
@@ -243,48 +265,12 @@ pub enum Error {
         point_count: usize,
     },
 
-    /// A cycle-detection threshold at or below the embedded trajectory's
-    /// consecutive-point resolution under its metric. The component merge rule
-    /// requires a merge's three endpoint lie pairwise within the threshold; one
-    /// pair is consecutive which would not satisfy the requirement.
-    #[error(
-        "adjacency threshold {threshold} is not above the trajectory's consecutive-point \
-         resolution {resolution}"
-    )]
-    ThresholdNotAboveResolution {
-        /// The threshold the caller supplied.
-        threshold: f64,
-        /// The embedded trajectory's consecutive-point resolution under its
-        /// metric.
-        resolution: f64,
-    },
-
-    /// A cycle-detection threshold above the cube side, 1.
-    ///
-    /// Points within the cube side of each other land in cubes differing by
-    /// at most one position per axis, so those cubes meet: a cycle's closing
-    /// step is then a well-defined staircase, and the cubes of mutually
-    /// admitted points span a block sharing a common vertex, which is what
-    /// makes the cycles of one component homologous. Two points farther apart
-    /// than the cube side can land in cubes two positions apart on an axis,
-    /// leaving the closing step undefined.
-    #[error("adjacency threshold {threshold} is above the cube side")]
-    ThresholdAboveCubeSide {
-        /// The threshold the caller supplied.
-        threshold: f64,
-    },
-
-    /// A signature query's threshold exceeds the range the filtered
-    /// signature is complete for.
-    #[error(
-        "adjacency threshold {threshold} exceeds the largest threshold {threshold_max} this \
-         signature is complete for"
-    )]
-    ThresholdExceedsFiltrationBand {
+    /// A signature query's threshold falls outside the filtration band,
+    /// `[0, 1]`, or is NaN.
+    #[error("adjacency threshold {threshold} is outside the filtration band [0, 1]")]
+    ThresholdOutsideFiltrationBand {
         /// The rejected query threshold.
         threshold: f64,
-        /// The largest valid query threshold.
-        threshold_max: f64,
     },
 
     /// A cycle's endpoint cubes differ by more than 1 in some axis; the

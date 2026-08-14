@@ -125,11 +125,15 @@ impl PyCubicSpline {
 /// ``direction_radius`` is the L2 norm of every stored direction, and it sets
 /// the angular resolution of the embedding. Two directions separated by an
 /// angle ``theta`` are stored ``2 * direction_radius * sin(theta / 2)``
-/// apart, so a cycle-detection threshold ``t`` admits directions strictly
-/// within ``2 * arcsin(t / (2 * direction_radius))`` of each other: a larger
-/// radius distinguishes directions more finely at the same threshold. Pair this
-/// interpolator with the ``SphereBundle`` metric to measure distances on the
-/// resulting embedding.
+/// apart, so cycle detection, which admits pairs stored strictly closer than
+/// ``1.0``, admits directions strictly within
+/// ``2 * arcsin(1 / (2 * direction_radius))`` of each other: a larger radius
+/// distinguishes directions more finely. Below a radius of ``0.5`` no pair of
+/// directions is far enough apart to be rejected, so the parameter is
+/// not meaningful.
+///
+/// Pair this interpolator with the ``SphereBundle`` metric to measure
+/// distances on the resulting embedding.
 ///
 /// Parameters
 /// ----------

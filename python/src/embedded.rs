@@ -30,8 +30,7 @@ use crate::{
 /// cubes. The result can be saved with ``save`` and reloaded with ``load``.
 ///
 /// The ``resolution`` method reports the largest distance between consecutive
-/// points; any adjacency threshold passed to ``signature`` must be above this
-/// value.
+/// points, which must be below ``1.0``, the cube side length.
 ///
 /// Parameters
 /// ----------
@@ -47,8 +46,9 @@ use crate::{
 /// ``ValueError``
 ///     If the trajectory and cover disagree on dimension, if ``metric`` is
 ///     ``SphereBundle`` and the trajectory has an odd coordinate count, if a
-///     point's cube is absent from the cover, or if consecutive points fall in
-///     non-adjacent cubes.
+///     point's cube is absent from the cover, if consecutive points fall in
+///     non-adjacent cubes, or if the largest distance between consecutive
+///     points reaches ``1.0``, the cube side length.
 /// ``TypeError``
 ///     If ``metric`` is not a recognized metric type.
 ///
@@ -144,8 +144,10 @@ impl PyEmbeddedTrajectory {
     ///     if a cube coordinate falls outside the supported integer range, if
     ///     consecutive dense points fall in non-adjacent cubes, if
     ///     ``downsample_spacing`` is below the dense trajectory's own
-    ///     consecutive-point distance, or if consecutive thinned points fall in
-    ///     non-adjacent cubes.
+    ///     consecutive-point distance, if consecutive thinned points fall in
+    ///     non-adjacent cubes, or if the detection trajectory's largest
+    ///     distance between consecutive points reaches ``1.0``, the cube side
+    ///     length.
     /// ``TypeError``
     ///     If ``interpolator`` or ``metric`` is not a recognized type.
     #[staticmethod]
@@ -188,14 +190,13 @@ impl PyEmbeddedTrajectory {
         )))
     }
 
-    /// Returns the cycling signature of the trajectory segment ``segment`` at
-    /// an explicit adjacency ``threshold``.
+    /// Returns the cycling signature of the trajectory segment ``segment``.
     ///
-    /// Detects all near-recurrent cycles within ``segment`` at ``threshold``
-    /// and returns the filtered signature describing their homological
-    /// content, ordered by birth (the adjacency threshold at which each
-    /// independent class first enters). The signature is complete up to
-    /// ``threshold``.
+    /// Detects all near-recurrent cycles within ``segment`` and returns the
+    /// filtered signature describing their homological content, ordered by
+    /// birth (the endpoint distance at which each independent class first
+    /// enters). Point pairs strictly closer than ``1.0``, the cube side
+    /// length, are admitted as endpoints of near-recurrent cycles.
     ///
     /// This is not a cheap query. A signature has no cycle-length cap, so it
     /// evaluates the metric over every pair of points in the segment, a cost
@@ -207,10 +208,6 @@ impl PyEmbeddedTrajectory {
     /// segment : range or tuple of int
     ///     A half-open range of point indices, given as a Python ``range`` or
     ///     a ``(start, stop)`` integer tuple.
-    /// threshold : float
-    ///     Point pairs strictly closer than this are admitted as cycle
-    ///     endpoints. Must be above ``resolution`` and at most ``1.0`` (the
-    ///     cube side).
     /// parallel : bool, optional
     ///     Whether to distribute the work across a thread pool. Defaults to
     ///     ``True``; pass ``False`` to run sequentially on the calling
@@ -219,29 +216,26 @@ impl PyEmbeddedTrajectory {
     /// Returns
     /// -------
     /// ``CyclingSignature``
-    ///     Complete up to ``threshold``.
     ///
     /// Raises
     /// ------
     /// ``ValueError``
-    ///     If ``segment`` is not a valid range, if ``threshold`` is at or
-    ///     below ``resolution`` or above ``1.0``, or if a detected cycle's
-    ///     endpoint points fall in non-adjacent cubes.
+    ///     If ``segment`` is not a valid range, or if a detected cycle's
+    ///     endpoints lie in non-adjacent cubes.
     /// ``IndexError``
     ///     If the segment indices are out of range.
-    #[pyo3(signature = (segment, threshold, *, parallel = true))]
+    #[pyo3(signature = (segment, *, parallel = true))]
     fn signature(
         &self,
         py: Python<'_>,
         segment: &Bound<'_, PyAny>,
-        threshold: f64,
         parallel: bool,
     ) -> PyResult<PyCyclingSignature> {
         let range = segment_from_py(segment)?;
         let backend = parallel_backend(parallel);
         let embedded = Arc::clone(&self.inner);
         let cycling_signature = py
-            .detach(move || embedded.signature(range, threshold, &backend))
+            .detach(move || embedded.signature(range, &backend))
             .map_err(to_pyerr)?;
         Ok(PyCyclingSignature {
             inner: cycling_signature,
@@ -292,8 +286,8 @@ impl PyEmbeddedTrajectory {
     /// Returns the largest distance between consecutive points in the
     /// embedded trajectory: its detection resolution.
     ///
-    /// Any adjacency threshold passed to ``signature`` must be above this
-    /// value. Equals ``Trajectory.resolution`` under the embedded metric.
+    /// The constructor validates that this value is below ``1.0``, the cube
+    /// side length. Equals ``Trajectory.resolution`` under the embedded metric.
     ///
     /// Returns
     /// -------

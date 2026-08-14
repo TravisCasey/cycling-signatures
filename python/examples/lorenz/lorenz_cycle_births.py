@@ -7,11 +7,12 @@
 Every stored cycle binned by its birth (the metric distance between its
 endpoint detection points) and its duration (the integration time from its
 first detection point to its last), colored by homology class: cell intensity
-grows with the number of cycles, and a blended hue marks a cell several
-classes share. The dashed
-line marks the top of the stored detection band. A vertical cut at any
-threshold keeps exactly the cycles a detection capped there would admit, so the
-plot shows what each threshold choice trades away.
+grows with the number of cycles, and a blended hue marks a cell shared by
+several classes. The dashed line marks the cube side length, 1, the distance
+a pair must be under to be admitted. A vertical cut at any birth cap keeps
+exactly the cycles a
+filtered query at that cap admits, so the plot shows the data each birth cap
+trades away.
 """
 
 # %%
@@ -20,10 +21,8 @@ plot shows what each threshold choice trades away.
 # ``range()`` indexes the detection trajectory, whose ``parameters()`` give
 # the integration time of each detection point and so turn that range into a
 # duration.
-# ``threshold()`` is the top of the stored detection band; every stored birth
-# lies at or under it.
-
-import math
+# A pair is admitted only under the cube side length, 1, so every stored
+# birth lies below it.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -35,8 +34,6 @@ import cycling_signatures as cs
 TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 PARAMETERS = TRAJECTORY.parameters()
-BAND_TOP = STORAGE.threshold()
-assert math.isfinite(BAND_TOP)
 
 # %%
 # **Canonical class colors.** Each homology class maps to a stable color via
@@ -97,7 +94,7 @@ def build_figure() -> plt.Figure:
 
     duration_max = max(max(durations) for _, _, _, durations, _ in groups)
     duration_edges = np.linspace(0.0, duration_max, DURATION_BIN_COUNT + 1)
-    birth_edges = np.linspace(0.0, BAND_TOP, BIRTH_BIN_COUNT + 1)
+    birth_edges = np.linspace(0.0, 1.0, BIRTH_BIN_COUNT + 1)
     weighted_counts = [
         weight * np.histogram2d(durations, births, bins=(duration_edges, birth_edges))[0]
         for _, weight, births, durations, _ in groups
@@ -121,11 +118,13 @@ def build_figure() -> plt.Figure:
         origin="lower",
         aspect="auto",
         interpolation="nearest",
-        extent=(0.0, BAND_TOP, 0.0, duration_edges[-1]),
+        extent=(0.0, 1.0, 0.0, duration_edges[-1]),
     )
-    axes.set_xlim(0.0, BAND_TOP * 1.04)
+    axes.set_xlim(0.0, 1.04)
 
-    band_line = axes.axvline(BAND_TOP, color="0.3", linestyle="--", linewidth=1.0, label="band top")
+    cube_side_line = axes.axvline(
+        1.0, color="0.3", linestyle="--", linewidth=1.0, label="cube side length"
+    )
     swatches = [
         Line2D([], [], linestyle="none", marker="s", markersize=8, color=color, label=label)
         for color, _, _, _, label in groups
@@ -133,7 +132,7 @@ def build_figure() -> plt.Figure:
     axes.set_xlabel("Birth (metric distance)")
     axes.set_ylabel("Cycle duration (time)")
     axes.set_title("Cycle births: Lorenz attractor")
-    axes.legend(handles=[*swatches, band_line], loc="upper left", fontsize=9)
+    axes.legend(handles=[*swatches, cube_side_line], loc="upper left", fontsize=9)
     figure.tight_layout()
     return figure
 

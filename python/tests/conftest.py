@@ -36,6 +36,6 @@ def square_loop_embedded(square_loop_points):
 
 @pytest.fixture
 def square_loop_storage(square_loop_embedded):
-    """A ``CycleStorage`` built over the whole square loop at threshold 0.5."""
+    """A ``CycleStorage`` built over the entire square loop."""
     count = len(square_loop_embedded)
-    return cs.CycleStorage.build(square_loop_embedded, range(count), count, threshold=0.5)
+    return cs.CycleStorage.build(square_loop_embedded, range(count), count)

@@ -19,19 +19,16 @@ use crate::{
 };
 
 impl EmbeddedTrajectory {
-    /// The cycling signature of the trajectory over the given segment, at an
-    /// explicit adjacency threshold.
+    /// The cycling signature of the trajectory over the given segment.
     ///
-    /// Returns the filtered `F_2` subspace spanned by the homology classes
-    /// of recurrent cycles whose endpoint pairs fall within `segment`. A
-    /// cycle's birth is the metric distance between its two endpoints,
-    /// folded to a minimum across every cycle in its connected component; the
-    /// signature is complete up to `threshold`
-    /// ([`CyclingSignature::threshold_max`]).
+    /// Returns the filtered `F_2` subspace spanned by the homology classes of
+    /// recurrent cycles whose endpoint pairs fall within `segment`. A cycle's
+    /// birth is the metric distance between its two endpoints, collected to a
+    /// minimum over every cycle in its connected component.
     ///
-    /// `threshold` is the adjacency threshold for cycle detection: pairs of
-    /// trajectory points with metric distance strictly below `threshold` are
-    /// admitted as cycle endpoints. Detection is dispatched across `backend`.
+    /// Pairs of trajectory points with metric distance strictly below 1, the
+    /// cube side length, are admitted as cycle endpoints. The work is
+    /// dispatched over `backend`.
     ///
     /// This is not a cheap query. A signature has no cycle-length cap, so it
     /// evaluates the metric over every pair of points in the segment, a cost
@@ -43,26 +40,22 @@ impl EmbeddedTrajectory {
     ///
     /// - [`Error::SegmentOutOfBounds`](crate::Error::SegmentOutOfBounds) if
     ///   `segment` does not normalize to a valid sub-range of the trajectory.
-    /// - [`Error::ThresholdNotAboveResolution`](crate::Error::ThresholdNotAboveResolution)
-    ///   if `threshold <= self.resolution()`.
-    /// - [`Error::ThresholdAboveCubeSide`](crate::Error::ThresholdAboveCubeSide)
-    ///   if `threshold` is above the cube side.
+    /// - [`Error::CycleEndpointsNonAdjacent`](crate::Error::CycleEndpointsNonAdjacent)
+    ///   if a detected cycle's endpoint cubes differ by more than 1 in some
+    ///   axis.
     pub fn signature(
         &self,
         segment: impl RangeBounds<usize>,
-        threshold: f64,
         backend: &ExecutionBackend,
     ) -> Result<CyclingSignature> {
         let trajectory = self.trajectory();
         let range = normalize_segment(segment, trajectory.len())?;
-        self.check_threshold(threshold)?;
         let metric_points = self.metric_points();
         // A signature has no length cap, so every pair inside the segment is
         // admitted; detection clamps the cap to the segment's own length.
         let components = detect_components(
             &metric_points,
             range,
-            threshold,
             trajectory.len(),
             DEFAULT_OWNED_COLUMNS,
             backend,
@@ -84,7 +77,6 @@ impl EmbeddedTrajectory {
         Ok(CyclingSignature::from_births(
             births,
             self.cover().num_generators(),
-            threshold,
         ))
     }
 }

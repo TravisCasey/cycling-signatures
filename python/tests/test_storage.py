@@ -69,18 +69,14 @@ def test_signature_out_of_range_raises_index_error_not_value_error(square_loop_s
         square_loop_storage.signature((5, 2))
 
 
-def test_build_records_the_threshold_passed(square_loop_storage):
-    assert square_loop_storage.threshold() == pytest.approx(0.5)
-
-
-def test_span_at_matches_rank_at_and_rejects_above_threshold_max(square_loop_storage):
+def test_span_at_matches_rank_at_and_rejects_thresholds_outside_the_band(square_loop_storage):
     signature = square_loop_storage.signature(square_loop_storage.extent())
-    interior_threshold = signature.births()[0]
+    interior_threshold = signature.births()[0] + 0.5
 
     assert signature.span_at(interior_threshold).rank() == signature.rank_at(interior_threshold)
 
-    threshold_max = signature.threshold_max()
-    with pytest.raises(ValueError):
-        signature.rank_at(threshold_max + 1.0)
-    with pytest.raises(ValueError):
-        signature.span_at(threshold_max + 1.0)
+    for outside in (-0.5, 1.5):
+        with pytest.raises(ValueError):
+            signature.rank_at(outside)
+        with pytest.raises(ValueError):
+            signature.span_at(outside)

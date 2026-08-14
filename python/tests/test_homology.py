@@ -62,8 +62,6 @@ def test_xor_computes_the_symmetric_difference(square_loop_storage, square_loop_
     two_hole_cover = cs.CubicalCover(two_hole_trajectory)
     two_hole_embedded = cs.EmbeddedTrajectory(two_hole_trajectory, two_hole_cover, cs.Euclidean())
     other_count = len(two_hole_embedded)
-    other_storage = cs.CycleStorage.build(
-        two_hole_embedded, range(other_count), other_count, threshold=0.5
-    )
+    other_storage = cs.CycleStorage.build(two_hole_embedded, range(other_count), other_count)
     with pytest.raises(ValueError):
         nonzero ^ other_storage.classes()[0]

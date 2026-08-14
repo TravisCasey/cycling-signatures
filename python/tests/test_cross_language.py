@@ -29,7 +29,7 @@ def test_fixture_carries_the_index_parameterization():
 
 def test_load_rust_fixture_and_query():
     embedded = _load()
-    assert embedded.signature(range(len(embedded)), 0.5).rank() == 1
+    assert embedded.signature(range(len(embedded))).rank() == 1
 
 
 def test_fixture_fingerprints_match_the_values_rust_wrote():
@@ -47,10 +47,10 @@ def test_fingerprint_distinguishes_metric():
     # cubes; the direction half is constant.
     points = np.array(
         [
-            [0.5, 0.5, 1.0, 0.5],
-            [1.5, 0.5, 1.0, 0.5],
-            [1.5, 1.5, 1.0, 0.5],
-            [0.5, 1.5, 1.0, 0.5],
+            [0.9, 0.9, 1.0, 0.5],
+            [1.1, 0.9, 1.0, 0.5],
+            [1.1, 1.1, 1.0, 0.5],
+            [0.9, 1.1, 1.0, 0.5],
         ]
     )
     trajectory = cs.Trajectory(points)

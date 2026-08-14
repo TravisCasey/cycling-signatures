@@ -28,7 +28,6 @@ struct CycleStorageData {
     fingerprint: u64,
     extent: Range<u32>,
     max_length: u32,
-    threshold: f64,
     num_generators: usize,
     classes: Vec<F2Vector>,
     components: Vec<Component>,
@@ -44,7 +43,6 @@ impl Serialize for CycleStorage {
             fingerprint: self.fingerprint,
             extent: self.extent.clone(),
             max_length: self.max_length,
-            threshold: self.threshold,
             num_generators: self.num_generators,
             classes: self.classes.clone(),
             components: self.components.clone(),
@@ -64,7 +62,6 @@ impl<'de> Deserialize<'de> for CycleStorage {
             data.fingerprint,
             data.extent,
             data.max_length,
-            data.threshold,
             data.num_generators,
             data.classes,
             data.components,
@@ -84,7 +81,6 @@ impl CycleStorage {
         fingerprint: u64,
         extent: Range<u32>,
         max_length: u32,
-        threshold: f64,
         num_generators: usize,
         classes: Vec<F2Vector>,
         components: Vec<Component>,
@@ -104,7 +100,6 @@ impl CycleStorage {
             fingerprint,
             extent,
             max_length,
-            threshold,
             num_generators,
             classes,
             components,
@@ -171,7 +166,7 @@ mod tests {
                 },
             ],
         };
-        let storage = CycleStorage::from_parts(0, 0..100, 60, 1.5, 1, vec![class], vec![component]);
+        let storage = CycleStorage::from_parts(0, 0..100, 60, 1, vec![class], vec![component]);
 
         let wide = storage.signature(0..100).unwrap();
         assert_eq!(wide.generators().len(), 1);
@@ -211,7 +206,6 @@ mod tests {
             0,
             0..100,
             20,
-            1.5,
             2,
             vec![infinite_class, finite_class.clone()],
             vec![infinite_component, finite_component],
@@ -265,7 +259,6 @@ mod tests {
             0,
             0..100,
             10,
-            1.5,
             2,
             vec![class_zero.clone(), class_one.clone()],
             vec![component_zero, component_one],
@@ -303,7 +296,6 @@ mod tests {
             0,
             0..20,
             10,
-            1.5,
             2,
             vec![class_zero, class_one],
             vec![component_a, component_b],

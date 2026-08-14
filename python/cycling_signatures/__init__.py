@@ -18,7 +18,7 @@ The pipeline runs in four stages::
     cover = cs.CubicalCover(dense)
     detection = dense.downsample(metric, DOWNSAMPLE_SPACING)
     embedded = cs.EmbeddedTrajectory(detection, cover, metric)
-    storage = cs.CycleStorage.build(embedded, window, MAX_LENGTH, THRESHOLD)
+    storage = cs.CycleStorage.build(embedded, window, MAX_LENGTH)
 
 Build the cover from the densest trajectory available. Building it from an
 already-thinned trajectory validates successfully but perforates the cover,

@@ -82,6 +82,8 @@ impl EmbeddedTrajectory {
     ///   absent from the loaded cover.
     /// - [`Error::ConsecutiveCubesNonAdjacent`] if consecutive points of the
     ///   loaded trajectory land in cubes differing by more than 1 in some axis.
+    /// - [`Error::ResolutionNotBelowCubeSide`] if the loaded trajectory's
+    ///   largest distance between consecutive points reaches 1, the cube side.
     /// - [`Error::FormatVersionMismatch`] if any of the three files' format
     ///   version differs.
     /// - [`Error::Io`] if any of the three files could not be opened.

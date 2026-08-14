@@ -59,6 +59,8 @@ impl EmbeddedTrajectory {
     ///   from the cover.
     /// - [`Error::ConsecutiveCubesNonAdjacent`] if consecutive trajectory
     ///   points land in cubes differing by more than 1 in some axis.
+    /// - [`Error::ResolutionNotBelowCubeSide`] if the largest distance between
+    ///   consecutive points reaches 1, the cube side length.
     pub fn new(
         trajectory: impl Into<Arc<Trajectory>>,
         cover: impl Into<Arc<CubicalCover>>,
@@ -97,6 +99,10 @@ impl EmbeddedTrajectory {
         }
 
         let resolution = trajectory.resolution(metric);
+        if resolution >= 1.0 {
+            return Err(Error::ResolutionNotBelowCubeSide { resolution });
+        }
+
         Ok(Self {
             trajectory,
             cover,
@@ -159,6 +165,9 @@ impl EmbeddedTrajectory {
     ///   consecutive dense points more than one cube apart (surfaced at the
     ///   cover build), or `downsample_spacing` leaves consecutive kept points
     ///   more than one cube apart (surfaced at the embedding).
+    /// - [`Error::ResolutionNotBelowCubeSide`] if the detection trajectory's
+    ///   largest distance between consecutive points reaches 1, the cube side
+    ///   length.
     ///
     /// # Panics
     ///
@@ -198,31 +207,11 @@ impl EmbeddedTrajectory {
     /// detection resolution of this embedding, equal to
     /// [`Trajectory::resolution`] under the embedded metric.
     ///
-    /// A cycle-detection threshold must exceed this value. The cycles of one
-    /// component are homologous because the three endpoints involved in each
-    /// merge lie pairwise within the threshold: two of those distances are
-    /// below it by admission, and the third is a consecutive pair, which this
-    /// value bounds.
+    /// [`new`](Self::new) validates that this value is below 1, the cube side
+    /// length; see [`Error::ResolutionNotBelowCubeSide`] for why.
     #[must_use]
     pub fn resolution(&self) -> f64 {
         self.resolution
-    }
-
-    /// Returns an error if `threshold` is at or below the embedded
-    /// trajectory's consecutive-point resolution under its metric (including
-    /// when it is NaN), or above 1, the cube side.
-    pub(crate) fn check_threshold(&self, threshold: f64) -> Result<()> {
-        // Negated: rejects a NaN threshold before the plain check below runs.
-        if !(threshold > self.resolution) {
-            return Err(Error::ThresholdNotAboveResolution {
-                threshold,
-                resolution: self.resolution,
-            });
-        }
-        if threshold > 1.0 {
-            return Err(Error::ThresholdAboveCubeSide { threshold });
-        }
-        Ok(())
     }
 
     /// The wrapped cover.
@@ -307,7 +296,7 @@ mod tests {
         interpolation::CubicSpline,
         metric::Metric,
         trajectory::Trajectory,
-        util::fixtures::{densify_path, embed_euclidean, ring_waypoints, stack_points},
+        util::fixtures::{densify_path, embed_euclidean, ring_waypoints},
     };
     #[cfg(feature = "serde")]
     use crate::{
@@ -319,11 +308,11 @@ mod tests {
     fn fingerprint_is_stable_golden_value() {
         // Locks the whole fingerprint stack (trajectory feed, cubes-only cover
         // feed, metric identity, and their composition) to a pinned value.
-        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let points = array![[0.9, 0.9], [1.1, 0.9], [1.1, 1.1], [0.9, 1.1]];
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
-        assert_eq!(embedded.fingerprint(), 0x0412_381b_dab5_0d2c);
+        assert_eq!(embedded.fingerprint(), 0xffa3_dcd2_a2df_89be);
     }
 
     #[test]
@@ -332,7 +321,7 @@ mod tests {
         // Cubes visited:  (0,0) -> (1,0) -> (1,1) -> (0,1) -> (0,0).
         // Forward edges: 3 edges. Closing edge: 1 edge from (0,1)->(0,0)
         // is a unit step in axis 1 (negative direction).
-        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let points = array![[0.9, 0.9], [1.1, 0.9], [1.1, 1.1], [0.9, 1.1]];
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
@@ -347,13 +336,14 @@ mod tests {
         // cover's first cohomology has rank 1; the loop encircling the hole is
         // the generator.
         //
-        // Each consecutive pair of cube centers is adjacent, and the closing
-        // step (0,1)->(0,0) differs by 1 in axis 1 only, so the cycle is valid.
-        let points = stack_points(&ring_waypoints()[..8]);
+        // The waypoints are the ring's cube centers, densified so consecutive
+        // points stay under the cube side, and the closing step (0,1)->(0,0)
+        // differs by 1 in axis 1 only, so the cycle is valid.
+        let points = densify_path(&ring_waypoints()[..8], 0.5);
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
-        let class = embedded.cycle_class(0..8).unwrap();
+        let class = embedded.cycle_class(..).unwrap();
         assert!(
             !class.is_zero(),
             "boundary-loop cycle class should be nontrivial; got {class:?}"
@@ -363,11 +353,11 @@ mod tests {
     #[test]
     fn walk_cycle_rejects_non_adjacent_endpoints() {
         // Trajectory whose first and last points are 3 cubes apart in axis 0:
-        // (0.5, 0.5), (1.5, 0.5), (2.5, 0.5), (3.5, 0.5). Endpoints of the
+        // (0.9, 0.5), (1.6, 0.5), (2.4, 0.5), (3.1, 0.5). Endpoints of the
         // segment 0..4 are at cubes (0, 0) and (3, 0), which differ by 3
         // in axis 0. The forward path is fine (each consecutive pair
         // differs by 1); the closing step fails.
-        let points = array![[0.5, 0.5], [1.5, 0.5], [2.5, 0.5], [3.5, 0.5]];
+        let points = array![[0.9, 0.5], [1.6, 0.5], [2.4, 0.5], [3.1, 0.5]];
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
@@ -387,7 +377,7 @@ mod tests {
     #[should_panic(expected = "cycle segment 1..2 must contain at least two points")]
     fn walk_cycle_panics_on_a_segment_of_one_point() {
         // A cycle needs at least one forward edge
-        let points = array![[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]];
+        let points = array![[0.9, 0.9], [1.1, 0.9], [1.1, 1.1], [0.9, 1.1]];
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
@@ -400,10 +390,10 @@ mod tests {
         // in sorted order as (0, 0), (1, 0), (2, 0). Rows 0 and 1 share a
         // cube, so the map is not the identity.
         //
-        // (0.1, 0.1), (0.9, 0.9) -> cube (0, 0)
-        // (1.5, 0.5)             -> cube (1, 0)
-        // (2.5, 0.5)             -> cube (2, 0)
-        let points = array![[0.1, 0.1], [0.9, 0.9], [1.5, 0.5], [2.5, 0.5]];
+        // (0.1, 0.1), (0.7, 0.6) -> cube (0, 0)
+        // (1.2, 0.5)             -> cube (1, 0)
+        // (2.1, 0.5)             -> cube (2, 0)
+        let points = array![[0.1, 0.1], [0.7, 0.6], [1.2, 0.5], [2.1, 0.5]];
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
@@ -563,14 +553,14 @@ mod tests {
 
     #[test]
     fn signature_on_straight_line_trajectory_is_trivial() {
-        // Four collinear points spaced 0.5 apart. Threshold 0.6 admits the
-        // consecutive pairs (distance 0.5) but no genuine recurrence exists.
+        // Four collinear points spaced 0.5 apart. Detection admits the
+        // consecutive pairs, but no other recurrence exists.
         let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0]];
         let trajectory = Trajectory::new(points.view()).unwrap();
         let embedded = embed_euclidean(trajectory).unwrap();
 
         let signature = embedded
-            .signature(.., 0.6, &ExecutionBackend::Sequential)
+            .signature(.., &ExecutionBackend::Sequential)
             .unwrap();
         assert_eq!(signature.rank(), 0);
     }
@@ -586,34 +576,25 @@ mod tests {
         let embedded = embed_euclidean(trajectory).unwrap();
 
         let signature = embedded
-            .signature(.., 0.6, &ExecutionBackend::Sequential)
+            .signature(.., &ExecutionBackend::Sequential)
             .unwrap();
         assert_eq!(signature.rank(), 1);
     }
 
     #[test]
-    fn signature_rejects_thresholds_outside_the_detection_band() {
-        // Four collinear points spaced 0.5 apart, so the resolution is 0.5.
-        // Both band ends are checked here.
-        let points = array![[0.0, 0.0], [0.5, 0.0], [1.0, 0.0], [1.5, 0.0]];
+    fn new_rejects_a_resolution_reaching_the_cube_side() {
+        // Two points exactly one cube side apart along one axis, landing in
+        // cubes (0, 0) and (1, 0). Their cubes are adjacent, so the adjacency
+        // check passes and the resolution check is what rejects the
+        // trajectory.
+        let points = array![[0.25, 0.5], [1.25, 0.5]];
         let trajectory = Trajectory::new(points.view()).unwrap();
-        let embedded = embed_euclidean(trajectory).unwrap();
 
-        let below_band = embedded.resolution() / 2.0;
-        let below_outcome = embedded.signature(.., below_band, &ExecutionBackend::Sequential);
-        assert!(matches!(
-            below_outcome,
-            Err(Error::ThresholdNotAboveResolution { threshold, resolution })
-                if (threshold - below_band).abs() < 1e-12
-                    && (resolution - embedded.resolution()).abs() < 1e-12
-        ));
+        let err = embed_euclidean(trajectory).unwrap_err();
 
-        let above_band = 1.0 + f64::EPSILON;
-        let above_outcome = embedded.signature(.., above_band, &ExecutionBackend::Sequential);
         assert!(matches!(
-            above_outcome,
-            Err(Error::ThresholdAboveCubeSide { threshold })
-                if (threshold - above_band).abs() < 1e-12
+            err,
+            Error::ResolutionNotBelowCubeSide { resolution } if (resolution - 1.0).abs() < 1e-12
         ));
     }
 
@@ -632,14 +613,8 @@ mod tests {
     fn storage_provenance_matches_reassembled_embedded() {
         let embedded = euclidean_square_loop();
         let max_length = embedded.trajectory().len();
-        let storage = CycleStorage::build(
-            &embedded,
-            ..,
-            max_length,
-            0.6,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let storage =
+            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
 
         let mut storage_buffer = Vec::new();
         save_to_writer(&mut storage_buffer, &storage).unwrap();

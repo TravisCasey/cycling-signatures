@@ -41,8 +41,8 @@ in which case it is the detection trajectory as well. Thinning first is the
 usual choice because detection cost grows quadratically in the detection point
 count, and because `CycleStorage.build`'s ``max_length`` caps a cycle's point
 count, so the curve length a given cap reaches scales with the spacing. Any
-detection trajectory is admissible as long as the adjacency threshold clears
-its `Trajectory.resolution`.
+detection trajectory is admissible as long as its `Trajectory.resolution` stays
+below 1, which is the cube side length in the cubical cover.
 
 **The parameterization tracks the sampling.** A `Trajectory` carries one
 strictly increasing parameter per point, which the library itself does not
@@ -64,11 +64,10 @@ maximum consecutive metric gap, but they answer to different things:
   cover is built, not by `resample`.
 - **Downsample spacing** is the sparsity knob and the primary cost lever: how
   coarsely `Trajectory.downsample` thins the dense trajectory down to the
-  detection trajectory. It bounds the detection point count that cycle
-  detection is quadratic in, and it bounds the detection trajectory's
-  `resolution`, the lower end of the detection band (defined below). Where the
-  dense trajectory is embedded without thinning, the resample spacing plays
-  this role too.
+  detection trajectory. It bounds the detection point count that cycle detection
+  is quadratic in, and it bounds the detection trajectory's `resolution`, which
+  must stay below the cube side length, 1 (see below). Downsampling is not
+  required: when not used, the resample spacing is the bound instead.
 
 Covers and cover generators
 ----------------------------
@@ -104,10 +103,9 @@ addition that a subspace represents (matching the `span` and `span_at` methods).
 A `CyclingSignature` is the filtered subspace a trajectory window visits: the
 per-generator births at which each independent class first enters, ordered by
 birth, together with those classes and the subspace they span. `span` returns
-the subspace spanned by every one of them, complete up to the signature's
-`threshold_max`; `span_at` returns the subspace spanned by only the classes
-born below a smaller threshold, and `rank_at` its rank. The **signature**
-is the invariant this library computes.
+the subspace spanned by the entire collection, over the whole filtration band;
+`span_at` returns the subspace spanned by only the classes born below a smaller
+threshold, and `rank_at` its rank.
 
 Windows, segments, and the storage extent
 --------------------------------------------
@@ -123,35 +121,37 @@ it was built over. It is the outer bound on every later query: a signature
 window must fit inside the extent, and a window starting before the extent's
 start is out of bounds even at index ``0``.
 
-Adjacency threshold, detection band, birth cap, and box size
----------------------------------------------------------------
+Adjacency threshold, filtration band, birth cap, and box size
+----------------------------------------------------------------
 
 The **adjacency threshold** is the metric distance at which near-recurrent
 cycles are detected: point pairs strictly closer than the threshold are
-admitted as cycle endpoints. Its valid interval is the **detection band**,
-`resolution() < threshold <= 1`.
+admitted as cycle endpoints. It is always `1`, the cube side length of the
+cover, which is also the largest value the geometry below permits.
 
-The lower end is the detection trajectory's own resolution, the largest gap
-between its consecutive points. Above it every consecutive pair of detection
-points is admitted, so cycles a single step apart are comparable. Sampling a
-trajectory finer than the threshold it will undergo detection at lowers this
-resolution and increases the size of the filtration band.
+Two points farther apart than one cube side length may live in cubes two
+positions apart on an axis, which would leave a cycle's closing step (the walk
+between its two endpoints) undefined in the cubical cover; within one cube side
+the cubes differ by at most one position per axis and meet. The same reasoning
+constrains the detection trajectory: its `resolution` must stay below the cube
+side, because the cycles of one component are homologous only if the three
+endpoints involved in each component merge lie pairwise below it, and one of
+those three distances is a consecutive pair which is bounded only by the
+resolution. A detection trajectory whose `resolution` reaches the cube side
+length is rejected when it is embedded; thin it more finely, or rescale the
+trajectory to bring the resolution down.
 
-The upper end is the cube side. Two points farther apart than one cube side can
-land in cubes two positions apart on an axis, which would leave a cycle's
-closing step (the walk between its two endpoints) undefined in the cubical
-cover; within one cube side the cubes differ by at most one position per axis
-and meet.
-
-A `CycleStorage` is filtered at one threshold; its signature queries can
-restrict further, to any `t <= threshold_max()`, but never exceed the threshold
-detection ran at.
+A signature admits queries over the **filtration band**, `[0, 1]`. `span_at`
+and `rank_at` reject a threshold outside it. Restricting a signature to a
+threshold `t` keeps exactly the classes whose recurrences close within `t`: a
+class is a per-cycle quantity, so it does not depend on the level the signature
+is read at.
 
 **Birth cap** is a presentation term the gallery uses: the threshold a single
 figure or panel restricts its signatures to, passed to `span_at` or `rank_at`.
 A panel admits every class born below its cap and hides the rest, so a
 figure stacked by birth cap shows one window at a sequence of caps. Every cap
-sits at or below the threshold the storage was detected at.
+lies inside the filtration band.
 
 **Box size** is the real position units per cube: the divisor the gallery's
 generation scripts scale a system's raw positions by before constructing a

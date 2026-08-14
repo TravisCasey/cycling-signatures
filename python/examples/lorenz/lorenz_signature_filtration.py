@@ -5,13 +5,13 @@
 ========================================
 
 The cycling signature of a sliding window at every adjacency threshold up
-to the top of the stored detection band. Each column fixes one window of
+to the top of the filtration band. Each column fixes one window of
 the Lorenz trajectory; climbing the column replays that window's
 filtration: white below the window's first generator birth, then the span
 of every generator born by the threshold. Colors name the frequent
 signatures (shared with the signature indicator); gray marks non-trivial
 signatures outside that library. A column whose color presents well below the
-band top carries a signature that is stable across the detection band rather
+band top carries a signature that is stable across the filtration band rather
 than an artifact of one threshold choice.
 """
 
@@ -21,10 +21,9 @@ than an artifact of one threshold choice.
 # point indices are positions in the detection trajectory, and that
 # trajectory's ``parameters()`` give the integration time of each detection
 # point,
-# which places every column on the time axis below. ``threshold()`` is the top
-# of the stored detection band and bounds every filtration query below.
+# which places every column on the time axis below. The cube side length, 1,
+# is the upper bound on every filtered query below.
 
-import math
 from bisect import bisect_left
 from collections import Counter
 
@@ -38,8 +37,6 @@ import cycling_signatures as cs
 TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 PARAMETERS = TRAJECTORY.parameters()
-BAND_TOP = STORAGE.threshold()
-assert math.isfinite(BAND_TOP)
 
 # %%
 # **Canonical class colors.** A rank-1 signature is the span of a single
@@ -90,7 +87,7 @@ column_starts = np.arange(
     min(POINT_WINDOW_STOP, extent_stop - WINDOW_LENGTH + 1),
     COLUMN_STEP,
 )
-row_thresholds = [BAND_TOP * (row + 0.5) / ROW_COUNT for row in range(ROW_COUNT)]
+row_thresholds = [(row + 0.5) / ROW_COUNT for row in range(ROW_COUNT)]
 
 column_filtrations: list[tuple[list[float], list[cs.Subspace]]] = []
 for window_start in column_starts:
@@ -148,7 +145,7 @@ for column, (births, spans) in enumerate(column_filtrations):
 
 # %%
 # **Render the heatmap.** ``pcolormesh`` draws each row at the y edges handed
-# to it, in the order given; those edges run from 0 to ``BAND_TOP`` ascending,
+# to it, in the order given; those edges run from 0 to 1 ascending,
 # so threshold zero lands at the bottom of the axes and each column reads
 # upward as its window's filtration, with the top edge of the image at the
 # band top.
@@ -170,7 +167,7 @@ def build_figure() -> plt.Figure:
     figure, axes = plt.subplots(figsize=(14, 6))
     image = axes.pcolormesh(
         column_edges,
-        np.linspace(0.0, BAND_TOP, ROW_COUNT + 1),
+        np.linspace(0.0, 1.0, ROW_COUNT + 1),
         labels,
         cmap=colormap,
         vmin=-0.5,

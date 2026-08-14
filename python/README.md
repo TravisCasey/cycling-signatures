@@ -33,11 +33,8 @@ import numpy as np
 
 import cycling_signatures as cs
 
-# Coordinates are in units of the cube side, so the spacings and the
-# adjacency threshold are too.
 RESAMPLE_SPACING = 0.1
 DOWNSAMPLE_SPACING = 0.4
-THRESHOLD = 1.0
 
 # Two turns around a circle of radius 3.
 angles = np.linspace(0.0, 4.0 * np.pi, 401)
@@ -51,12 +48,12 @@ detection = dense.downsample(metric, DOWNSAMPLE_SPACING)
 embedded = cs.EmbeddedTrajectory(detection, cover, metric)
 
 window = range(len(embedded))
-storage = cs.CycleStorage.build(embedded, window, len(embedded), threshold=THRESHOLD)
+storage = cs.CycleStorage.build(embedded, window, len(embedded))
 print(storage.signature(window))
 ```
 
 ```
-CyclingSignature(rank=1, threshold_max=1.0)
+CyclingSignature(rank=1)
 ```
 
 Rank 1 is one independent loop type: the circle encloses a single hole, and
@@ -69,9 +66,10 @@ Build the cover from the dense trajectory, before thinning: building it from
 the detection trajectory validates successfully but perforates the cover and
 reports classes the curve does not have.
 
-The adjacency threshold admits a pair of detection points as the endpoints of a
-cycle when their distance falls strictly below it. Valid values run above the
-detection trajectory's resolution and up to 1, the cube side.
+Detection admits a pair of detection points as the endpoints of a cycle when
+their distance falls strictly below 1. A signature can be read back at any 
+distance threshold in `[0, 1]` through `span_at` and `rank_at`, which emit
+the classes whose recurrences close within that threshold.
 
 ## Example gallery
 

@@ -24,14 +24,16 @@ impl Trajectory {
     /// trajectory.
     ///
     /// This is the detection resolution: the output is the vertex set cycle
-    /// detection runs over, and its size is the dominant cost lever of a
-    /// detection pass. Any spacing up to the intended detection threshold is
-    /// valid: the threshold has to clear the output's own consecutive-point
-    /// distance, which this spacing bounds.
+    /// detection runs over, and its size is the dominant cost-affecting
+    /// parameter of a detection pass. Any spacing below 1, the cube side
+    /// length, is valid: the embedding requires the output's own
+    /// consecutive-point distance, which this spacing bounds, to stay below 1.
     ///
-    /// Only the lower end is validated here. A spacing coarse enough to put
-    /// consecutive kept points more than one cube apart is rejected later, by
-    /// the embedding, as [`Error::ConsecutiveCubesNonAdjacent`].
+    /// Only the lower end is validated here. A spacing that leaves consecutive
+    /// kept points more than one cube apart is rejected later, by the
+    /// embedding, as [`Error::ConsecutiveCubesNonAdjacent`]; one that leaves
+    /// their largest distance at the cube side length, as
+    /// [`Error::ResolutionNotBelowCubeSide`].
     ///
     /// # Examples
     ///

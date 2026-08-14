@@ -5,7 +5,7 @@
 //!
 //! Cache for all near-recurrent cycles over a trajectory extent (the range of
 //! trajectory points the storage was built over). Cycles are grouped by their
-//! connected component in the below-threshold distance graph, paired with the
+//! connected component in the near-recurrence distance graph, paired with the
 //! homology class shared across the component.
 
 mod build;
@@ -55,8 +55,8 @@ impl Cycle {
     }
 }
 
-/// One connected component of below-threshold near-recurrence, together with
-/// the homology class shared by every cycle in the component.
+/// One connected component of near-recurrence, together with the homology
+/// class shared by every cycle in the component.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Component {
@@ -127,7 +127,6 @@ pub struct CycleStorage {
     fingerprint: u64,
     extent: Range<u32>,
     max_length: u32,
-    threshold: f64,
     num_generators: usize,
     classes: Vec<F2Vector>,
     components: Vec<Component>,
@@ -145,12 +144,6 @@ impl CycleStorage {
     #[must_use]
     pub fn fingerprint(&self) -> u64 {
         self.fingerprint
-    }
-
-    /// The adjacency threshold detection ran at.
-    #[must_use]
-    pub fn threshold(&self) -> f64 {
-        self.threshold
     }
 
     /// Cycle-length cap (point count) the storage was built with.
@@ -206,10 +199,9 @@ impl CycleStorage {
     /// `segment`.
     ///
     /// Each contributing component's birth is the minimum birth over its
-    /// cycles contained in `segment`; the signature is complete up to
-    /// [`Self::threshold`]. An unbounded start (`..end` or `..`) resolves to
-    /// [`Self::extent`]'s start rather than `0`; an explicit start below the
-    /// extent's start is out of bounds even at `0`.
+    /// cycles contained in `segment`. An unbounded start (`..end` or `..`)
+    /// resolves to [`Self::extent`]'s start rather than `0`; an explicit start
+    /// below the extent's start is out of bounds even at `0`.
     ///
     /// # Errors
     ///
@@ -260,11 +252,7 @@ impl CycleStorage {
                 )
             })
             .collect();
-        Ok(CyclingSignature::from_births(
-            births,
-            self.num_generators,
-            self.threshold,
-        ))
+        Ok(CyclingSignature::from_births(births, self.num_generators))
     }
 
     /// Component IDs whose stored cycles cover the trajectory point `point`.
@@ -305,7 +293,6 @@ mod tests {
     use std::{collections::BTreeSet, ops::Range};
 
     use chomp3rs::ExecutionBackend;
-    use ndarray::Array2;
 
     use super::{Component, Cycle, CycleStorage};
     #[cfg(feature = "serde")]
@@ -398,23 +385,15 @@ mod tests {
     }
 
     #[test]
-    fn signature_rank_and_span_agree_with_embedded_across_two_hole_band() {
-        // Rank-2 cross-path agreement: the two-hole cover carries two
-        // independent generators (num_generators() == 2), so this exercises
-        // filtered structure the single-hole `loop_trajectory` fixture never
-        // reaches (its cover has rank one). Ring A's cut-corner recurrence
-        // births at 0.8; ring B's offset closing births at 0.9.
+    fn signature_births_are_the_endpoint_distances_of_each_recurrence() {
+        // The two-hole cover carries two independent generators, one per ring,
+        // and each generator's birth is the endpoint distance of the
+        // recurrence that closes its ring: ring A's cut corner at 0.8, ring
+        // B's offset closing at 0.9.
         let embedded = two_hole_trajectory();
         let max_length = embedded.trajectory().len();
-        let band_top = 0.95;
-        let storage = CycleStorage::build(
-            &embedded,
-            ..,
-            max_length,
-            band_top,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let storage =
+            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
 
         let signature = storage.signature(..).unwrap();
         assert_eq!(signature.rank(), 2);
@@ -424,72 +403,19 @@ mod tests {
             .iter()
             .map(SignatureGenerator::birth)
             .collect();
-        assert!(
-            births[0] < births[1],
-            "expected ascending births: {births:?}"
-        );
         assert!((births[0] - 0.8).abs() < 1e-12);
         assert!((births[1] - 0.9).abs() < 1e-12);
-
-        let birth_one = births[0];
-        let birth_two = births[1];
-
-        // A filtered query restricts an already-computed filtration rather than
-        // re-detecting, so it answers at thresholds detection itself rejects,
-        // the trajectory's own resolution among them.
-        assert_eq!(
-            storage
-                .signature(..)
-                .unwrap()
-                .rank_at(embedded.resolution())
-                .unwrap(),
-            0
-        );
-
-        // A class enters the filtration strictly above its birth, so each rank
-        // steps between a birth and the next representable value above it.
-        // Every threshold here is inside the embedded path's valid domain, so
-        // both paths are compared directly.
-        for (threshold, expected_rank) in [
-            (birth_one, 0),
-            (birth_one.next_up(), 1),
-            (birth_two, 1),
-            (birth_two.next_up(), 2),
-        ] {
-            let storage_signature = storage.signature(..).unwrap();
-            let embedded_signature = embedded
-                .signature(.., threshold, &ExecutionBackend::Sequential)
-                .unwrap();
-            assert_eq!(
-                storage_signature.rank_at(threshold).unwrap(),
-                expected_rank,
-                "storage rank mismatch at threshold {threshold}"
-            );
-            assert_eq!(
-                embedded_signature.rank(),
-                expected_rank,
-                "embedded rank mismatch at threshold {threshold}"
-            );
-            assert_eq!(
-                storage_signature.span_at(threshold).unwrap(),
-                *embedded_signature.span(),
-                "span mismatch at threshold {threshold}"
-            );
-        }
     }
 
     #[cfg(feature = "rayon")]
     #[test]
     fn signature_agrees_between_rayon_and_sequential_backends() {
         let embedded = two_hole_trajectory();
-        let band_top = 0.95;
 
         let sequential = embedded
-            .signature(.., band_top, &ExecutionBackend::Sequential)
+            .signature(.., &ExecutionBackend::Sequential)
             .unwrap();
-        let rayon = embedded
-            .signature(.., band_top, &ExecutionBackend::Rayon)
-            .unwrap();
+        let rayon = embedded.signature(.., &ExecutionBackend::Rayon).unwrap();
 
         assert_eq!(sequential.span(), rayon.span());
         for threshold in [0.8, 0.9_f64.next_down(), 0.9] {
@@ -502,48 +428,45 @@ mod tests {
     }
 
     #[test]
-    fn signature_rank_and_span_agree_with_embedded_across_thresholds() {
-        // Path agreement: filtering a storage's signature down to a
-        // threshold `t` must report the same rank and span as detecting
-        // cycles directly at `t` through the in-memory walker, for every
-        // segment and every threshold inside the valid band.
-        let embedded = loop_trajectory();
+    fn signature_rank_and_span_agree_with_embedded_across_segments_and_thresholds() {
+        // Path agreement: a storage's signature and one read straight off the
+        // embedded trajectory must report the same rank and span at every
+        // threshold, for every segment.
+        //
+        // Its ring A covers points 0..24 and its ring B 62..85, so the
+        // segments below hold both rings, each ring alone, and neither.
+        let embedded = two_hole_trajectory();
         let max_length = embedded.trajectory().len();
-        let resolution = embedded.resolution();
-        let band_top = 0.95;
-        let storage = CycleStorage::build(
-            &embedded,
-            ..,
-            max_length,
-            band_top,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let storage =
+            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
 
-        let segments: &[Range<usize>] = &[0..max_length, 0..8, 8..max_length, 4..13];
-        // The band opens above the resolution, so the lowest threshold
-        // detection can answer at is the next representable value above it.
-        let thresholds = [
-            resolution.next_up(),
-            f64::midpoint(resolution, band_top),
-            band_top,
-        ];
+        let segments: &[Range<usize>] = &[0..max_length, 0..42, 42..max_length, 21..63];
+        // The band's two ends, and one threshold between the fixture's births.
+        let thresholds = [0.0, 0.85, 1.0];
+
+        let expected_ranks = [2, 1, 1, 0];
+        for (segment, expected_rank) in segments.iter().zip(expected_ranks) {
+            assert_eq!(
+                storage.signature(segment.clone()).unwrap().rank(),
+                expected_rank,
+                "fixture moved: segment {segment:?} no longer has rank {expected_rank}",
+            );
+        }
 
         for segment in segments {
             let storage_signature = storage.signature(segment.clone()).unwrap();
+            let embedded_signature = embedded
+                .signature(segment.clone(), &ExecutionBackend::Sequential)
+                .unwrap();
             for &threshold in &thresholds {
-                let embedded_signature = embedded
-                    .signature(segment.clone(), threshold, &ExecutionBackend::Sequential)
-                    .unwrap();
                 assert_eq!(
                     storage_signature.rank_at(threshold).unwrap(),
-                    embedded_signature.rank(),
+                    embedded_signature.rank_at(threshold).unwrap(),
                     "rank mismatch for segment {segment:?} at threshold {threshold}"
                 );
-                let storage_span = storage_signature.span_at(threshold).unwrap();
                 assert_eq!(
-                    &storage_span,
-                    embedded_signature.span(),
+                    storage_signature.span_at(threshold).unwrap(),
+                    embedded_signature.span_at(threshold).unwrap(),
                     "span mismatch for segment {segment:?} at threshold {threshold}"
                 );
             }
@@ -562,7 +485,6 @@ mod tests {
             &embedded,
             sub_segment.clone(),
             sub_segment.len(),
-            0.95,
             &ExecutionBackend::Sequential,
         )
         .unwrap();
@@ -630,7 +552,6 @@ mod tests {
             &embedded,
             sub_segment.clone(),
             sub_segment.len(),
-            0.95,
             &ExecutionBackend::Sequential,
         )
         .unwrap();
@@ -651,7 +572,7 @@ mod tests {
     #[test]
     fn max_length_below_minimum_is_rejected() {
         let embedded = loop_trajectory();
-        let outcome = CycleStorage::build(&embedded, .., 1, 0.95, &ExecutionBackend::Sequential);
+        let outcome = CycleStorage::build(&embedded, .., 1, &ExecutionBackend::Sequential);
         assert!(matches!(
             outcome,
             Err(Error::MaxLengthBelowMinimum { max_length: 1 })
@@ -659,107 +580,16 @@ mod tests {
     }
 
     #[test]
-    fn threshold_not_above_resolution_is_rejected() {
-        let embedded = loop_trajectory();
-        let lower_threshold = embedded.resolution() - 0.1;
-        let outcome = CycleStorage::build(
-            &embedded,
-            ..,
-            25,
-            lower_threshold,
-            &ExecutionBackend::Sequential,
-        );
-        assert!(matches!(
-            outcome,
-            Err(Error::ThresholdNotAboveResolution { threshold, resolution })
-                if (threshold - lower_threshold).abs() < 1e-12
-                    && (resolution - embedded.resolution()).abs() < 1e-12
-        ));
-
-        // The band opens strictly above the resolution, so the resolution
-        // itself is out of band: at it, the widest consecutive pair of points
-        // is not admitted.
-        let boundary_outcome = CycleStorage::build(
-            &embedded,
-            ..,
-            25,
-            embedded.resolution(),
-            &ExecutionBackend::Sequential,
-        );
-        assert!(matches!(
-            boundary_outcome,
-            Err(Error::ThresholdNotAboveResolution { threshold, .. })
-                if (threshold - embedded.resolution()).abs() < 1e-12
-        ));
-
-        // A NaN threshold triggers the same negated guard.
-        let nan_outcome =
-            CycleStorage::build(&embedded, .., 25, f64::NAN, &ExecutionBackend::Sequential);
-        assert!(matches!(
-            nan_outcome,
-            Err(Error::ThresholdNotAboveResolution { threshold, .. }) if threshold.is_nan()
-        ));
-    }
-
-    #[test]
-    fn threshold_above_cube_side_is_rejected() {
-        // The band closes at the cube side: a pair is admitted only when it
-        // is strictly closer than the threshold, so a threshold of exactly
-        // 1.0 still leaves every admitted distance below the cube side.
-        let embedded = loop_trajectory();
-        assert!(CycleStorage::build(&embedded, .., 25, 1.0, &ExecutionBackend::Sequential).is_ok());
-
-        let outcome = CycleStorage::build(
-            &embedded,
-            ..,
-            25,
-            1.0 + f64::EPSILON,
-            &ExecutionBackend::Sequential,
-        );
-        assert!(matches!(
-            outcome,
-            Err(Error::ThresholdAboveCubeSide { threshold })
-                if (threshold - (1.0 + f64::EPSILON)).abs() < 1e-12
-        ));
-    }
-
-    #[test]
-    fn coincident_points_reject_a_zero_threshold() {
-        // A trajectory whose points all coincide has a resolution of zero, so
-        // every threshold is out of band and the lowest one a caller can name
-        // is reported rather than reaching detection, where the tile's
-        // self-comparisons sit at distance zero.
-        let points = Array2::from_shape_vec((4, 2), vec![0.5; 8]).unwrap();
-        let embedded = embed_euclidean(Trajectory::new(points.view()).unwrap()).unwrap();
-        assert!((embedded.resolution() - 0.0).abs() < 1e-12);
-
-        let outcome = CycleStorage::build(&embedded, .., 3, 0.0, &ExecutionBackend::Sequential);
-        assert!(matches!(
-            outcome,
-            Err(Error::ThresholdNotAboveResolution { threshold, resolution })
-                if threshold.abs() < 1e-12 && resolution.abs() < 1e-12
-        ));
-    }
-
-    #[test]
     fn max_length_behavior() {
         let embedded = loop_trajectory();
         let point_count = embedded.trajectory().len();
-        let small =
-            CycleStorage::build(&embedded, .., 4, 0.95, &ExecutionBackend::Sequential).unwrap();
-        let medium = CycleStorage::build(
-            &embedded,
-            ..,
-            point_count,
-            0.95,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let small = CycleStorage::build(&embedded, .., 4, &ExecutionBackend::Sequential).unwrap();
+        let medium =
+            CycleStorage::build(&embedded, .., point_count, &ExecutionBackend::Sequential).unwrap();
         let huge = CycleStorage::build(
             &embedded,
             ..,
             10 * point_count,
-            0.95,
             &ExecutionBackend::Sequential,
         )
         .unwrap();
@@ -779,16 +609,9 @@ mod tests {
     #[test]
     fn save_load_round_trip_preserves_queries() {
         let embedded = loop_trajectory();
-        let threshold = 0.95;
         let max_length = embedded.trajectory().len();
-        let storage = CycleStorage::build(
-            &embedded,
-            ..,
-            max_length,
-            threshold,
-            &ExecutionBackend::Sequential,
-        )
-        .unwrap();
+        let storage =
+            CycleStorage::build(&embedded, .., max_length, &ExecutionBackend::Sequential).unwrap();
 
         let mut storage_buffer: Vec<u8> = Vec::new();
         save_to_writer(&mut storage_buffer, &storage).unwrap();
@@ -802,8 +625,7 @@ mod tests {
             &[0..embedded.trajectory().len(), 0..8, 8..max_length, 4..13];
         for segment in segments {
             // `CyclingSignature` has no equality of its own, so compare its
-            // full-band span, its per-generator births, and its band top
-            // instead.
+            // full-band span and its per-generator births instead.
             let signature = storage.signature(segment.clone()).unwrap();
             let loaded_signature = loaded_storage.signature(segment.clone()).unwrap();
             assert_eq!(
@@ -824,13 +646,6 @@ mod tests {
             assert_eq!(
                 births, loaded_births,
                 "births differ after round-trip for segment {segment:?}",
-            );
-            assert!(
-                signature
-                    .threshold_max()
-                    .total_cmp(&loaded_signature.threshold_max())
-                    .is_eq(),
-                "band top differs after round-trip for segment {segment:?}",
             );
         }
         // Representative points rather than every index: the two ends of the

@@ -3,10 +3,8 @@ import pytest
 
 def test_storage_repr_reports_construction_parameters(square_loop_storage, square_loop_embedded):
     count = len(square_loop_embedded)
-    # Threshold renders as a float, and the extent and counts are reported.
     assert repr(square_loop_storage) == (
-        f"CycleStorage(extent=(0, {count}), components=1, classes=1, "
-        f"threshold=0.5, max_length={count})"
+        f"CycleStorage(extent=(0, {count}), components=1, classes=1, max_length={count})"
     )
 
 
@@ -38,15 +36,15 @@ def test_homology_class_indexing_matches_dense_array(square_loop_storage):
 def test_value_type_reprs(square_loop_storage, square_loop_embedded):
     storage = square_loop_storage
     count = len(square_loop_embedded)
-    signature = square_loop_embedded.signature(range(count), 0.5)
+    signature = square_loop_embedded.signature(range(count))
 
     assert repr(storage.classes()[0]) == "HomologyClass(generators=1, set={0})"
-    assert repr(storage.signature((0, count))) == "CyclingSignature(rank=1, threshold_max=0.5)"
+    assert repr(storage.signature((0, count))) == "CyclingSignature(rank=1)"
     assert (
         repr(storage[0])
         == f"Component(class_id=0, coverage=(0, {count}), cycles={len(storage[0])})"
     )
-    assert repr(signature) == "CyclingSignature(rank=1, threshold_max=0.5)"
+    assert repr(signature) == "CyclingSignature(rank=1)"
 
 
 def test_equatable_types_hash_consistently_with_equality(square_loop_storage, square_loop_embedded):
@@ -66,8 +64,8 @@ def test_equatable_types_hash_consistently_with_equality(square_loop_storage, sq
 
     # CyclingSignature has no equality of its own; two signatures built the
     # same way still compare equal through their spanned subspace.
-    first = square_loop_embedded.signature(range(count), 0.5)
-    second = square_loop_embedded.signature(range(count), 0.5)
+    first = square_loop_embedded.signature(range(count))
+    second = square_loop_embedded.signature(range(count))
     assert first.span() == second.span()
 
 

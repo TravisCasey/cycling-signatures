@@ -130,14 +130,15 @@ impl PyTrajectory {
     /// Returns a new trajectory thinned to a subset of this trajectory's
     /// points at most ``spacing`` apart under ``metric``.
     ///
-    /// A greedy forward walk always keeps the first and last point, and
-    /// keeps an intermediate point once the next point would fall further
-    /// than ``spacing`` from the last kept point. Any spacing up to the
-    /// intended adjacency threshold is valid.
+    /// A greedy forward walk always keeps the first and last point, and keeps
+    /// an intermediate point once the next point would fall further than
+    /// ``spacing`` from the last kept point. Any spacing below ``1.0``, the
+    /// cube side length, is valid.
     ///
     /// Only the lower end is validated here. A spacing coarse enough to put
-    /// consecutive kept points more than one cube apart surfaces later, when
-    /// embedding, as a non-adjacent-cubes error.
+    /// consecutive kept points more than one cube apart, or to leave their
+    /// largest distance at or above the cube side, surfaces later, when
+    /// embedding.
     ///
     /// Parameters
     /// ----------

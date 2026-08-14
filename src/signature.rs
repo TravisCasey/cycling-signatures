@@ -4,8 +4,8 @@
 //! Output types for trajectory cycling signatures.
 //!
 //! A [`CyclingSignature`] is the filtered `F_2` subspace of cubical-cover
-//! homology classes spanned by a trajectory's recurrent cycles: at
-//! adjacency threshold `t`, the signature is the span of every retained
+//! homology classes spanned by a trajectory's recurrent cycles. At a threshold
+//! `t` in the filtration band `[0, 1]`, it is the span of every admitted
 //! generator whose birth (the endpoint distance at which it first becomes
 //! independent of the generators before it) is below `t`.
 
@@ -51,14 +51,14 @@ impl SignatureGenerator {
 /// Constructed by
 /// [`EmbeddedTrajectory::signature`](crate::EmbeddedTrajectory::signature) or
 /// [`CycleStorage::signature`](crate::CycleStorage::signature).
-/// [`span`](Self::span) and [`rank`](Self::rank) report the full band;
+/// The filtration band is `[0, 1]`, closing at the cube side length.
+/// [`span`](Self::span) and [`rank`](Self::rank) report every class detected;
 /// [`span_at`](Self::span_at) and [`rank_at`](Self::rank_at) restrict to a
-/// smaller threshold, up to [`threshold_max`](Self::threshold_max).
+///  smaller threshold within the band.
 #[derive(Debug, Clone)]
 pub struct CyclingSignature {
     generators: Vec<SignatureGenerator>,
     span: F2Subspace,
-    threshold_max: f64,
 }
 
 impl CyclingSignature {
@@ -71,15 +71,9 @@ impl CyclingSignature {
     /// and a nonzero remainder is retained with its birth. A class matching
     /// an earlier one always reduces to zero and is dropped.
     ///
-    /// `num_generators` is the ambient dimension every class must share;
-    /// `threshold_max` is the inclusive upper end of the range this signature
-    /// answers queries for.
+    /// `num_generators` is the ambient dimension every class must share.
     #[must_use]
-    pub(crate) fn from_births(
-        mut births: Vec<(f64, F2Vector)>,
-        num_generators: usize,
-        threshold_max: f64,
-    ) -> Self {
+    pub(crate) fn from_births(mut births: Vec<(f64, F2Vector)>, num_generators: usize) -> Self {
         births.sort_by(|left, right| left.0.total_cmp(&right.0));
 
         let mut generators: Vec<SignatureGenerator> = Vec::new();
@@ -105,16 +99,12 @@ impl CyclingSignature {
         let span = F2Subspace::new(classes, num_generators)
             .expect("class vectors have the expected length by construction");
 
-        Self {
-            generators,
-            span,
-            threshold_max,
-        }
+        Self { generators, span }
     }
 
     /// The dimension of the full-band spanned subspace: the number of
-    /// independent cycling classes the signature carries at
-    /// [`threshold_max`](Self::threshold_max).
+    /// independent cycling classes the signature carries at the top of the
+    /// filtration band, i.e., the cube side length 1.
     #[must_use]
     pub fn rank(&self) -> usize {
         self.generators.len()
@@ -130,15 +120,11 @@ impl CyclingSignature {
     ///
     /// # Errors
     ///
-    /// [`Error::ThresholdExceedsFiltrationBand`] if `threshold` exceeds
-    /// [`threshold_max`](Self::threshold_max), or is NaN.
-    // Negated: also rejects a NaN threshold.
+    /// [`Error::ThresholdOutsideFiltrationBand`] if `threshold` falls outside
+    /// the band `[0, 1]`, or is NaN.
     pub fn rank_at(&self, threshold: f64) -> Result<usize> {
-        if !(threshold <= self.threshold_max) {
-            return Err(Error::ThresholdExceedsFiltrationBand {
-                threshold,
-                threshold_max: self.threshold_max,
-            });
+        if !(0.0..=1.0).contains(&threshold) {
+            return Err(Error::ThresholdOutsideFiltrationBand { threshold });
         }
         Ok(self
             .generators
@@ -150,8 +136,8 @@ impl CyclingSignature {
     ///
     /// # Errors
     ///
-    /// [`Error::ThresholdExceedsFiltrationBand`] if `threshold` exceeds
-    /// [`threshold_max`](Self::threshold_max), or is NaN.
+    /// [`Error::ThresholdOutsideFiltrationBand`] if `threshold` falls outside
+    /// the band `[0, 1]`, or is NaN.
     #[expect(
         clippy::missing_panics_doc,
         reason = "internal panic call is guarded, so the method advertises no panic"
@@ -170,12 +156,6 @@ impl CyclingSignature {
     #[must_use]
     pub fn generators(&self) -> &[SignatureGenerator] {
         &self.generators
-    }
-
-    /// The largest threshold this signature answers queries for.
-    #[must_use]
-    pub fn threshold_max(&self) -> f64 {
-        self.threshold_max
     }
 
     /// The ambient dimension: the cover's generator count.
@@ -209,7 +189,7 @@ mod tests {
             (0.8, basis_two.clone()),
         ];
 
-        let signature = CyclingSignature::from_births(births, 3, 1.0);
+        let signature = CyclingSignature::from_births(births, 3);
 
         let retained: Vec<f64> = signature
             .generators()
@@ -220,7 +200,7 @@ mod tests {
 
         // A generator enters the filtration strictly above its birth, so the
         // step sits between 0.2 and the next representable value above it.
-        assert_eq!(signature.rank_at(0.1).unwrap(), 0);
+        assert_eq!(signature.rank_at(0.0).unwrap(), 0);
         assert_eq!(signature.rank_at(0.2).unwrap(), 0);
         assert_eq!(signature.rank_at(0.2_f64.next_up()).unwrap(), 1);
         assert_eq!(signature.rank_at(0.5).unwrap(), 1);
@@ -235,16 +215,23 @@ mod tests {
     #[test]
     fn rank_at_rejects_thresholds_outside_the_band() {
         let births = vec![(0.2, F2Vector::from_nonzero(3, [0]))];
-        let signature = CyclingSignature::from_births(births, 3, 1.0);
+        let signature = CyclingSignature::from_births(births, 3);
 
+        // The band is closed at both ends, so a threshold is rejected only
+        // outside them.
         assert!(matches!(
             signature.rank_at(1.5).unwrap_err(),
-            Error::ThresholdExceedsFiltrationBand { threshold, threshold_max }
-                if (threshold - 1.5).abs() < 1e-12 && (threshold_max - 1.0).abs() < 1e-12
+            Error::ThresholdOutsideFiltrationBand { threshold }
+                if (threshold - 1.5).abs() < 1e-12
+        ));
+        assert!(matches!(
+            signature.rank_at(-0.5).unwrap_err(),
+            Error::ThresholdOutsideFiltrationBand { threshold }
+                if (threshold + 0.5).abs() < 1e-12
         ));
         assert!(matches!(
             signature.rank_at(f64::NAN).unwrap_err(),
-            Error::ThresholdExceedsFiltrationBand { .. }
+            Error::ThresholdOutsideFiltrationBand { .. }
         ));
     }
 }

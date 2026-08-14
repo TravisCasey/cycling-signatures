@@ -35,9 +35,9 @@ fn checked_component_id(component_id: isize, component_count: usize) -> PyResult
 /// A single detected near-recurrent cycle in a trajectory.
 ///
 /// A cycle is a segment of trajectory points whose first and last points are
-/// within the adjacency threshold of each other. Detection yields cycles that
-/// overlap and nest, so several cycles of one component can cover the same
-/// stretch of the trajectory at different lengths and births.
+/// strictly closer together than ``1.0``, the cube side length. Detection
+/// yields cycles which overlap or nest, so several cycles of one component can
+/// cover the same stretch of the trajectory at different lengths and births.
 #[pyclass(name = "Cycle")]
 pub(crate) struct PyCycle {
     pub(crate) inner: Cycle,
@@ -66,7 +66,7 @@ pub(crate) struct PyComponent {
 /// detection and carries the whole cost, after which every query reads the
 /// stored result without re-detecting. A query may restrict to any window
 /// inside the ``extent``, and the signature it returns can be restricted
-/// further to any threshold at or below the one detection ran at.
+/// further to any threshold in the filtration band ``[0, 1]``.
 ///
 /// The ``fingerprint`` matches the fingerprint of the ``EmbeddedTrajectory`` it
 /// was built from; save and load preserve this identity.
@@ -97,8 +97,6 @@ impl PyCycle {
     /// Returns
     /// -------
     /// float
-    ///     The cycle is admitted at every adjacency threshold above this
-    ///     distance.
     #[must_use]
     fn birth(&self) -> f64 {
         self.inner.birth()
@@ -253,9 +251,9 @@ impl PyCycleStorage {
     /// Builds a ``CycleStorage`` from an embedded trajectory.
     ///
     /// Detects all near-recurrent cycles within ``segment`` of ``embedded``
-    /// whose point count does not exceed ``max_length`` and whose endpoint
-    /// distance does not exceed ``threshold``, and computes the homology
-    /// class each one represents.
+    /// whose point count does not exceed ``max_length``, and computes the
+    /// homology class each one represents. Point pairs strictly closer than
+    /// ``1.0``, the cube side length, are admitted as cycle endpoints.
     ///
     /// By default the work is distributed across a thread pool; set the
     /// ``RAYON_NUM_THREADS`` environment variable to cap the number of
@@ -270,10 +268,6 @@ impl PyCycleStorage {
     ///     a ``(start, stop)`` integer tuple.
     /// max_length : int
     ///     The largest cycle point count to detect. Must be at least ``2``.
-    /// threshold : float
-    ///     Point pairs strictly closer than this are admitted as cycle
-    ///     endpoints. Must be above the embedded trajectory's ``resolution``
-    ///     and at most ``1.0`` (the cube side).
     /// parallel : bool, optional
     ///     Whether to distribute the work across a thread pool. Defaults to
     ///     ``True``; pass ``False`` to run sequentially on the calling
@@ -288,26 +282,24 @@ impl PyCycleStorage {
     /// ------
     /// ``ValueError``
     ///     If ``segment`` is not a valid range, if ``max_length`` is less
-    ///     than ``2``, if ``threshold`` is at or below the embedded
-    ///     trajectory's ``resolution`` or above ``1.0``, or if a detected
-    ///     cycle's endpoint points fall in non-adjacent cubes.
+    ///     than ``2``, or if a detected cycle's endpoint points fall in
+    ///     non-adjacent cubes.
     /// ``IndexError``
     ///     If the segment indices are out of bounds.
     #[staticmethod]
-    #[pyo3(signature = (embedded, segment, max_length, threshold, *, parallel = true))]
+    #[pyo3(signature = (embedded, segment, max_length, *, parallel = true))]
     fn build(
         py: Python<'_>,
         embedded: &Bound<'_, PyEmbeddedTrajectory>,
         segment: &Bound<'_, PyAny>,
         max_length: usize,
-        threshold: f64,
         parallel: bool,
     ) -> PyResult<Self> {
         let range = segment_from_py(segment)?;
         let backend = parallel_backend(parallel);
         let embedded = Arc::clone(&embedded.borrow().inner);
         let inner = py
-            .detach(move || CycleStorage::build(&embedded, range, max_length, threshold, &backend))
+            .detach(move || CycleStorage::build(&embedded, range, max_length, &backend))
             .map_err(to_pyerr)?;
         Ok(Self {
             inner: Arc::new(inner),
@@ -338,18 +330,6 @@ impl PyCycleStorage {
     #[must_use]
     fn fingerprint(&self) -> u64 {
         self.inner.fingerprint()
-    }
-
-    /// Returns the adjacency threshold detection ran at.
-    ///
-    /// Returns
-    /// -------
-    /// float
-    ///     The upper bound on the threshold any signature read from this
-    ///     storage can be restricted to.
-    #[must_use]
-    fn threshold(&self) -> f64 {
-        self.inner.threshold()
     }
 
     /// Returns the maximum cycle point count used when building this storage.
@@ -483,7 +463,6 @@ impl PyCycleStorage {
     /// Returns
     /// -------
     /// ``CyclingSignature``
-    ///     Complete up to the threshold detection ran at.
     ///
     /// Raises
     /// ------
@@ -548,13 +527,11 @@ impl PyCycleStorage {
     fn __repr__(&self) -> String {
         let extent = self.inner.extent();
         format!(
-            "CycleStorage(extent=({}, {}), components={}, classes={}, threshold={:?}, \
-             max_length={})",
+            "CycleStorage(extent=({}, {}), components={}, classes={}, max_length={})",
             extent.start,
             extent.end,
             self.inner.components().len(),
             self.inner.classes().len(),
-            self.inner.threshold(),
             self.inner.max_length()
         )
     }
