@@ -141,8 +141,7 @@ where
     let start_cube = point_cube_coordinates(segment.start);
     // Cube coordinates fit in i32: every way of obtaining a cover, building
     // one or decoding a saved one, enforces the [i32::MIN, i32::MAX - 1] range.
-    let mut base: Orthant = start_cube.iter().map(|&value| value as i32).collect();
-    let mut dual: Orthant = start_cube.iter().map(|&value| value as i32 - 1).collect();
+    let mut position: Orthant = start_cube.iter().map(|&value| value as i32).collect();
 
     // Forward path: each consecutive pair of points. Every consecutive pair of
     // the trajectory was shown to land in adjacent cubes before the embedding
@@ -151,7 +150,7 @@ where
         let from = point_cube_coordinates(point_index);
         let to = point_cube_coordinates(point_index + 1);
         if let Err((axis, delta)) =
-            step_between_cubes(from, to, dimension, &mut base, &mut dual, &mut visit)
+            step_between_cubes(from, to, dimension, &mut position, &mut visit)
         {
             panic!(
                 "consecutive trajectory points {point_index} and {} land in cubes differing by \
@@ -163,15 +162,14 @@ where
 
     // Closing step: from points[end - 1] to points[start].
     let end_cube = point_cube_coordinates(segment.end - 1);
-    step_between_cubes(
-        end_cube, start_cube, dimension, &mut base, &mut dual, &mut visit,
-    )
-    .map_err(|(axis, delta)| Error::CycleEndpointsNonAdjacent {
-        start: segment.start,
-        end: segment.end,
-        axis,
-        delta,
-    })?;
+    step_between_cubes(end_cube, start_cube, dimension, &mut position, &mut visit).map_err(
+        |(axis, delta)| Error::CycleEndpointsNonAdjacent {
+            start: segment.start,
+            end: segment.end,
+            axis,
+            delta,
+        },
+    )?;
 
     Ok(())
 }
@@ -198,8 +196,7 @@ fn step_between_cubes<F>(
     from: &[i64],
     to: &[i64],
     dimension: usize,
-    base: &mut Orthant,
-    dual: &mut Orthant,
+    position: &mut Orthant,
     visit: &mut F,
 ) -> std::result::Result<(), (usize, i64)>
 where
@@ -214,10 +211,9 @@ where
         if to[axis] - from[axis] != 1 {
             continue;
         }
-        dual[axis] += 1;
-        let edge = Cube::new(base.clone(), dual.clone());
+        let edge = Cube::from_extent(position.clone(), 1_u32 << axis);
         visit(&edge);
-        base[axis] += 1;
+        position[axis] += 1;
     }
 
     // Falling axes second: their edges lie in the `to` cube.
@@ -225,10 +221,9 @@ where
         if to[axis] - from[axis] != -1 {
             continue;
         }
-        base[axis] -= 1;
-        let edge = Cube::new(base.clone(), dual.clone());
+        position[axis] -= 1;
+        let edge = Cube::from_extent(position.clone(), 1_u32 << axis);
         visit(&edge);
-        dual[axis] -= 1;
     }
 
     Ok(())

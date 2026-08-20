@@ -7,7 +7,7 @@
 
 use std::hash::{Hash, Hasher};
 
-use cycling_signatures::{F2, F2Subspace, F2Vector};
+use cycling_signatures::{F2Subspace, F2Vector};
 use numpy::PyArray1;
 use pyo3::{
     exceptions::{PyIndexError, PyValueError},
@@ -81,7 +81,7 @@ impl PyHomologyClass {
                 self.inner.len()
             ))
         })?;
-        Ok(u8::from(self.inner.get(resolved) == F2::from(1u64)))
+        Ok(u8::from(self.inner.get(resolved)))
     }
 
     /// Returns the indices of the class's nonzero entries, ascending.

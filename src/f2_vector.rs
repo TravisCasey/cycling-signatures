@@ -8,16 +8,16 @@ use std::{
     ops::{BitXor, BitXorAssign},
 };
 
-use chomp3rs::{F2, Ring};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// A vector over the field with two elements.
+///
+/// Entries are exposed as `bool` values (`true` for one, `false` for zero) and
+/// stored bit-packed for memory efficiency.
 #[derive(Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct F2Vector {
-    // The external interface uses `F2` from the `chomp3rs` crate, but the
-    // values are internally bitpacked for memory efficiency.
     bits: Vec<u64>,
     len: usize,
 }
@@ -58,7 +58,7 @@ impl F2Vector {
     pub fn from_nonzero(len: usize, indices: impl IntoIterator<Item = usize>) -> Self {
         let mut vector = Self::zeros(len);
         for index in indices {
-            vector.set(index, F2::one());
+            vector.set(index, true);
         }
         vector
     }
@@ -90,7 +90,7 @@ impl F2Vector {
     ///
     /// Panics if `index` is out of bounds.
     #[must_use]
-    pub fn get(&self, index: usize) -> F2 {
+    pub fn get(&self, index: usize) -> bool {
         assert!(
             index < self.len,
             "index {} out of bounds for F2Vector of length {}",
@@ -98,8 +98,7 @@ impl F2Vector {
             self.len
         );
         let word = self.bits[index / 64];
-        let bit = (word >> (index % 64)) & 1;
-        F2::from(bit)
+        (word >> (index % 64)) & 1 == 1
     }
 
     /// Sets the entry at `index`.
@@ -107,7 +106,7 @@ impl F2Vector {
     /// # Panics
     ///
     /// Panics if `index` is out of bounds.
-    pub fn set(&mut self, index: usize, value: F2) {
+    pub fn set(&mut self, index: usize, value: bool) {
         assert!(
             index < self.len,
             "index {} out of bounds for F2Vector of length {}",
@@ -115,7 +114,7 @@ impl F2Vector {
             self.len
         );
         let mask = 1u64 << (index % 64);
-        if value == F2::one() {
+        if value {
             self.bits[index / 64] |= mask;
         } else {
             self.bits[index / 64] &= !mask;
@@ -157,8 +156,8 @@ impl F2Vector {
     }
 }
 
-impl FromIterator<F2> for F2Vector {
-    /// Collects an iterator of [`F2`] entries into an [`F2Vector`].
+impl FromIterator<bool> for F2Vector {
+    /// Collects an iterator of `bool` entries into an [`F2Vector`].
     ///
     /// Items are placed positionally: the first item becomes index 0, the
     /// second becomes index 1, and so on. The resulting vector's length equals
@@ -167,18 +166,15 @@ impl FromIterator<F2> for F2Vector {
     /// # Examples
     ///
     /// ```
-    /// use chomp3rs::{F2, Ring};
     /// use cycling_signatures::F2Vector;
     ///
-    /// let vector: F2Vector = [F2::one(), F2::zero(), F2::one(), F2::one()]
-    ///     .into_iter()
-    ///     .collect();
+    /// let vector: F2Vector = [true, false, true, true].into_iter().collect();
     /// assert_eq!(vector.len(), 4);
     /// let nonzeros: Vec<usize> = vector.nonzero_indices().collect();
     /// assert_eq!(nonzeros, vec![0, 2, 3]);
     /// ```
-    fn from_iter<I: IntoIterator<Item = F2>>(iter: I) -> Self {
-        let entries: Vec<F2> = iter.into_iter().collect();
+    fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
+        let entries: Vec<bool> = iter.into_iter().collect();
         let len = entries.len();
         let mut vector = Self::zeros(len);
         for (index, value) in entries.into_iter().enumerate() {
@@ -211,7 +207,7 @@ impl fmt::Display for F2Vector {
     /// index order.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         for entry in self {
-            let glyph = if entry == F2::one() { '1' } else { '0' };
+            let glyph = if entry { '1' } else { '0' };
             write!(formatter, "{glyph}")?;
         }
         Ok(())
@@ -226,7 +222,7 @@ impl fmt::Debug for F2Vector {
 
 impl<'a> IntoIterator for &'a F2Vector {
     type IntoIter = Iter<'a>;
-    type Item = F2;
+    type Item = bool;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -248,7 +244,7 @@ impl BitXor<&F2Vector> for &F2Vector {
     }
 }
 
-impl From<&F2Vector> for Vec<F2> {
+impl From<&F2Vector> for Vec<bool> {
     fn from(vector: &F2Vector) -> Self {
         vector.iter().collect()
     }
@@ -264,9 +260,9 @@ pub struct Iter<'a> {
 }
 
 impl Iterator for Iter<'_> {
-    type Item = F2;
+    type Item = bool;
 
-    fn next(&mut self) -> Option<F2> {
+    fn next(&mut self) -> Option<bool> {
         if self.index >= self.vector.len() {
             return None;
         }
@@ -290,8 +286,6 @@ mod tests {
         hash::{Hash, Hasher},
     };
 
-    use chomp3rs::{F2, Ring};
-
     use super::F2Vector;
 
     fn hash<T: Hash>(value: &T) -> u64 {
@@ -304,20 +298,12 @@ mod tests {
     fn equality_across_construction_paths() {
         let from_set = {
             let mut vector = F2Vector::zeros(70);
-            vector.set(3, F2::one());
-            vector.set(65, F2::one());
+            vector.set(3, true);
+            vector.set(65, true);
             vector
         };
         let from_indices = F2Vector::from_nonzero(70, [3, 65]);
-        let from_iter: F2Vector = (0..70)
-            .map(|index| {
-                if index == 3 || index == 65 {
-                    F2::one()
-                } else {
-                    F2::zero()
-                }
-            })
-            .collect();
+        let from_iter: F2Vector = (0..70).map(|index| index == 3 || index == 65).collect();
 
         assert_eq!(from_set, from_indices);
         assert_eq!(from_set, from_iter);
@@ -368,7 +354,7 @@ mod tests {
     #[should_panic(expected = "index 10 out of bounds for F2Vector of length 10")]
     fn set_out_of_bounds_panics() {
         let mut vector = F2Vector::zeros(10);
-        vector.set(10, F2::one());
+        vector.set(10, true);
     }
 
     #[test]
@@ -387,9 +373,9 @@ mod tests {
     }
 
     #[test]
-    fn vec_f2_round_trip() {
+    fn vec_bool_round_trip() {
         let original = F2Vector::from_nonzero(130, [0, 5, 64, 65, 129]);
-        let as_vec: Vec<F2> = (&original).into();
+        let as_vec: Vec<bool> = (&original).into();
         let recovered: F2Vector = as_vec.into_iter().collect();
         assert_eq!(original, recovered);
     }

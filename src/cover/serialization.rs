@@ -6,7 +6,7 @@
 
 use std::cmp::Ordering;
 
-use chomp3rs::{Chain, Cube, F2, Ring};
+use chomp3rs::{Chain, Cube, Field};
 use ndarray::{Array2, ArrayView2};
 use serde::{Deserialize, Serialize, de::Error as DeserializeError};
 
@@ -71,12 +71,11 @@ impl Serialize for CubicalCover {
             .generators
             .iter()
             .map(|generator| {
-                let mut cubes: Vec<Cube> = generator
-                    .iter()
-                    .filter(|(_, coefficient)| **coefficient != F2::zero())
-                    .map(|(cube, _)| cube.clone())
-                    .collect();
-                cubes.sort();
+                let mut cubes: Vec<Cube> = generator.iter().map(|(cube, _)| cube.clone()).collect();
+                cubes.sort_unstable_by(|left, right| {
+                    (left.base().as_slice(), left.extent())
+                        .cmp(&(right.base().as_slice(), right.extent()))
+                });
                 cubes
             })
             .collect();
@@ -99,10 +98,10 @@ impl<'de> Deserialize<'de> for CubicalCover {
         }
         check_cube_range(data.cubes.view()).map_err(D::Error::custom)?;
         check_lexicographic_order(data.cubes.view()).map_err(D::Error::custom)?;
-        let generators: Vec<Chain<Cube, F2>> = data
+        let generators: Vec<Chain<Cube>> = data
             .generators
             .into_iter()
-            .map(|cubes| cubes.into_iter().map(|cube| (cube, F2::one())).collect())
+            .map(|cubes| Chain::from_terms(Field::new(2), cubes.into_iter().map(|cube| (cube, 1))))
             .collect();
         let edge_classes = compute_edge_classes(&generators);
         Ok(Self {

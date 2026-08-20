@@ -9,8 +9,6 @@
 //! generator whose birth (the endpoint distance at which it first becomes
 //! independent of the generators before it) is below `t`.
 
-use chomp3rs::{F2, Ring};
-
 use crate::{
     F2Subspace, F2Vector,
     error::{Error, Result},
@@ -83,7 +81,7 @@ impl CyclingSignature {
                     .class
                     .first_nonzero_index()
                     .expect("retained pivots are nonzero");
-                if class.get(leading) == F2::one() {
+                if class.get(leading) {
                     class ^= &pivot.class;
                 }
             }

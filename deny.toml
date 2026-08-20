@@ -28,7 +28,9 @@ allow = [
 [bans]
 multiple-versions = "deny"
 wildcards = "warn"
-skip = []
+skip = [
+    { crate = "syn@2", reason = "thiserror is on syn 3; serde_derive, pest, tracing, and mpi are still on syn 2" },
+]
 
 [sources]
 unknown-registry = "deny"

@@ -4,11 +4,10 @@
 //! Cohomology generators of a cubical complex and the edge-to-class table
 //! derived from them.
 
-use std::cmp::Ordering;
-
 use chomp3rs::{
-    Chain, Complex, CoreductionMatching, Cube, CubicalComplex, ExecutionBackend, F2, MorseMatching,
-    Orthant, OrthantTrie, Ring, TopCubeGrader, TopCubicalMatching,
+    Chain, Complex, CoreductionMatching, Cube, CubicalComplex, ExecutionBackend, Field,
+    MorseMatching, Orthant, OrthantTrie, TopCubeGrader, TopCubicalMatching,
+    TopCubicalMatchingConfig,
 };
 use ndarray::Array2;
 use rustc_hash::FxHashMap;
@@ -22,8 +21,9 @@ use crate::f2_vector::F2Vector;
 pub(super) fn compute_generators(
     canonical_cubes: &Array2<i64>,
     backend: &ExecutionBackend,
-) -> Vec<Chain<Cube, F2>> {
+) -> Vec<Chain<Cube>> {
     let dimension = canonical_cubes.ncols();
+    let field = Field::new(2);
 
     let minimum_orthant: Orthant = (0..dimension)
         .map(|axis| {
@@ -53,33 +53,29 @@ pub(super) fn compute_generators(
         .map(|row| row.iter().map(|&value| value as i32).collect())
         .collect();
 
-    let grading_function =
-        TopCubeGrader::new(OrthantTrie::uniform(orthants.clone(), 0, 1), Some(0));
+    let grading_function = TopCubeGrader::new(OrthantTrie::uniform(orthants, 0, 1), Some(0));
 
-    let complex = CubicalComplex::<F2, TopCubeGrader<OrthantTrie>>::new(
-        minimum_orthant,
-        maximum_orthant,
-        grading_function,
-    );
+    let complex = CubicalComplex::new(minimum_orthant, maximum_orthant, grading_function, field);
 
-    let top_matching = TopCubicalMatching::<F2, OrthantTrie>::builder()
-        .max_grade(0)
-        .max_dimension(2)
-        .subgrid_shape(vec![1_i32; dimension])
-        .filter_orthants(orthants)
-        .backend(backend.clone())
-        .build(complex);
+    let configuration = TopCubicalMatchingConfig {
+        maximum_critical_grade: 0,
+        maximum_critical_dimension: 2,
+        filter_orthants: true,
+        ..TopCubicalMatchingConfig::default()
+    };
+    let top_matching = TopCubicalMatching::from_config(configuration, complex, backend);
 
-    let (lower_matchings, morse_complex) = top_matching.full_reduce(CoreductionMatching::new);
+    let (lower_matchings, morse_complex) =
+        top_matching.full_reduce(CoreductionMatching::new, backend);
 
     let generator_cells: Vec<u32> = morse_complex
         .iter()
         .filter(|cell| morse_complex.cell_dimension(cell) == 1)
         .collect();
 
-    let mut lower_reps: Vec<Chain<u32, F2>> = generator_cells
+    let mut lower_reps: Vec<Chain<u32>> = generator_cells
         .iter()
-        .map(|&cell| Chain::from(cell))
+        .map(|&cell| Chain::unit(field, cell))
         .collect();
 
     for matching in lower_matchings.iter().rev() {
@@ -89,41 +85,43 @@ pub(super) fn compute_generators(
             .collect();
     }
 
-    let mut generators: Vec<Chain<Cube, F2>> = lower_reps
+    let mut generators: Vec<Chain<Cube>> = lower_reps
         .into_iter()
         .map(|chain| top_matching.colift_capped(chain, 0))
         .collect();
 
     // Lex-sort generators
-    generators.sort_by(compare_chains);
+    generators.sort_by(|left, right| {
+        let mut left_keys: Vec<(&[i32], u32)> = left
+            .iter()
+            .map(|(cube, _)| (cube.base().as_slice(), cube.extent()))
+            .collect();
+        left_keys.sort_unstable();
+
+        let mut right_keys: Vec<(&[i32], u32)> = right
+            .iter()
+            .map(|(cube, _)| (cube.base().as_slice(), cube.extent()))
+            .collect();
+        right_keys.sort_unstable();
+
+        left_keys.cmp(&right_keys)
+    });
 
     generators
-}
-
-/// A total ordering on [`Chain<Cube, F2>`](Chain) used for deterministic
-/// sorting.
-#[must_use]
-fn compare_chains(left: &Chain<Cube, F2>, right: &Chain<Cube, F2>) -> Ordering {
-    let left_entries: Vec<&Cube> = left.into_iter().map(|(cube, _)| cube).collect();
-    let right_entries: Vec<&Cube> = right.into_iter().map(|(cube, _)| cube).collect();
-    left_entries.cmp(&right_entries)
 }
 
 /// Builds the edge-to-class lookup table from the generator chains. Each
 /// generator contributes a `1` at its own index for every edge it contains.
 #[must_use]
-pub(super) fn compute_edge_classes(generators: &[Chain<Cube, F2>]) -> FxHashMap<Cube, F2Vector> {
+pub(super) fn compute_edge_classes(generators: &[Chain<Cube>]) -> FxHashMap<Cube, F2Vector> {
     let mut edge_classes: FxHashMap<Cube, F2Vector> = FxHashMap::default();
     let num_generators = generators.len();
     for (generator_index, generator) in generators.iter().enumerate() {
-        for (cube, coefficient) in generator {
-            if *coefficient == F2::zero() {
-                continue;
-            }
+        for (cube, _) in generator {
             let entry = edge_classes
                 .entry(cube.clone())
                 .or_insert_with(|| F2Vector::zeros(num_generators));
-            entry.set(generator_index, F2::one());
+            entry.set(generator_index, true);
         }
     }
     edge_classes

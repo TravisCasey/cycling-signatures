@@ -13,7 +13,7 @@ mod serialization;
 use std::path::Path;
 use std::{cmp::Ordering, mem};
 
-use chomp3rs::{Chain, Cube, ExecutionBackend, F2};
+use chomp3rs::{Chain, Cube, ExecutionBackend};
 use generators::{compute_edge_classes, compute_generators};
 use ndarray::{Array2, ArrayView1, ArrayView2};
 use rustc_hash::FxHashMap;
@@ -35,7 +35,7 @@ use crate::{
 #[derive(Debug)]
 pub struct CubicalCover {
     cubes: Array2<i64>,
-    generators: Vec<Chain<Cube, F2>>,
+    generators: Vec<Chain<Cube>>,
     edge_classes: FxHashMap<Cube, F2Vector>,
 }
 
@@ -111,7 +111,7 @@ impl CubicalCover {
     /// cover might differ in the basis returned, though they span the same
     /// cohomology space.
     #[must_use]
-    pub fn generators(&self) -> &[Chain<Cube, F2>] {
+    pub fn generators(&self) -> &[Chain<Cube>] {
         &self.generators
     }
 
@@ -289,7 +289,7 @@ fn canonicalize_cubes(cubes: ArrayView2<'_, i64>) -> Array2<i64> {
 
 #[cfg(test)]
 mod tests {
-    use chomp3rs::{Cube, ExecutionBackend, F2, Orthant, Ring};
+    use chomp3rs::{Cube, ExecutionBackend, Orthant};
     use ndarray::{Array2, array};
 
     use super::CubicalCover;
@@ -394,9 +394,9 @@ mod tests {
         let generator = &cover.generators()[0];
         let first_edge: &Cube = generator
             .into_iter()
-            .find(|(_, coefficient)| **coefficient != F2::zero())
+            .next()
             .map(|(cube, _)| cube)
-            .expect("generator should have at least one non-zero entry");
+            .expect("generator should have at least one entry");
 
         let class = cover.chain_class(std::iter::once(first_edge));
         assert_eq!(class, F2Vector::from_nonzero(1, [0]));
@@ -426,8 +426,7 @@ mod tests {
         let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
 
         let base: Orthant = [100_i32, 100_i32].into();
-        let dual: Orthant = [99_i32, 100_i32].into();
-        let off_edge = Cube::new(base, dual);
+        let off_edge = Cube::from_extent(base, 0b01);
 
         let class = cover.chain_class(std::iter::once(&off_edge));
         assert_eq!(class, F2Vector::zeros(cover.num_generators()));

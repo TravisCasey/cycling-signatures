@@ -5,7 +5,6 @@
 
 use std::{cmp::Ordering, fmt};
 
-use chomp3rs::{F2, Ring};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -157,7 +156,7 @@ impl F2Subspace {
             let pivot = basis_vector
                 .first_nonzero_index()
                 .expect("RREF basis vector cannot be zero");
-            if residual.get(pivot) == F2::one() {
+            if residual.get(pivot) {
                 residual ^= basis_vector;
             }
         }
@@ -275,7 +274,7 @@ impl fmt::Display for F2Subspace {
 fn rref_f2(mut rows: Vec<F2Vector>, num_generators: usize) -> Vec<F2Vector> {
     let mut pivot_row = 0;
     for column in 0..num_generators {
-        let pivot_search = (pivot_row..rows.len()).find(|&row| rows[row].get(column) == F2::one());
+        let pivot_search = (pivot_row..rows.len()).find(|&row| rows[row].get(column));
         let Some(pivot_row_index) = pivot_search else {
             continue;
         };
@@ -284,7 +283,7 @@ fn rref_f2(mut rows: Vec<F2Vector>, num_generators: usize) -> Vec<F2Vector> {
         let pivot = rows[pivot_row].clone();
         let (head, tail) = rows.split_at_mut(pivot_row + 1);
         for row in head[..pivot_row].iter_mut().chain(tail.iter_mut()) {
-            if row.get(column) == F2::one() {
+            if row.get(column) {
                 *row ^= &pivot;
             }
         }
