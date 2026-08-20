@@ -64,8 +64,8 @@ def _download_verified(remote: _RemoteFile, target: Path) -> None:
 
 
 # The Zenodo record holding the published example data:
-# https://zenodo.org/records/22030285
-_ZENODO_RECORD = "22030285"
+# https://zenodo.org/records/22030716
+_ZENODO_RECORD = "22030716"
 
 
 def _published(name: str, sha256: str) -> _RemoteFile:
