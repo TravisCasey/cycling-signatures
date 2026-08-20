@@ -24,14 +24,15 @@ use crate::{convert::parallel_backend, errors::to_pyerr, trajectory::PyTrajector
 /// copy of the trajectory.
 ///
 /// The generator basis is not stable across builds. Two builds over the same
-/// cubes can produce different generator chains for the same cover, so a class
-/// vector, ``Subspace`` equality, and ``Subspace.contains`` are meaningful only
-/// within one basis. One basis means one build, or every process that loads one
-/// saved cover file: ``save`` writes the exact generator chains and ``load``
-/// restores them, while rebuilding from the same cubes reproduces the
-/// ``fingerprint`` but not necessarily the basis. Across independently built
-/// covers, compare only what a change of basis cannot alter: ranks and counts,
-/// whether a class ``is_zero``, and which components share a class.
+/// cubes can compute their homology classes in different generator bases, so a
+/// class vector, ``Subspace`` equality, and ``Subspace.contains`` are
+/// meaningful only within one basis. One basis means one build, or every
+/// process that loads one saved cover file: ``save`` writes every edge's class
+/// in the exact basis the build computed and ``load`` restores them, while
+/// rebuilding from the same cubes reproduces the ``fingerprint`` but not
+/// necessarily the basis. Across independently built covers, compare only what
+/// a change of basis cannot alter: ranks and counts, whether a class
+/// ``is_zero``, and which components share a class.
 ///
 /// By default the work is distributed across a thread pool; set the
 /// ``RAYON_NUM_THREADS`` environment variable to cap the number of threads it

@@ -164,16 +164,16 @@ Comparing across runs
 ------------------------
 
 The cover generator basis is **not stable across runs**. Two runs over the same
-input can compute different generator chains for the same cover, so a class
-vector from one run's basis cannot be compared, entry by entry, to a class
-vector from another run's basis. Concretely:
+input can compute the same cover's homology classes in different generator
+bases, so a class vector from one run's basis cannot be compared, entry by
+entry, to a class vector from another run's basis. Concretely:
 
 - Class vectors, `Subspace` equality, and `Subspace.contains` are meaningful
   only within one basis.
 - One basis means one run, or every process loading one saved cover file:
-  `CubicalCover.save` writes the exact generator chains, and `CubicalCover.load`
-  restores them, so every process loading that file shares a basis and their
-  class output is comparable.
+  `CubicalCover.save` writes every edge's class in the exact basis of the run
+  that built it, and `CubicalCover.load` restores them, so every process
+  loading that file shares a basis and their class output is comparable.
 - Rebuilding a cover from the same cubes gives no such guarantee: the
   fingerprint matches (it depends only on the cube set) but the basis need not,
   so a storage reunited with a rebuilt cover has class vectors indexed against a

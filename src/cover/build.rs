@@ -41,6 +41,11 @@ impl CubicalCover {
     /// - [`Error::CubeCoordinateOutOfRange`] if a point's cube coordinate falls
     ///   outside `[i32::MIN, i32::MAX - 1]`, naming the offending trajectory
     ///   point by its row.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the homology reduction leaves a nonzero boundary in degree at
+    /// most 2, which would violate the invariant the recorded classes rest on.
     pub fn build(trajectory: &Trajectory, backend: &ExecutionBackend) -> Result<Self> {
         Self::from_cubes(visited_cubes(trajectory)?.view(), backend)
     }

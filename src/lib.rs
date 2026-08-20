@@ -93,7 +93,7 @@ pub mod storage;
 pub mod trajectory;
 pub(crate) mod util;
 
-pub use chomp3rs::{Chain, Cube, ExecutionBackend};
+pub use chomp3rs::{Cube, ExecutionBackend};
 
 pub use crate::{
     cover::CubicalCover,

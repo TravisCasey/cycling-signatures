@@ -13,7 +13,7 @@
 //! ```
 
 pub use crate::{
-    Chain, Component, Cube, CubicSpline, CubicalCover, Cycle, CycleStorage, CyclingSignature,
+    Component, Cube, CubicSpline, CubicalCover, Cycle, CycleStorage, CyclingSignature,
     DerivativeInterpolator, EmbeddedTrajectory, Error, ExecutionBackend, F2Subspace, F2Vector,
     Interpolator, Metric, Result, SignatureGenerator, SphereBundleInterpolator, Trajectory,
 };

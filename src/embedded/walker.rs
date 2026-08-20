@@ -62,7 +62,8 @@ impl EmbeddedTrajectory {
     ///
     /// # Panics
     ///
-    /// Same as [`walk_cycle`](Self::walk_cycle).
+    /// Panics as [`walk_cycle`](Self::walk_cycle) does, and additionally if a
+    /// walked edge carries no recorded class.
     pub fn cycle_class(&self, segment: impl RangeBounds<usize>) -> Result<F2Vector> {
         let segment = self.cycle_segment(segment)?;
         // Accumulated as the walk proceeds rather than over a collected edge
@@ -70,9 +71,11 @@ impl EmbeddedTrajectory {
         // the order the edges arrive in.
         let mut accumulator = F2Vector::zeros(self.cover().num_generators());
         for_each_cycle_edge(self, segment, |edge| {
-            if let Some(class) = self.cover().edge_class(edge) {
-                accumulator ^= class;
-            }
+            let class = self
+                .cover()
+                .edge_class(edge)
+                .expect("every walked edge lies in the cover's recorded edge universe");
+            accumulator ^= class;
         })?;
         Ok(accumulator)
     }
