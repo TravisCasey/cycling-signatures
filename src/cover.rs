@@ -8,6 +8,7 @@ mod build;
 mod generators;
 #[cfg(feature = "serde")]
 mod serialization;
+pub(crate) mod staircase;
 
 #[cfg(feature = "serde")]
 use std::path::Path;
