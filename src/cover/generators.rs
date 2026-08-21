@@ -193,6 +193,60 @@ fn lower_batch<M: MorseMatching>(
         .collect()
 }
 
+/// The number of chains taken through the coreduction rounds at once. Bounds
+/// the intermediate chains alive during lowering to one slice's worth.
+const LOWERING_SLICE_CHAINS: usize = 1 << 16;
+
+/// Lowers each critical 1-cell of the top matching through the coreduction
+/// rounds and reads its class on the final complex's 1-cells.
+///
+/// Returns one entry per critical cell of the top matching, indexed by Morse
+/// cell index; cells of other dimensions hold `None`. The coreduction rounds
+/// compose to a linear map, so this table determines the class of any chain
+/// the top matching produces: a chain's class is the sum of its cells' entries.
+///
+/// Under a distributed backend the entries are correct on the root rank only.
+#[must_use]
+fn critical_cell_classes(
+    top_matching: &TopCubicalMatching<OrthantTrie>,
+    lower_matchings: &[CoreductionMatching],
+    generator_cells: &[u32],
+    backend: &ExecutionBackend,
+) -> Vec<Option<F2Vector>> {
+    let field = Field::new(2);
+    let cell_to_index: FxHashMap<u32, usize> = generator_cells
+        .iter()
+        .enumerate()
+        .map(|(index, &cell)| (cell, index))
+        .collect();
+
+    let critical = top_matching.critical_cells();
+    let one_cells: Vec<u32> = (0..critical.len())
+        .filter(|&index| critical[index].dimension() == 1)
+        .map(|index| index as u32)
+        .collect();
+
+    let mut table: Vec<Option<F2Vector>> = vec![None; critical.len()];
+    for slice in one_cells.chunks(LOWERING_SLICE_CHAINS) {
+        let mut lowered: Vec<Chain<u32>> =
+            slice.iter().map(|&cell| Chain::unit(field, cell)).collect();
+        for matching in lower_matchings {
+            lowered = lower_batch(matching, lowered, backend);
+        }
+        for (&cell, chain) in slice.iter().zip(lowered) {
+            let mut class = F2Vector::zeros(generator_cells.len());
+            for (final_cell, _) in &chain {
+                let index = cell_to_index
+                    .get(final_cell)
+                    .expect("a lowered 1-chain has coefficients on 1-cells of the final complex");
+                class.set(*index, true);
+            }
+            table[cell as usize] = Some(class);
+        }
+    }
+    table
+}
+
 /// Lowers every universe edge through the tower and reads each result's
 /// coefficients on the final complex's 1-cells into an edge-to-class map.
 ///
@@ -208,33 +262,34 @@ fn lower_universe(
     backend: &ExecutionBackend,
 ) -> FxHashMap<Cube, F2Vector> {
     let field = Field::new(2);
-    let unit_chains: Vec<Chain<Cube>> = universe
-        .iter()
-        .map(|edge| Chain::unit(field, edge.clone()))
-        .collect();
-
-    let mut lowered = lower_batch(top_matching, unit_chains, backend);
-    for matching in lower_matchings {
-        lowered = lower_batch(matching, lowered, backend);
-    }
-
-    let cell_to_index: FxHashMap<u32, usize> = generator_cells
-        .iter()
-        .enumerate()
-        .map(|(index, &cell)| (cell, index))
-        .collect();
+    let classes = critical_cell_classes(top_matching, lower_matchings, generator_cells, backend);
     let mut edge_classes: FxHashMap<Cube, F2Vector> =
         FxHashMap::with_capacity_and_hasher(universe.len(), FxBuildHasher);
 
-    for (edge, chain) in universe.into_iter().zip(lowered) {
-        let mut class = F2Vector::zeros(generator_cells.len());
-        for (cell, _) in &chain {
-            let index = cell_to_index
-                .get(cell)
-                .expect("a lowered 1-chain has coefficients on 1-cells of the final complex");
-            class.set(*index, true);
+    // Each edge is lowered through the top matching alone; the coreduction
+    // rounds are applied through the precomposed table. The universe is
+    // dispatched in bounded slices so the lowered chains never exist for more
+    // than one slice at a time. Every rank iterates the same slices, so the
+    // collective dispatches inside `lower_batch` stay aligned.
+    let mut edges = universe.into_iter().peekable();
+    while edges.peek().is_some() {
+        let slice: Vec<Cube> = edges.by_ref().take(LOWERING_SLICE_CHAINS).collect();
+        let unit_chains: Vec<Chain<Cube>> = slice
+            .iter()
+            .map(|edge| Chain::unit(field, edge.clone()))
+            .collect();
+        let lowered = lower_batch(top_matching, unit_chains, backend);
+
+        for (edge, chain) in slice.into_iter().zip(lowered) {
+            let mut class = F2Vector::zeros(generator_cells.len());
+            for (cell, _) in &chain {
+                let entry = classes[*cell as usize]
+                    .as_ref()
+                    .expect("a lowered edge has coefficients on critical 1-cells");
+                class ^= entry;
+            }
+            edge_classes.insert(edge, class);
         }
-        edge_classes.insert(edge, class);
     }
 
     edge_classes
