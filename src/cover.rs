@@ -5,6 +5,7 @@
 //! cycle walk can traverse.
 
 mod build;
+mod classifier;
 mod generators;
 #[cfg(feature = "serde")]
 mod serialization;

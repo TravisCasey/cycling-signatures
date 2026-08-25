@@ -12,19 +12,18 @@ use chomp3rs::{
 use ndarray::Array2;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
-use super::{non_adjacent_axis, staircase::step_between_cubes};
+use super::{classifier::EdgeClassifier, non_adjacent_axis, staircase::step_between_cubes};
 use crate::f2_vector::F2Vector;
 
-/// Runs the discrete Morse reduction of the cubical complex on
-/// `canonical_cubes`, which must be sorted, deduplicated, in range for `i32`,
-/// and hold at least one row.
+/// Builds the graded cubical complex on `canonical_cubes`, which must be
+/// sorted, deduplicated, in range for `i32`, and hold at least one row.
 ///
-/// Returns the top matching and the coreduction of its Morse complex.
+/// The complex spans the minimal bounding orthant of `canonical_cubes` and
+/// grades top cubes uniformly: 0 on `canonical_cubes` itself, 1 elsewhere.
 #[must_use]
-fn reduce(
+pub(super) fn graded_complex(
     canonical_cubes: &Array2<i64>,
-    backend: &ExecutionBackend,
-) -> (TopCubicalMatching<OrthantTrie>, Coreduction) {
+) -> CubicalComplex<TopCubeGrader<OrthantTrie>> {
     let dimension = canonical_cubes.ncols();
     let field = Field::new(2);
 
@@ -58,15 +57,34 @@ fn reduce(
 
     let grading_function = TopCubeGrader::new(OrthantTrie::uniform(orthants, 0, 1), Some(0));
 
-    let complex = CubicalComplex::new(minimum_orthant, maximum_orthant, grading_function, field);
+    CubicalComplex::new(minimum_orthant, maximum_orthant, grading_function, field)
+}
 
-    let configuration = TopCubicalMatchingConfig {
+/// The top cubical matching configuration this crate reduces every cover
+/// under: critical cells capped at grade 0 and dimension 2, matched only
+/// against orthants a graded cell occupies.
+#[must_use]
+pub(super) fn matching_configuration() -> TopCubicalMatchingConfig {
+    TopCubicalMatchingConfig {
         maximum_critical_grade: 0,
         maximum_critical_dimension: 2,
         filter_orthants: true,
         ..TopCubicalMatchingConfig::default()
-    };
-    let top_matching = TopCubicalMatching::from_config(configuration, complex, backend);
+    }
+}
+
+/// Runs the discrete Morse reduction of the cubical complex on
+/// `canonical_cubes`, which must be sorted, deduplicated, in range for `i32`,
+/// and hold at least one row.
+///
+/// Returns the top matching and the coreduction of its Morse complex.
+#[must_use]
+fn reduce(
+    canonical_cubes: &Array2<i64>,
+    backend: &ExecutionBackend,
+) -> (TopCubicalMatching<OrthantTrie>, Coreduction) {
+    let complex = graded_complex(canonical_cubes);
+    let top_matching = TopCubicalMatching::from_config(matching_configuration(), complex, backend);
     let reduction = Coreduction::new(top_matching.construct_morse_complex(backend), backend);
 
     (top_matching, reduction)
@@ -313,11 +331,50 @@ pub(super) fn compute_edge_map(
     (cells.len(), edge_classes)
 }
 
+/// Builds an on-demand edge classifier for the cubical complex defined by
+/// `canonical_cubes`, which must be sorted, deduplicated, in range for `i32`,
+/// and hold at least one row.
+///
+/// The classifier evaluates the `F_2` homology class of any cover edge against
+/// the same generator basis [`compute_edge_map`] uses; see [`EdgeClassifier`]
+/// for that basis.
+///
+/// Every rank of a distributed backend builds an identical classifier, since
+/// the underlying table is deterministic and rank-local; no synchronization is
+/// performed.
+///
+/// # Panics
+///
+/// Panics if the fully reduced Morse complex has a nonzero boundary in degree
+/// at most 2, which would make its 1-cells mere chains rather than a basis of
+/// first homology.
+#[allow(dead_code)]
+#[must_use]
+pub(super) fn compute_classifier(
+    canonical_cubes: &Array2<i64>,
+    backend: &ExecutionBackend,
+) -> EdgeClassifier {
+    let (top_matching, reduction) = reduce(canonical_cubes, backend);
+    let morse_complex = reduction.morse_complex();
+    assert_zero_boundary(morse_complex);
+
+    let cells = generator_cells(morse_complex);
+    let num_generators = cells.len();
+    let classes = critical_cell_classes(&top_matching, &reduction, &cells);
+
+    EdgeClassifier::new(top_matching, classes, num_generators)
+}
+
 #[cfg(test)]
 mod tests {
-    use ndarray::array;
+    use chomp3rs::{Cube, ExecutionBackend, Orthant};
+    use ndarray::{Array2, array};
 
-    use super::enumerate_edge_universe;
+    use super::{compute_classifier, compute_edge_map, enumerate_edge_universe};
+    use crate::{
+        trajectory::Trajectory,
+        util::fixtures::{densify_path, embed_euclidean, ring_waypoints_3d},
+    };
 
     #[test]
     fn universe_edge_counts_for_known_pairs() {
@@ -332,5 +389,67 @@ mod tests {
 
         let separated = array![[0_i64, 0], [3, 0]];
         assert!(enumerate_edge_universe(&separated).is_empty());
+    }
+
+    /// The twelve cubes on the boundary of a `4x4` grid, leaving a `2x2` hole
+    /// in the middle, duplicated from `cover.rs`'s ring fixture so this
+    /// scaffolding test carries no dependency on the module it exercises.
+    fn ring_cubes() -> Array2<i64> {
+        array![
+            [0_i64, 0],
+            [1, 0],
+            [2, 0],
+            [3, 0],
+            [3, 1],
+            [3, 2],
+            [3, 3],
+            [2, 3],
+            [1, 3],
+            [0, 3],
+            [0, 2],
+            [0, 1],
+        ]
+    }
+
+    /// The canonical cube set of a densified, embedded loop through three
+    /// dimensions.
+    fn three_dimensional_cubes() -> Array2<i64> {
+        let points = densify_path(&ring_waypoints_3d(), 0.5);
+        let trajectory = Trajectory::new(points.view()).unwrap();
+        let embedded = embed_euclidean(trajectory).unwrap();
+        embedded.cover().cubes().to_owned()
+    }
+
+    /// A 1-cube edge and a 2-cube, both based two units past the maximum
+    /// coordinate any cube of `canonical_cubes` reaches on axis 0, and sized
+    /// to `canonical_cubes`'s ambient dimension.
+    fn edge_and_square_outside(canonical_cubes: &Array2<i64>) -> (Cube, Cube) {
+        let dimension = canonical_cubes.ncols();
+        let outside = canonical_cubes.column(0).iter().copied().max().unwrap() as i32 + 2;
+        let mut base = vec![0_i32; dimension];
+        base[0] = outside;
+        let orthant = Orthant::from(base.as_slice());
+        let edge = Cube::from_extent(orthant.clone(), 0b1);
+        let square = Cube::from_extent(orthant, 0b11);
+        (edge, square)
+    }
+
+    #[test]
+    fn classifier_agrees_with_the_eager_map() {
+        let backend = ExecutionBackend::default();
+        for canonical_cubes in [ring_cubes(), three_dimensional_cubes()] {
+            let (num_generators, edge_classes) = compute_edge_map(&canonical_cubes, &backend);
+            let classifier = compute_classifier(&canonical_cubes, &backend);
+
+            assert_eq!(num_generators, classifier.num_generators());
+            for (edge, class) in &edge_classes {
+                assert!(classifier.is_cover_edge(edge));
+                assert_eq!(&classifier.class_of(edge), class);
+            }
+
+            let (far_edge, far_square) = edge_and_square_outside(&canonical_cubes);
+            assert!(!classifier.is_cover_edge(&far_edge));
+            assert!(!classifier.is_cover_edge(&far_square));
+        }
     }
 }

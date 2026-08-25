@@ -36,11 +36,33 @@ pub(crate) fn ring_waypoints() -> [[f64; 2]; 9] {
     ]
 }
 
-/// Stacks `points` into a two-column array, one row per point.
-fn stack_points(points: &[[f64; 2]]) -> Array2<f64> {
+/// The centers of eleven cubes tracing a closed path through three
+/// dimensions, stepping away from and back to the plane `z = 0.5`, closing
+/// back on the first.
+///
+/// Densifying and covering this path exercises a genuinely three-dimensional
+/// cube set, unlike the planar [`ring_waypoints`].
+pub(crate) fn ring_waypoints_3d() -> [[f64; 3]; 11] {
+    [
+        [0.5, 0.5, 0.5],
+        [1.5, 0.5, 0.5],
+        [2.5, 0.5, 0.5],
+        [2.5, 1.5, 0.5],
+        [2.5, 2.5, 0.5],
+        [2.5, 2.5, 1.5],
+        [1.5, 2.5, 1.5],
+        [0.5, 2.5, 1.5],
+        [0.5, 1.5, 1.5],
+        [0.5, 0.5, 1.5],
+        [0.5, 0.5, 0.5],
+    ]
+}
+
+/// Stacks `points` into an array with one row per point.
+fn stack_points<const DIMENSION: usize>(points: &[[f64; DIMENSION]]) -> Array2<f64> {
     let flat: Vec<f64> = points.iter().flatten().copied().collect();
-    Array2::from_shape_vec((points.len(), 2), flat)
-        .expect("flattened point rows form a valid two-column matrix")
+    Array2::from_shape_vec((points.len(), DIMENSION), flat)
+        .expect("flattened point rows form a valid matrix")
 }
 
 /// Inserts evenly spaced intermediate points between consecutive `waypoints` so
@@ -50,19 +72,26 @@ fn stack_points(points: &[[f64; 2]]) -> Array2<f64> {
 /// trajectory whose consecutive-point resolution stays below the cube side,
 /// while every waypoint's cube membership (its coordinate floors) is
 /// unaffected: only points strictly between waypoints are added.
-pub(crate) fn densify_path(waypoints: &[[f64; 2]], max_step: f64) -> Array2<f64> {
-    let mut points: Vec<[f64; 2]> = vec![waypoints[0]];
+pub(crate) fn densify_path<const DIMENSION: usize>(
+    waypoints: &[[f64; DIMENSION]],
+    max_step: f64,
+) -> Array2<f64> {
+    let mut points: Vec<[f64; DIMENSION]> = vec![waypoints[0]];
     for pair in waypoints.windows(2) {
         let start = pair[0];
         let end = pair[1];
-        let distance = ((end[0] - start[0]).powi(2) + (end[1] - start[1]).powi(2)).sqrt();
+        let distance = (0..DIMENSION)
+            .map(|axis| (end[axis] - start[axis]).powi(2))
+            .sum::<f64>()
+            .sqrt();
         let steps = ((distance / max_step).ceil() as usize).max(1);
         for step in 1..=steps {
             let fraction = step as f64 / steps as f64;
-            points.push([
-                start[0] + (end[0] - start[0]) * fraction,
-                start[1] + (end[1] - start[1]) * fraction,
-            ]);
+            let mut point = [0.0; DIMENSION];
+            for axis in 0..DIMENSION {
+                point[axis] = start[axis] + (end[axis] - start[axis]) * fraction;
+            }
+            points.push(point);
         }
     }
     stack_points(&points)
