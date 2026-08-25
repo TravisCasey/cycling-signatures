@@ -5,9 +5,9 @@
 //! draws from, and the homology class each of those edges carries.
 
 use chomp3rs::{
-    CellComplex, Chain, Complex, CoreductionMatching, Cube, CubicalComplex, ExecutionBackend,
-    Field, MorseMatching, Orthant, OrthantTrie, TopCubeGrader, TopCubicalMatching,
-    TopCubicalMatchingConfig, UpperCellOf,
+    CellComplex, Chain, Complex, Coreduction, Cube, CubicalComplex, ExecutionBackend, Field,
+    MorseReduction, Orthant, OrthantTrie, TopCubeGrader, TopCubicalMatching,
+    TopCubicalMatchingConfig,
 };
 use ndarray::Array2;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
@@ -19,17 +19,12 @@ use crate::f2_vector::F2Vector;
 /// `canonical_cubes`, which must be sorted, deduplicated, in range for `i32`,
 /// and hold at least one row.
 ///
-/// Returns the full tower: the top matching, the coreduction matchings in
-/// the order they were applied, and the final Morse complex.
+/// Returns the top matching and the coreduction of its Morse complex.
 #[must_use]
 fn reduce(
     canonical_cubes: &Array2<i64>,
     backend: &ExecutionBackend,
-) -> (
-    TopCubicalMatching<OrthantTrie>,
-    Vec<CoreductionMatching>,
-    CellComplex,
-) {
+) -> (TopCubicalMatching<OrthantTrie>, Coreduction) {
     let dimension = canonical_cubes.ncols();
     let field = Field::new(2);
 
@@ -72,11 +67,9 @@ fn reduce(
         ..TopCubicalMatchingConfig::default()
     };
     let top_matching = TopCubicalMatching::from_config(configuration, complex, backend);
+    let reduction = Coreduction::new(top_matching.construct_morse_complex(backend), backend);
 
-    let (lower_matchings, morse_complex) =
-        top_matching.full_reduce(CoreductionMatching::new, backend);
-
-    (top_matching, lower_matchings, morse_complex)
+    (top_matching, reduction)
 }
 
 /// The 1-cells of the final Morse complex, in the complex's iteration order.
@@ -154,17 +147,17 @@ pub(super) fn enumerate_edge_universe(canonical_cubes: &Array2<i64>) -> Vec<Cube
     universe
 }
 
-/// Projects each chain one level down the tower through `matching`, collecting
-/// the delivered results back into input order.
+/// Projects each chain onto the top matching's Morse complex, collecting the
+/// delivered results back into input order.
 ///
 /// Under a distributed backend the results are delivered on the root rank only;
 /// other ranks receive placeholder chains and rely on the caller broadcasting
 /// the finished map. Every rank must still make the call: the dispatch is
 /// collective.
 #[must_use]
-fn lower_batch<M: MorseMatching>(
-    matching: &M,
-    chains: Vec<Chain<UpperCellOf<M>>>,
+fn lower_batch(
+    matching: &TopCubicalMatching<OrthantTrie>,
+    chains: Vec<Chain<Cube>>,
     backend: &ExecutionBackend,
 ) -> Vec<Chain<u32>> {
     let expected = chains.len();
@@ -193,27 +186,27 @@ fn lower_batch<M: MorseMatching>(
         .collect()
 }
 
-/// The number of chains taken through the coreduction rounds at once. Bounds
-/// the intermediate chains alive during lowering to one slice's worth.
+/// The number of universe edges lowered through the top matching at once.
+/// Bounds the lowered chains simultaneously realized during the universe pass
+/// to one slice's worth.
 const LOWERING_SLICE_CHAINS: usize = 1 << 16;
 
-/// Lowers each critical 1-cell of the top matching through the coreduction
-/// rounds and reads its class on the final complex's 1-cells.
+/// Lowers each critical 1-cell of the top matching through `reduction` and
+/// reads its class on the final complex's 1-cells.
 ///
 /// Returns one entry per critical cell of the top matching, indexed by Morse
-/// cell index; cells of other dimensions hold `None`. The coreduction rounds
-/// compose to a linear map, so this table determines the class of any chain
+/// cell index; cells of other dimensions hold `None`. The coreduction's
+/// projection is a linear map, so this table determines the class of any chain
 /// the top matching produces: a chain's class is the sum of its cells' entries.
 ///
-/// Under a distributed backend the entries are correct on the root rank only.
+/// The entries are identical on every rank of a distributed backend, since
+/// every rank holds the same coreduction.
 #[must_use]
 fn critical_cell_classes(
     top_matching: &TopCubicalMatching<OrthantTrie>,
-    lower_matchings: &[CoreductionMatching],
+    reduction: &Coreduction,
     generator_cells: &[u32],
-    backend: &ExecutionBackend,
 ) -> Vec<Option<F2Vector>> {
-    let field = Field::new(2);
     let cell_to_index: FxHashMap<u32, usize> = generator_cells
         .iter()
         .enumerate()
@@ -221,28 +214,20 @@ fn critical_cell_classes(
         .collect();
 
     let critical = top_matching.critical_cells();
-    let one_cells: Vec<u32> = (0..critical.len())
-        .filter(|&index| critical[index].dimension() == 1)
-        .map(|index| index as u32)
-        .collect();
-
     let mut table: Vec<Option<F2Vector>> = vec![None; critical.len()];
-    for slice in one_cells.chunks(LOWERING_SLICE_CHAINS) {
-        let mut lowered: Vec<Chain<u32>> =
-            slice.iter().map(|&cell| Chain::unit(field, cell)).collect();
-        for matching in lower_matchings {
-            lowered = lower_batch(matching, lowered, backend);
+    for (cell, critical_cell) in critical.iter().enumerate() {
+        if critical_cell.dimension() != 1 {
+            continue;
         }
-        for (&cell, chain) in slice.iter().zip(lowered) {
-            let mut class = F2Vector::zeros(generator_cells.len());
-            for (final_cell, _) in &chain {
-                let index = cell_to_index
-                    .get(final_cell)
-                    .expect("a lowered 1-chain has coefficients on 1-cells of the final complex");
-                class.set(*index, true);
-            }
-            table[cell as usize] = Some(class);
+        let chain = reduction.lower_cell(cell as u32);
+        let mut class = F2Vector::zeros(generator_cells.len());
+        for (final_cell, _) in &chain {
+            let index = cell_to_index
+                .get(final_cell)
+                .expect("a lowered 1-chain has coefficients on 1-cells of the final complex");
+            class.set(*index, true);
         }
+        table[cell] = Some(class);
     }
     table
 }
@@ -257,17 +242,17 @@ fn critical_cell_classes(
 fn lower_universe(
     universe: Vec<Cube>,
     top_matching: &TopCubicalMatching<OrthantTrie>,
-    lower_matchings: &[CoreductionMatching],
+    reduction: &Coreduction,
     generator_cells: &[u32],
     backend: &ExecutionBackend,
 ) -> FxHashMap<Cube, F2Vector> {
     let field = Field::new(2);
-    let classes = critical_cell_classes(top_matching, lower_matchings, generator_cells, backend);
+    let classes = critical_cell_classes(top_matching, reduction, generator_cells);
     let mut edge_classes: FxHashMap<Cube, F2Vector> =
         FxHashMap::with_capacity_and_hasher(universe.len(), FxBuildHasher);
 
-    // Each edge is lowered through the top matching alone; the coreduction
-    // rounds are applied through the precomposed table. The universe is
+    // Each edge is lowered through the top matching alone; the coreduction's
+    // projection is applied through the precomposed table. The universe is
     // dispatched in bounded slices so the lowered chains never exist for more
     // than one slice at a time. Every rank iterates the same slices, so the
     // collective dispatches inside `lower_batch` stay aligned.
@@ -315,12 +300,13 @@ pub(super) fn compute_edge_map(
     canonical_cubes: &Array2<i64>,
     backend: &ExecutionBackend,
 ) -> (usize, FxHashMap<Cube, F2Vector>) {
-    let (top_matching, lower_matchings, morse_complex) = reduce(canonical_cubes, backend);
-    assert_zero_boundary(&morse_complex);
+    let (top_matching, reduction) = reduce(canonical_cubes, backend);
+    let morse_complex = reduction.morse_complex();
+    assert_zero_boundary(morse_complex);
 
-    let cells = generator_cells(&morse_complex);
+    let cells = generator_cells(morse_complex);
     let universe = enumerate_edge_universe(canonical_cubes);
-    let edge_classes = lower_universe(universe, &top_matching, &lower_matchings, &cells, backend);
+    let edge_classes = lower_universe(universe, &top_matching, &reduction, &cells, backend);
 
     let edge_classes = backend.sync(edge_classes);
 
