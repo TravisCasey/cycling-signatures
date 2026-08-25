@@ -3,6 +3,8 @@
 
 //! Wire format for [`CubicalCover`]: the cube set, the discrete Morse
 //! reduction's critical cells, and the class of each critical 1-cell.
+//! The format fixes the discrete Morse matching configuration the crate reduces
+//! covers under.
 
 use std::cmp::Ordering;
 

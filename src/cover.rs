@@ -47,8 +47,8 @@ impl CubicalCover {
     /// `cubes` has shape `(n, dimension)`; rows are deduplicated and
     /// sorted lexicographically. Coordinates must fit in
     /// `[i32::MIN, i32::MAX - 1]`. The homology of the cubical complex on the
-    /// cubes is computed via `chomp3rs` under `backend`, recording the class
-    /// of every edge a cycle walk against this cover can traverse.
+    /// cubes is computed via `chomp3rs` under `backend`, and the cover supplies
+    /// the class of any edge of its cubes on demand.
     ///
     /// # Errors
     ///
