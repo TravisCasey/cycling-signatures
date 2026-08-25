@@ -16,9 +16,9 @@ use std::path::Path;
 use std::{cmp::Ordering, mem};
 
 use chomp3rs::{Cube, ExecutionBackend};
-use generators::compute_edge_map;
+use classifier::EdgeClassifier;
+use generators::compute_classifier;
 use ndarray::{Array2, ArrayView1, ArrayView2};
-use rustc_hash::FxHashMap;
 
 use crate::{
     error::{Error, Result},
@@ -38,8 +38,7 @@ use crate::{
 #[derive(Debug)]
 pub struct CubicalCover {
     cubes: Array2<i64>,
-    num_generators: usize,
-    edge_classes: FxHashMap<Cube, F2Vector>,
+    classifier: EdgeClassifier,
 }
 
 impl CubicalCover {
@@ -84,12 +83,11 @@ impl CubicalCover {
         }
 
         let canonical = canonicalize_cubes(cubes);
-        let (num_generators, edge_classes) = compute_edge_map(&canonical, backend);
+        let classifier = compute_classifier(&canonical, backend);
 
         Ok(Self {
             cubes: canonical,
-            num_generators,
-            edge_classes,
+            classifier,
         })
     }
 
@@ -111,37 +109,38 @@ impl CubicalCover {
     /// The number of cohomology generators.
     #[must_use]
     pub fn num_generators(&self) -> usize {
-        self.num_generators
+        self.classifier.num_generators()
     }
 
     /// Returns the `F_2` homology class of the chain formed by `edges`, or
-    /// `None` when some edge is not recognized.
-    ///
-    /// Recognized edges are exactly those a cycle walk against this cover can
-    /// traverse. The answer is all-or-nothing: one unrecognized edge yields
-    /// `None` rather than a class computed from the remainder. A returned
-    /// vector has length [`num_generators`](Self::num_generators).
+    /// `None` when some edge is not a 1-cube face of some cover cube.
     #[must_use]
     pub fn chain_class<'a, E>(&self, edges: E) -> Option<F2Vector>
     where
         E: IntoIterator<Item = &'a Cube>,
     {
-        let mut accumulator = F2Vector::zeros(self.num_generators);
+        let mut accumulator = F2Vector::zeros(self.classifier.num_generators());
         for edge in edges {
-            accumulator ^= self.edge_class(edge)?;
+            if !self.classifier.is_cover_edge(edge) {
+                return None;
+            }
+            accumulator ^= &self.classifier.class_of(edge);
         }
         Some(accumulator)
     }
 
-    /// The `F_2` homology class of the single 1-cube `edge`, or `None` when
-    /// the edge is not recognized.
+    /// The `F_2` homology class of the single 1-cube `edge`.
     ///
-    /// `None` never means the zero class: zero classes are stored explicitly
-    /// and answered as `Some`. An unrecognized edge is one no cycle walk
-    /// against this cover can traverse.
+    /// Defined only for edges of cover cubes: every edge a cycle walk against
+    /// this cover traverses is one by construction.
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, panics if `edge` is not a cover edge. Release builds
+    /// skip this check.
     #[must_use]
-    pub(crate) fn edge_class(&self, edge: &Cube) -> Option<&F2Vector> {
-        self.edge_classes.get(edge)
+    pub(crate) fn edge_class(&self, edge: &Cube) -> F2Vector {
+        self.classifier.class_of(edge)
     }
 
     /// A stable 64-bit fingerprint of this cover's content.
@@ -218,6 +217,15 @@ impl CubicalCover {
     /// - [`Error::Io`] if the file could not be opened.
     /// - [`Error::Deserialize`] if the file contents could not be read and
     ///   decoded.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the file's stored critical-cell list is not the critical cell
+    /// set the discrete Morse matching computes for its cube set:
+    /// reconstruction re-derives the critical cells of every base orthant of
+    /// listed critical cells and checks them against the listing, panicking on
+    /// the first orthant that disagrees. A file written by [`save`](Self::save)
+    /// never triggers this.
     #[cfg(feature = "serde")]
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         crate::serialization::load_from_path(path)
@@ -295,17 +303,11 @@ fn canonicalize_cubes(cubes: ArrayView2<'_, i64>) -> Array2<i64> {
 mod tests {
     use chomp3rs::{Cube, ExecutionBackend, Orthant};
     use ndarray::{Array2, array};
-    use rustc_hash::FxHashSet;
 
-    use super::{CubicalCover, generators, staircase};
+    use super::{CubicalCover, staircase};
     #[cfg(feature = "serde")]
     use crate::serialization::{load_from_reader, save_to_writer};
-    use crate::{
-        error::Error,
-        f2_vector::F2Vector,
-        trajectory::Trajectory,
-        util::fixtures::{densify_path, embed_euclidean, ring_waypoints},
-    };
+    use crate::{error::Error, f2_vector::F2Vector};
 
     /// The twelve cubes on the boundary of a `4x4` grid, leaving a `2x2` hole
     /// in the middle. A cover of these cubes and no others has exactly one
@@ -426,9 +428,10 @@ mod tests {
 
     #[cfg(feature = "serde")]
     #[test]
-    fn edge_map_matches_after_save_load_roundtrip() {
-        // A cover loaded from a save carries the exact edge classes it was
-        // saved with, which fixes the generator basis.
+    fn save_load_round_trip_preserves_generator_basis() {
+        // A cover loaded from a save shares the exact generator basis it was
+        // saved with: fingerprint, generator count, and the class of a
+        // walked cycle all agree exactly with the original.
         let cubes = ring_cubes();
         let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
         assert_eq!(cover.num_generators(), 1);
@@ -437,41 +440,23 @@ mod tests {
         save_to_writer(&mut buffer, &cover).unwrap();
         let reloaded: CubicalCover = load_from_reader(&buffer[..]).unwrap();
 
+        assert_eq!(cover.fingerprint(), reloaded.fingerprint());
         assert_eq!(cover.num_generators(), reloaded.num_generators());
-        assert_eq!(cover.edge_classes, reloaded.edge_classes);
-    }
 
-    #[test]
-    fn universe_contains_every_walked_edge() {
-        // The enumeration promises to hold every edge any cycle walk can emit;
-        // check it against the walker itself on real ring geometry, where the
-        // walk's closing step crosses cubes the forward path also visits.
-        let points = densify_path(&ring_waypoints(), 0.5);
-        let trajectory = Trajectory::new(points.view()).unwrap();
-        let embedded = embed_euclidean(trajectory).unwrap();
-        let universe: FxHashSet<Cube> =
-            generators::enumerate_edge_universe(&embedded.cover().cubes)
-                .into_iter()
-                .collect();
-
-        let walked = embedded.walk_cycle(..).unwrap();
-        assert!(!walked.is_empty());
-        for edge in &walked {
-            assert!(
-                universe.contains(edge),
-                "walked edge {edge:?} not in the universe"
-            );
-        }
+        let edges = closed_walk_edges(&cubes);
+        assert_eq!(
+            cover.chain_class(edges.iter()),
+            reloaded.chain_class(edges.iter())
+        );
     }
 
     #[test]
     fn chain_class_distinguishes_zero_from_unrecognized() {
         // The four edges of the unit square at cube (0, 0) are all recognized
-        // (each lies on a staircase between adjacent cover cubes), and their
-        // chain bounds that cube's 2-cell, so its class is zero in every basis:
-        // recognized edges answer Some even when the class is zero. An edge far
-        // outside the cover is unrecognized and any chain it appears in
-        // returns None.
+        // (each is a 1-cube edge of that cover cube), and their chain bounds
+        // that cube's 2-cell, so its class is zero in every basis: recognized
+        // edges answer Some even when the class is zero. An edge far outside
+        // the cover is unrecognized and any chain it appears in returns None.
         let cubes = ring_cubes();
         let cover = CubicalCover::from_cubes(cubes.view(), &ExecutionBackend::default()).unwrap();
 

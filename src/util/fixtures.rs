@@ -36,28 +36,6 @@ pub(crate) fn ring_waypoints() -> [[f64; 2]; 9] {
     ]
 }
 
-/// The centers of eleven cubes tracing a closed path through three
-/// dimensions, stepping away from and back to the plane `z = 0.5`, closing
-/// back on the first.
-///
-/// Densifying and covering this path exercises a genuinely three-dimensional
-/// cube set, unlike the planar [`ring_waypoints`].
-pub(crate) fn ring_waypoints_3d() -> [[f64; 3]; 11] {
-    [
-        [0.5, 0.5, 0.5],
-        [1.5, 0.5, 0.5],
-        [2.5, 0.5, 0.5],
-        [2.5, 1.5, 0.5],
-        [2.5, 2.5, 0.5],
-        [2.5, 2.5, 1.5],
-        [1.5, 2.5, 1.5],
-        [0.5, 2.5, 1.5],
-        [0.5, 1.5, 1.5],
-        [0.5, 0.5, 1.5],
-        [0.5, 0.5, 0.5],
-    ]
-}
-
 /// Stacks `points` into an array with one row per point.
 fn stack_points<const DIMENSION: usize>(points: &[[f64; DIMENSION]]) -> Array2<f64> {
     let flat: Vec<f64> = points.iter().flatten().copied().collect();

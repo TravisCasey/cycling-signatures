@@ -6,6 +6,7 @@
 use std::ops::{Range, RangeBounds};
 
 use chomp3rs::{Cube, Orthant};
+use rustc_hash::FxHashMap;
 
 use super::EmbeddedTrajectory;
 use crate::{
@@ -62,20 +63,46 @@ impl EmbeddedTrajectory {
     ///
     /// # Panics
     ///
-    /// Panics as [`walk_cycle`](Self::walk_cycle) does, and additionally if a
-    /// walked edge carries no recorded class.
+    /// Panics as [`walk_cycle`](Self::walk_cycle) does.
     pub fn cycle_class(&self, segment: impl RangeBounds<usize>) -> Result<F2Vector> {
         let segment = self.cycle_segment(segment)?;
+        let mut memo = FxHashMap::default();
+        self.cycle_class_memoized(segment, &mut memo)
+    }
+
+    /// The `F_2` homology class of the cycle described by the
+    /// already-normalized `segment`, reusing and extending `memo` for every
+    /// edge class it computes.
+    ///
+    /// Shares one memo across several calls (as
+    /// [`component_classes`](EmbeddedTrajectory::component_classes) does) to
+    /// avoid recomputing the class of an edge more than one walk crosses.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::CycleEndpointsNonAdjacent`] if the cubes of the trajectory
+    ///   points at `segment.start` and `segment.end - 1` differ by more than 1
+    ///   in some axis.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a forward step inside the segment lands in cubes differing by
+    /// more than 1 in some axis.
+    pub(super) fn cycle_class_memoized(
+        &self,
+        segment: Range<usize>,
+        memo: &mut FxHashMap<Cube, F2Vector>,
+    ) -> Result<F2Vector> {
+        let cover = self.cover();
         // Accumulated as the walk proceeds rather than over a collected edge
         // list: `F_2` addition is commutative, so the sum does not depend on
         // the order the edges arrive in.
-        let mut accumulator = F2Vector::zeros(self.cover().num_generators());
+        let mut accumulator = F2Vector::zeros(cover.num_generators());
         for_each_cycle_edge(self, segment, |edge| {
-            let class = self
-                .cover()
-                .edge_class(edge)
-                .expect("every walked edge lies in the cover's recorded edge universe");
-            accumulator ^= class;
+            let class = memo
+                .entry(edge.clone())
+                .or_insert_with(|| cover.edge_class(edge));
+            accumulator ^= &*class;
         })?;
         Ok(accumulator)
     }

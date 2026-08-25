@@ -23,7 +23,7 @@ pub(crate) mod npy_field;
 
 /// The on-disk format version. Every saved file carries it; loaders refuse
 /// any value other than this one.
-pub(crate) const FORMAT_VERSION: u32 = 6;
+pub(crate) const FORMAT_VERSION: u32 = 7;
 
 /// The envelope wrapping every saved payload with its format version.
 #[derive(Serialize, Deserialize)]

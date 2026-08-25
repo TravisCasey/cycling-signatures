@@ -11,7 +11,8 @@ mod walker;
 
 use std::{ops::Range, sync::Arc};
 
-use chomp3rs::ExecutionBackend;
+use chomp3rs::{Cube, ExecutionBackend};
+use rustc_hash::FxHashMap;
 
 use crate::{
     F2Vector,
@@ -245,23 +246,25 @@ impl EmbeddedTrajectory {
     ///
     /// Each component's class is read off its shortest cycle: every cycle in a
     /// component carries the same class, and walk cost grows with cycle
-    /// length.
+    /// length. Every walk shares one edge-class memo, so an edge crossed by
+    /// more than one component's representative is classified once.
     ///
     /// # Errors
     ///
-    /// Same as [`cycle_class`](Self::cycle_class), for the representative
-    /// walked out of each component.
+    /// - [`Error::CycleEndpointsNonAdjacent`] if a representative cycle's
+    ///   endpoint cubes differ by more than 1 in some axis.
     pub(crate) fn component_classes(
         &self,
         components: &[Vec<Range<usize>>],
     ) -> Result<Vec<F2Vector>> {
         let mut classes: Vec<F2Vector> = Vec::with_capacity(components.len());
+        let mut memo: FxHashMap<Cube, F2Vector> = FxHashMap::default();
         for cycles in components {
             let representative = cycles
                 .iter()
                 .min_by_key(|cycle| cycle.end - cycle.start)
                 .expect("connected components are nonempty by construction");
-            classes.push(self.cycle_class(representative.clone())?);
+            classes.push(self.cycle_class_memoized(representative.clone(), &mut memo)?);
         }
         Ok(classes)
     }
