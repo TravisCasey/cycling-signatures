@@ -64,8 +64,8 @@ def _download_verified(remote: _RemoteFile, target: Path) -> None:
 
 
 # The Zenodo record holding the published example data:
-# https://zenodo.org/records/22030716
-_ZENODO_RECORD = "22030716"
+# https://zenodo.org/records/22092127
+_ZENODO_RECORD = "22092127"
 
 
 def _published(name: str, sha256: str) -> _RemoteFile:
@@ -80,11 +80,11 @@ _LORENZ_CACHE = Path(__file__).resolve().parent / "lorenz" / "data"
 
 _LORENZ_STORAGE = _published(
     "lorenz_storage.cyc",
-    "7455f8b39184f21781676867b1a49e8ce7bacc99f581db44fe7fe0cd4328b1e6",
+    "76c351c0ce86753fa61265932322adc4a9bfd1336e302a5206f79148d1882ad8",
 )
 _LORENZ_TRAJECTORY = _published(
     "lorenz_trajectory.cyc",
-    "0aceb1dab1f5158ab13dead581c449ab667562ef30f129695c0f6c31d5a885a5",
+    "4c80f20d659b09f9eee6c2e12257bf84bfc2000c5f567b5bbea5cc46babcf894",
 )
 _LORENZ_RAW = _published(
     "lorenz_raw.npy",
@@ -158,11 +158,11 @@ _DADRAS_CACHE = Path(__file__).resolve().parent / "dadras" / "data"
 
 _DADRAS_STORAGE = _published(
     "dadras_storage.cyc",
-    "b2d76d8f1ecf29e431bad1c21c99d862ddf88e4fd53399d870810defe1367529",
+    "33afed5d49b84537fce7b66b2343ea07b6fd41e8a380f104b30de3d48c9a342c",
 )
 _DADRAS_TRAJECTORY = _published(
     "dadras_trajectory.cyc",
-    "98cefe174dcc51f7f9509ab167b63a641e04d5af6f145dbc87f87793fb422d45",
+    "92a768ebef6d666423db8dbeb28cd1ef85b4254959f3d772cddef784c17ff7f7",
 )
 _DADRAS_RAW = _published(
     "dadras_raw.npy",
