@@ -102,7 +102,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chomp3rs"
 version = "0.3.12"
-source = "git+https://github.com/TravisCasey/CHomP3-rs.git?rev=81d1d1451c5281cf72479030594887b191fd279e#81d1d1451c5281cf72479030594887b191fd279e"
+source = "git+https://github.com/TravisCasey/CHomP3-rs.git?rev=fc01be25c5cc864007412f473ee4c191c1974aba#fc01be25c5cc864007412f473ee4c191c1974aba"
 dependencies = [
  "mpi",
  "postcard",

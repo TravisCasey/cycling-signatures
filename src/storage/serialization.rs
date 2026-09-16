@@ -219,8 +219,8 @@ mod tests {
     #[test]
     fn coverage_disjoint_cycles_exact_and_union() {
         // Hand-build a storage with two components:
-        //  - Component 0 has cycles [10, 15) and [50, 55) (disjoint; bounding [10,
-        //    55)).
+        //  - Component 0 has cycles [10, 15) and [50, 55) (disjoint; bounding
+        //    [10, 55)).
         //  - Component 1 has cycle [20, 25). Distinct class.
         //
         // Point 12: inside [10, 15) only (Component 0). Rank 1.

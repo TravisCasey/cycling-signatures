@@ -328,8 +328,8 @@ mod tests {
     #[test]
     fn partition_is_identical_across_tilings() {
         // The emitted partition, ordering included, is a function of the
-        // trajectory and the detection parameters alone: every tiling of the same
-        // window produces the same vector, not merely the same set.
+        // trajectory and the detection parameters alone: every tiling of the
+        // same window produces the same vector, not merely the same set.
         let trajectory = circling_trajectory(7);
         let count = trajectory.len();
         // Reaches four revolutions, so four recurrence families are detected.

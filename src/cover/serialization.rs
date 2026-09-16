@@ -340,7 +340,8 @@ mod tests {
 
     #[test]
     fn deserialize_rejects_out_of_range_cube_coordinate() {
-        // The largest valid coordinate is i32::MAX - 1; i32::MAX is one past it.
+        // The largest valid coordinate is i32::MAX - 1; i32::MAX is one
+        // past it.
         let cubes = array![[0_i64, 0], [1, i64::from(i32::MAX)]];
         assert!(matches!(
             round_trip(payload(cubes)).unwrap_err(),

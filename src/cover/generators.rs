@@ -84,7 +84,7 @@ fn reduce(
 ) -> (TopCubicalMatching<OrthantTrie>, Coreduction) {
     let complex = graded_complex(canonical_cubes);
     let top_matching = TopCubicalMatching::from_config(matching_configuration(), complex, backend);
-    let reduction = Coreduction::new(top_matching.construct_morse_complex(backend), backend);
+    let reduction = Coreduction::new(top_matching.construct_morse_complex(backend));
 
     (top_matching, reduction)
 }

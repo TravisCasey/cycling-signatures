@@ -370,8 +370,8 @@ mod tests {
 
     #[test]
     fn from_cubes_rejects_out_of_range_coordinate() {
-        // The largest valid coordinate is i32::MAX - 1; i32::MAX is one past it,
-        // reserved as headroom for the half-open bounding orthant.
+        // The largest valid coordinate is i32::MAX - 1; i32::MAX is one past
+        // it, reserved as headroom for the half-open bounding orthant.
         // The offending cube is the second row as supplied.
         let input = array![[0_i64, 0], [1, i64::from(i32::MAX)]];
         let outcome = CubicalCover::from_cubes(input.view(), &ExecutionBackend::default());
