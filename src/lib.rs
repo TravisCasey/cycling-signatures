@@ -23,10 +23,10 @@
 //! const RESAMPLE_SPACING: f64 = 0.1;
 //! const DOWNSAMPLE_SPACING: f64 = 0.3;
 //!
-//! let knots = array![0.0, 1.0, 2.0, 3.0, 4.0];
+//! let knots = vec![0.0, 1.0, 2.0, 3.0, 4.0];
 //! let values =
 //!     array![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0], [0.0, 0.0]];
-//! let spline = CubicSpline::new(knots, values.view()).unwrap();
+//! let spline = CubicSpline::new(knots, values).unwrap();
 //! let metric = Metric::Euclidean;
 //! let backend = ExecutionBackend::default();
 //!

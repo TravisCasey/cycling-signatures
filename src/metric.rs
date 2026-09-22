@@ -63,8 +63,8 @@ pub enum Metric {
     /// use ndarray::array;
     ///
     /// let spline = CubicSpline::new(
-    ///     array![0.0, 1.0, 2.0],
-    ///     array![[0.0, 0.0], [1.0, 0.0], [2.0, 1.0]].view(),
+    ///     vec![0.0, 1.0, 2.0],
+    ///     array![[0.0, 0.0], [1.0, 0.0], [2.0, 1.0]],
     /// )
     /// .unwrap();
     /// let interpolator = SphereBundleInterpolator::new(spline, 3.5);

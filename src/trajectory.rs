@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn odd_coordinate_count_is_rejected_under_the_sphere_bundle_metric() {
         let values = array![[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 1.0]];
-        let spline = CubicSpline::new(array![0.0, 1.0, 2.0], values.view()).unwrap();
+        let spline = CubicSpline::new(vec![0.0, 1.0, 2.0], values.clone()).unwrap();
 
         assert!(matches!(
             Trajectory::resample(&spline, Metric::SphereBundle, 0.5),

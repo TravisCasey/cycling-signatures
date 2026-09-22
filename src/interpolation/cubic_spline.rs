@@ -23,9 +23,9 @@ use crate::{
 /// use cycling_signatures::interpolation::{CubicSpline, Interpolator};
 /// use ndarray::array;
 ///
-/// let knots = array![0.0, 1.0, 2.0, 3.0];
+/// let knots = vec![0.0, 1.0, 2.0, 3.0];
 /// let values = array![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]];
-/// let spline = CubicSpline::new(knots, values.view()).unwrap();
+/// let spline = CubicSpline::new(knots, values).unwrap();
 /// let sample = spline.sample(1.5);
 /// assert!((sample[0] - 1.5).abs() < 1e-10);
 /// assert!((sample[1] - 0.0).abs() < 1e-10);
@@ -53,7 +53,7 @@ impl CubicSpline {
     ///   `values` does not match the number of knots.
     /// - [`Error::InterpolationKnotsNotIncreasing`] if `knots` is not strictly
     ///   increasing.
-    pub fn new(knots: Array1<f64>, values: ArrayView2<'_, f64>) -> Result<Self> {
+    pub fn new(knots: Vec<f64>, values: Array2<f64>) -> Result<Self> {
         let num_knots = knots.len();
         if num_knots < 2 {
             return Err(Error::InterpolationKnotCount { knots: num_knots });
@@ -67,17 +67,16 @@ impl CubicSpline {
             });
         }
 
-        let knots = knots.to_vec();
         for index in 0..num_knots - 1 {
             if knots[index + 1] <= knots[index] {
                 return Err(Error::InterpolationKnotsNotIncreasing { index });
             }
         }
 
-        let second_derivatives = solve_second_derivatives(&knots, values);
+        let second_derivatives = solve_second_derivatives(&knots, values.view());
         Ok(Self {
             knots,
-            values: values.to_owned(),
+            values,
             second_derivatives,
         })
     }
@@ -88,8 +87,8 @@ impl CubicSpline {
     /// # Errors
     ///
     /// - [`Error::InterpolationKnotCount`] if `values` has fewer than two rows.
-    pub fn with_integer_knots(values: ArrayView2<'_, f64>) -> Result<Self> {
-        let knots = Array1::from_iter((0..values.nrows()).map(|index| index as f64));
+    pub fn with_integer_knots(values: Array2<f64>) -> Result<Self> {
+        let knots = (0..values.nrows()).map(|index| index as f64).collect();
         Self::new(knots, values)
     }
 
@@ -245,17 +244,17 @@ mod tests {
 
     fn linear_spline() -> CubicSpline {
         // Linear data: values[k] = k along axis 0, constant 0 along axis 1.
-        let knots = array![0.0, 1.0, 2.0, 3.0];
+        let knots = vec![0.0, 1.0, 2.0, 3.0];
         let values = array![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]];
-        CubicSpline::new(knots, values.view()).unwrap()
+        CubicSpline::new(knots, values).unwrap()
     }
 
     #[test]
     fn construction_rejects_single_knot() {
-        let knots = array![0.0];
+        let knots = vec![0.0];
         let values = array![[1.0]];
 
-        let result = CubicSpline::new(knots, values.view());
+        let result = CubicSpline::new(knots, values);
 
         assert!(matches!(
             result,
@@ -265,10 +264,10 @@ mod tests {
 
     #[test]
     fn construction_rejects_shape_mismatch() {
-        let knots = array![0.0, 1.0];
+        let knots = vec![0.0, 1.0];
         let values = array![[1.0], [2.0], [3.0]];
 
-        let result = CubicSpline::new(knots, values.view());
+        let result = CubicSpline::new(knots, values);
 
         assert!(matches!(
             result,
@@ -281,10 +280,10 @@ mod tests {
 
     #[test]
     fn construction_rejects_non_increasing_knots() {
-        let knots = array![0.0, 2.0, 1.0];
+        let knots = vec![0.0, 2.0, 1.0];
         let values = array![[0.0], [1.0], [2.0]];
 
-        let result = CubicSpline::new(knots, values.view());
+        let result = CubicSpline::new(knots, values);
 
         assert!(matches!(
             result,
@@ -294,9 +293,9 @@ mod tests {
 
     #[test]
     fn samples_exactly_at_knots() {
-        let knots = array![0.0, 1.0, 3.0, 6.0];
+        let knots = vec![0.0, 1.0, 3.0, 6.0];
         let values = array![[1.0, 4.0], [3.0, 1.0], [2.0, 5.0], [7.0, 2.0]];
-        let spline = CubicSpline::new(knots.clone(), values.view()).unwrap();
+        let spline = CubicSpline::new(knots.clone(), values.clone()).unwrap();
 
         for (row, &knot) in knots.iter().enumerate() {
             let sample = spline.sample(knot);
@@ -309,8 +308,8 @@ mod tests {
     #[test]
     fn with_integer_knots_fits_at_consecutive_indices() {
         let values = array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]];
-        let implicit = CubicSpline::with_integer_knots(values.view()).unwrap();
-        let explicit = CubicSpline::new(array![0.0, 1.0, 2.0, 3.0], values.view()).unwrap();
+        let implicit = CubicSpline::with_integer_knots(values.clone()).unwrap();
+        let explicit = CubicSpline::new(vec![0.0, 1.0, 2.0, 3.0], values).unwrap();
 
         assert_eq!(implicit.knots(), [0.0, 1.0, 2.0, 3.0]);
 
@@ -327,9 +326,9 @@ mod tests {
     fn linear_data_interpolates_linearly() {
         // Natural cubic spline through linear knots is linear, including in
         // the two-knot case.
-        let knots = array![0.0, 2.0];
+        let knots = vec![0.0, 2.0];
         let values = array![[1.0, 4.0], [3.0, 0.0]];
-        let two_knot = CubicSpline::new(knots, values.view()).unwrap();
+        let two_knot = CubicSpline::new(knots, values).unwrap();
         for parameter in [0.5, 1.0] {
             let sample = two_knot.sample(parameter);
             assert!((sample[0] - (1.0 + parameter)).abs() < 1e-12);
@@ -358,9 +357,9 @@ mod tests {
     }
 
     fn oscillating_spline() -> CubicSpline {
-        let knots = array![0.0, 1.0, 2.0, 3.0];
+        let knots = vec![0.0, 1.0, 2.0, 3.0];
         let values = array![[0.0], [1.0], [0.0], [1.0]];
-        CubicSpline::new(knots, values.view()).unwrap()
+        CubicSpline::new(knots, values).unwrap()
     }
 
     #[test]
@@ -395,9 +394,9 @@ mod tests {
 
     #[test]
     fn matches_hand_solved_system_at_non_uniform_non_unit_knots() {
-        let knots = array![0.0, 1.0, 4.0, 6.0];
+        let knots = vec![0.0, 1.0, 4.0, 6.0];
         let values = array![[0.0], [1.0], [0.0], [2.0]];
-        let spline = CubicSpline::new(knots, values.view()).unwrap();
+        let spline = CubicSpline::new(knots, values).unwrap();
 
         let references = [(0.5, 42.0 / 71.0), (2.0, 66.0 / 71.0), (5.0, 49.0 / 71.0)];
         for (parameter, expected) in references {

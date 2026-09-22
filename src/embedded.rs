@@ -128,10 +128,10 @@ impl EmbeddedTrajectory {
     /// use cycling_signatures::prelude::*;
     /// use ndarray::array;
     ///
-    /// let knots = array![0.0, 1.0, 2.0, 3.0, 4.0];
+    /// let knots = vec![0.0, 1.0, 2.0, 3.0, 4.0];
     /// let values =
     ///     array![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0], [0.0, 0.0]];
-    /// let spline = CubicSpline::new(knots, values.view()).unwrap();
+    /// let spline = CubicSpline::new(knots, values).unwrap();
     ///
     /// let embedded = EmbeddedTrajectory::from_interpolator(
     ///     &spline,
@@ -525,9 +525,9 @@ mod tests {
         // observable at all.
         const RESAMPLE_SPACING: f64 = 0.05;
         const DOWNSAMPLE_SPACING: f64 = 0.5;
-        let knots = array![0.0, 1.0];
+        let knots = vec![0.0, 1.0];
         let values = array![[0.2, 1.9], [1.8, 0.3]];
-        let spline = CubicSpline::new(knots, values.view()).unwrap();
+        let spline = CubicSpline::new(knots, values).unwrap();
 
         let dense = Trajectory::resample(&spline, Metric::Euclidean, RESAMPLE_SPACING).unwrap();
         let detection = dense

@@ -110,8 +110,8 @@ mod tests {
     #[test]
     fn arc_delegates_to_the_inner_interpolator() {
         let spline = CubicSpline::new(
-            array![0.0, 1.0, 2.0, 3.0],
-            array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]].view(),
+            vec![0.0, 1.0, 2.0, 3.0],
+            array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]],
         )
         .unwrap();
         let shared = Arc::new(spline.clone());
@@ -127,8 +127,8 @@ mod tests {
     #[test]
     fn boxed_dyn_interpolator_satisfies_the_bound() {
         let spline = CubicSpline::new(
-            array![0.0, 1.0, 2.0, 3.0],
-            array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]].view(),
+            vec![0.0, 1.0, 2.0, 3.0],
+            array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]],
         )
         .unwrap();
         let boxed: Box<dyn Interpolator> = Box::new(spline.clone());

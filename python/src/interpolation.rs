@@ -76,8 +76,8 @@ impl PyCubicSpline {
     /// Fits a natural cubic spline through the given knots and values.
     #[new]
     fn new(knots: PyReadonlyArray1<'_, f64>, values: PyReadonlyArray2<'_, f64>) -> PyResult<Self> {
-        let inner =
-            CubicSpline::new(knots.as_array().to_owned(), values.as_array()).map_err(to_pyerr)?;
+        let inner = CubicSpline::new(knots.as_array().to_vec(), values.as_array().to_owned())
+            .map_err(to_pyerr)?;
         Ok(Self {
             inner: Arc::new(inner),
         })

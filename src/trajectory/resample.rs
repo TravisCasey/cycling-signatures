@@ -41,9 +41,9 @@ impl Trajectory {
     /// use cycling_signatures::prelude::*;
     /// use ndarray::array;
     ///
-    /// let knots = array![0.0, 1.0, 2.0];
+    /// let knots = vec![0.0, 1.0, 2.0];
     /// let values = array![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0]];
-    /// let spline = CubicSpline::new(knots, values.view()).unwrap();
+    /// let spline = CubicSpline::new(knots, values).unwrap();
     /// let trajectory =
     ///     Trajectory::resample(&spline, Metric::Euclidean, 0.5).unwrap();
     /// let cover =
@@ -220,9 +220,9 @@ mod tests {
 
     #[test]
     fn resample_meets_spacing_and_records_parameters() {
-        let knots = array![0.0, 1.0, 2.0, 3.0, 4.0];
+        let knots = vec![0.0, 1.0, 2.0, 3.0, 4.0];
         let values = array![[0.0, 0.0], [5.0, 0.0], [5.0, 5.0], [0.0, 5.0], [0.0, 0.0]];
-        let spline = CubicSpline::new(knots.clone(), values.view()).unwrap();
+        let spline = CubicSpline::new(knots.clone(), values).unwrap();
         let spacing = 0.5;
 
         let trajectory = Trajectory::resample(&spline, Metric::Euclidean, spacing).unwrap();
@@ -257,9 +257,9 @@ mod tests {
         // The final resampled point must equal the interpolator's sample at
         // the last knot. This depends on bisection correctly threading the
         // outer `sample_upper` through every right-half split.
-        let knots = array![0.0, 1.0, 2.0];
+        let knots = vec![0.0, 1.0, 2.0];
         let values = array![[0.0, 0.0], [1.0, 1.0], [3.0, 2.0]];
-        let spline = CubicSpline::new(knots.clone(), values.view()).unwrap();
+        let spline = CubicSpline::new(knots.clone(), values).unwrap();
 
         let trajectory = Trajectory::resample(&spline, Metric::Euclidean, 0.1).unwrap();
 
@@ -325,9 +325,9 @@ mod tests {
 
     #[test]
     fn resample_rejects_non_positive_spacing() {
-        let knots = array![0.0, 1.0];
+        let knots = vec![0.0, 1.0];
         let values = array![[0.0, 0.0], [1.0, 0.0]];
-        let spline = CubicSpline::new(knots, values.view()).unwrap();
+        let spline = CubicSpline::new(knots, values).unwrap();
 
         // A spacing of zero admits no distance at all, so bisection could
         // only stagnate on it; it must be rejected up front instead.

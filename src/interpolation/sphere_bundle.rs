@@ -46,8 +46,8 @@ impl<Inner: DerivativeInterpolator> SphereBundleInterpolator<Inner> {
     /// use ndarray::array;
     ///
     /// let inner = CubicSpline::new(
-    ///     array![0.0, 1.0, 2.0],
-    ///     array![[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]].view(),
+    ///     vec![0.0, 1.0, 2.0],
+    ///     array![[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]],
     /// )
     /// .unwrap();
     /// let bundle = SphereBundleInterpolator::new(inner, 1.5);
@@ -123,9 +123,9 @@ mod tests {
         //   - output length is 2 * inner dimension,
         //   - the spatial half matches the inner spline's own sample, and
         //   - the direction half has L2 norm equal to the radius.
-        let knots = array![0.0, 1.0, 2.0, 3.0];
+        let knots = vec![0.0, 1.0, 2.0, 3.0];
         let values = array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]];
-        let inner = CubicSpline::new(knots.clone(), values.view()).unwrap();
+        let inner = CubicSpline::new(knots, values).unwrap();
         let bundle = SphereBundleInterpolator::new(inner.clone(), 2.5);
         let radius = bundle.direction_radius();
 
@@ -155,9 +155,9 @@ mod tests {
     fn direction_separation_follows_the_angular_resolution_formula() {
         // Two directions separated by an angle theta are stored
         // `2 * radius * sin(theta / 2)` apart.
-        let knots = array![0.0, 1.0, 2.0, 3.0];
+        let knots = vec![0.0, 1.0, 2.0, 3.0];
         let values = array![[0.0, 0.0], [1.0, 2.0], [3.0, 1.0], [4.0, 3.0]];
-        let inner = CubicSpline::new(knots, values.view()).unwrap();
+        let inner = CubicSpline::new(knots, values).unwrap();
         let radius = 2.5;
         let bundle = SphereBundleInterpolator::new(inner.clone(), radius);
 
@@ -191,8 +191,8 @@ mod tests {
     #[should_panic(expected = "direction radius must be positive and finite")]
     fn new_rejects_non_positive_radius() {
         let inner = CubicSpline::new(
-            array![0.0, 1.0, 2.0],
-            array![[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]].view(),
+            vec![0.0, 1.0, 2.0],
+            array![[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]],
         )
         .unwrap();
         let _ = SphereBundleInterpolator::new(inner, 0.0);
@@ -203,8 +203,8 @@ mod tests {
     fn sample_zero_inner_derivative_panics() {
         // Constant trajectory: derivative is zero everywhere.
         let inner = CubicSpline::new(
-            array![0.0, 1.0, 2.0],
-            array![[5.0, 5.0], [5.0, 5.0], [5.0, 5.0]].view(),
+            vec![0.0, 1.0, 2.0],
+            array![[5.0, 5.0], [5.0, 5.0], [5.0, 5.0]],
         )
         .unwrap();
         let bundle = SphereBundleInterpolator::new(inner, 0.5);

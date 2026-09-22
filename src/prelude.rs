@@ -8,7 +8,7 @@
 //! use ndarray::array;
 //!
 //! let values = array![[0.0, 0.0], [1.0, 1.0], [0.0, 2.0]];
-//! let spline = CubicSpline::with_integer_knots(values.view()).unwrap();
+//! let spline = CubicSpline::with_integer_knots(values).unwrap();
 //! let _ = spline.derivative(1.0);
 //! ```
 
