@@ -3,7 +3,7 @@
 
 //! Natural cubic spline interpolation.
 
-use ndarray::{Array1, Array2, Array3, ArrayView2};
+use ndarray::{Array1, Array2, ArrayView2};
 
 use crate::{
     error::{Error, Result},
@@ -33,7 +33,8 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct CubicSpline {
     knots: Vec<f64>,
-    coefficients: Array3<f64>,
+    values: Array2<f64>,
+    second_derivatives: Array2<f64>,
 }
 
 impl CubicSpline {
@@ -73,10 +74,11 @@ impl CubicSpline {
             }
         }
 
-        let coefficients = compute_coefficients(&knots, values);
+        let second_derivatives = solve_second_derivatives(&knots, values);
         Ok(Self {
             knots,
-            coefficients,
+            values: values.to_owned(),
+            second_derivatives,
         })
     }
 
@@ -95,7 +97,7 @@ impl CubicSpline {
     /// the spline was fit through.
     #[must_use]
     pub fn dimension(&self) -> usize {
-        self.coefficients.dim().2
+        self.values.ncols()
     }
 
     /// Evaluates the spline value or one of its derivatives at `parameter`.
@@ -133,54 +135,49 @@ impl CubicSpline {
         let interval = low;
 
         let offset = parameter - knots[interval];
+        let width = knots[interval + 1] - knots[interval];
         let dimension = self.dimension();
         let mut result = Array1::<f64>::zeros(dimension);
 
-        match order {
-            0 => {
-                for axis in 0..dimension {
-                    result[axis] = self.coefficients[[interval, 0, axis]]
-                        + offset * self.coefficients[[interval, 1, axis]]
-                        + offset.powi(2) * self.coefficients[[interval, 2, axis]]
-                        + offset.powi(3) * self.coefficients[[interval, 3, axis]];
-                }
-            },
-            1 => {
-                for axis in 0..dimension {
-                    result[axis] = self.coefficients[[interval, 1, axis]]
-                        + 2.0 * offset * self.coefficients[[interval, 2, axis]]
-                        + 3.0 * offset.powi(2) * self.coefficients[[interval, 3, axis]];
-                }
-            },
-            2 => {
-                for axis in 0..dimension {
-                    result[axis] = 2.0 * self.coefficients[[interval, 2, axis]]
-                        + 6.0 * offset * self.coefficients[[interval, 3, axis]];
-                }
-            },
-            3 => {
-                for axis in 0..dimension {
-                    result[axis] = 6.0 * self.coefficients[[interval, 3, axis]];
-                }
-            },
-            _ => {
+        for axis in 0..dimension {
+            // The interval's polynomial a + b*u + c*u^2 + d*u^3 in the offset
+            // u, formed from the values and second derivatives at its knots.
+            let value_left = self.values[[interval, axis]];
+            let value_right = self.values[[interval + 1, axis]];
+            let second_left = self.second_derivatives[[interval, axis]];
+            let second_right = self.second_derivatives[[interval + 1, axis]];
+            let linear = (value_right - value_left) / width
+                - width * (2.0 * second_left + second_right) / 6.0;
+            let quadratic = second_left / 2.0;
+            let cubic = (second_right - second_left) / (6.0 * width);
+
+            result[axis] = match order {
+                0 => {
+                    value_left
+                        + offset * linear
+                        + offset.powi(2) * quadratic
+                        + offset.powi(3) * cubic
+                },
+                1 => linear + 2.0 * offset * quadratic + 3.0 * offset.powi(2) * cubic,
+                2 => 2.0 * quadratic + 6.0 * offset * cubic,
+                3 => 6.0 * cubic,
                 // Cubic polynomial; orders four and above are identically zero.
-            },
+                _ => 0.0,
+            };
         }
 
         result
     }
 }
 
-/// Computes the cubic spline coefficients for all intervals and all output
-/// dimensions.
+/// Solves for the second derivative of the spline at every knot, for every
+/// output dimension.
 ///
 /// Uses the natural boundary condition (zero second derivative at the
-/// endpoints) and a tridiagonal algorithm to solve for the second derivatives
-/// at each knot in time linear over the number of rows. The moment
-/// (second-derivative) formulation and Thomas-algorithm solve follow Stoer &
-/// Bulirsch, *Introduction to Numerical Analysis*, section 2.4.
-fn compute_coefficients(knots: &[f64], values: ArrayView2<'_, f64>) -> Array3<f64> {
+/// endpoints) and a tridiagonal algorithm, in time linear over the number of
+/// rows. The moment (second-derivative) formulation and Thomas-algorithm solve
+/// follow Stoer & Bulirsch, *Introduction to Numerical Analysis*, section 2.4.
+fn solve_second_derivatives(knots: &[f64], values: ArrayView2<'_, f64>) -> Array2<f64> {
     let num_knots = knots.len();
     let num_intervals = num_knots - 1;
     let dimension = values.ncols();
@@ -190,14 +187,11 @@ fn compute_coefficients(knots: &[f64], values: ArrayView2<'_, f64>) -> Array3<f6
         .map(|index| knots[index + 1] - knots[index])
         .collect();
 
-    // Solve for second derivatives via the natural cubic spline tridiagonal
-    // system, with boundary conditions second[0] = second[n-1] = 0.
+    // Boundary conditions second[0] = second[n-1] = 0 are the untouched rows.
     let mut second_derivatives = Array2::<f64>::zeros((num_knots, dimension));
 
     // Forward sweep.
     let mut forward_coeff = vec![0.0_f64; num_knots];
-    let mut forward_rhs = Array2::<f64>::zeros((num_knots, dimension));
-
     for index in 1..num_intervals {
         let diagonal = 2.0 * (widths[index - 1] + widths[index]);
         let factor = 1.0 / (diagonal - widths[index - 1] * forward_coeff[index - 1]);
@@ -207,40 +201,20 @@ fn compute_coefficients(knots: &[f64], values: ArrayView2<'_, f64>) -> Array3<f6
             let rhs_value = 6.0
                 * ((values[[index + 1, axis]] - values[[index, axis]]) / widths[index]
                     - (values[[index, axis]] - values[[index - 1, axis]]) / widths[index - 1]);
-            forward_rhs[[index, axis]] =
-                (rhs_value - widths[index - 1] * forward_rhs[[index - 1, axis]]) * factor;
+            second_derivatives[[index, axis]] =
+                (rhs_value - widths[index - 1] * second_derivatives[[index - 1, axis]]) * factor;
         }
     }
 
     // Back substitution.
     for index in (1..num_intervals).rev() {
         for axis in 0..dimension {
-            second_derivatives[[index, axis]] = forward_rhs[[index, axis]]
-                - forward_coeff[index] * second_derivatives[[index + 1, axis]];
+            second_derivatives[[index, axis]] -=
+                forward_coeff[index] * second_derivatives[[index + 1, axis]];
         }
     }
 
-    // Build the coefficient array: shape [num_intervals, 4, dimension].
-    let mut coefficients = Array3::<f64>::zeros((num_intervals, 4, dimension));
-
-    for interval in 0..num_intervals {
-        let width = widths[interval];
-        for axis in 0..dimension {
-            let value_left = values[[interval, axis]];
-            let value_right = values[[interval + 1, axis]];
-            let second_left = second_derivatives[[interval, axis]];
-            let second_right = second_derivatives[[interval + 1, axis]];
-
-            // Coefficients for: a + b*u + c*u^2 + d*u^3
-            coefficients[[interval, 0, axis]] = value_left;
-            coefficients[[interval, 1, axis]] = (value_right - value_left) / width
-                - width * (2.0 * second_left + second_right) / 6.0;
-            coefficients[[interval, 2, axis]] = second_left / 2.0;
-            coefficients[[interval, 3, axis]] = (second_right - second_left) / (6.0 * width);
-        }
-    }
-
-    coefficients
+    second_derivatives
 }
 
 impl Interpolator for CubicSpline {

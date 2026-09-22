@@ -36,7 +36,9 @@ fn checked_domain<I: Interpolator + ?Sized>(interpolator: &I, parameter: f64) ->
 /// The spline passes exactly through the supplied data points. Within each
 /// interval it is a cubic polynomial, and across knot boundaries the first
 /// and second derivatives are continuous. At the two endpoints the second
-/// derivative is zero (the natural boundary condition).
+/// derivative is zero (the natural boundary condition). The spline copies
+/// ``knots`` and ``values`` at construction, so a caller holding large arrays
+/// may release them once it is built.
 ///
 /// Parameters
 /// ----------
