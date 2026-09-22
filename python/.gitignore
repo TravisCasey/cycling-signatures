@@ -6,3 +6,4 @@ docs/auto_examples/
 docs/sg_execution_times.rst
 examples/lorenz/data/
 examples/dadras/data/
+examples/charney_devore/data/
