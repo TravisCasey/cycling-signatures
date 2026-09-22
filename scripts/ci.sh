@@ -137,10 +137,12 @@ gallery_stamp_path="docs/auto_examples/.gallery-data-stamp"
 
 gallery_input_stamp() {
     for data_file in examples/lorenz/data/lorenz_storage.cyc \
-                     examples/lorenz/data/lorenz_trajectory.cyc \
+                     examples/lorenz/data/lorenz_detection_positions.npy \
+                     examples/lorenz/data/lorenz_detection_times.npy \
                      examples/lorenz/data/lorenz_raw.npy \
                      examples/dadras/data/dadras_storage.cyc \
-                     examples/dadras/data/dadras_trajectory.cyc \
+                     examples/dadras/data/dadras_detection_positions.npy \
+                     examples/dadras/data/dadras_detection_times.npy \
                      examples/dadras/data/dadras_raw.npy \
                      examples/dadras/data/dadras_times.npy; do
         if [ -f "$data_file" ]; then

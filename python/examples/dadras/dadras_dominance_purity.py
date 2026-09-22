@@ -21,16 +21,13 @@ shows how the signatures partition the attractor and where they overlap.
 """
 
 # %%
-# Load the raw trajectory and its row times, the detection trajectory, and
+# Load the raw trajectory and its row times, the detection points, and
 # the prebuilt ``CycleStorage`` from the published example data, fetched and
 # cached on first use. A storage index is an index into the detection
-# trajectory, so its points are what the signature queries and neighborhood
-# tallies below need. Each detection point holds a position half followed by a
-# direction half of the same width; the position half is divided by the box
-# size, so multiplying it back gives native Dadras coordinates, the coordinates
-# the raw rows are already in. The detection trajectory's ``parameters()`` and
-# the raw row times are both integration times, which is how the two are
-# aligned.
+# points, so their positions are what the signature queries and neighborhood
+# tallies below need, already in native Dadras coordinates, the coordinates
+# the raw rows are in too. The detection points' times and the raw row times
+# are both integration times, which is how the two are aligned.
 
 import math
 from collections import Counter
@@ -44,13 +41,11 @@ import cycling_signatures as cs
 
 RAW = np.load(_support.dadras_raw())
 TIMES = np.load(_support.dadras_times())
-TRAJECTORY = cs.Trajectory.load(_support.dadras_trajectory())
+DETECTION = _support.dadras_detection()
 STORAGE = cs.CycleStorage.load(_support.dadras_storage())
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 
-sphere_bundle_points = TRAJECTORY.points()
-POSITION_DIMENSION = sphere_bundle_points.shape[1] // 2
-POSITIONS = sphere_bundle_points[:, :POSITION_DIMENSION] * _support.DADRAS_BOXSIZE
+POSITIONS = DETECTION.positions
 
 # %%
 # Constants that control the analysis. ``WINDOW_LENGTH`` is the number of

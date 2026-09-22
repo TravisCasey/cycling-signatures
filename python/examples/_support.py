@@ -3,14 +3,14 @@
 
 """Shared helpers for the gallery examples: data fetching and color constants.
 
-Each system publishes the raw position trajectory as ``.npy``, the detection
-trajectory the storage was built over, and the cycle storage itself. Dadras
-adds the integration time of each raw row, since its raw rows are spaced by
-distance travelled rather than by time.
+Each system publishes its raw position trajectory as ``.npy``, its detection
+points as a pair of position and time arrays, and its cycle storage. Dadras also
+publishes the integration time of each raw row, since its raw rows are spaced by
+distance travelled rather than by time; Lorenz's raw rows are a fixed interval
+apart in time instead.
 
-A storage index is an index into the detection trajectory, and that
-trajectory's ``parameters()`` carry the integration time of each detection
-point, in the system's own time units.
+A storage index is an index into the detection points, and the detection times
+carry the integration time of each one, in the system's own time units.
 """
 
 import hashlib
@@ -20,7 +20,9 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
+from numpy.typing import NDArray
 
 
 @dataclass(frozen=True)
@@ -76,29 +78,42 @@ def _published(name: str, sha256: str) -> _RemoteFile:
     )
 
 
+@dataclass(frozen=True, eq=False)
+class DetectionPoints:
+    """A system's detection points, as parallel position and time arrays.
+
+    Row `i` is detection point `i`, the index every storage cycle range uses.
+    `positions` holds each point's position in the system's native coordinates.
+    `times` holds each point's integration time, in the system's own time units,
+    strictly increasing.
+    """
+
+    positions: NDArray[np.float32]
+    times: NDArray[np.float64]
+
+
 _LORENZ_CACHE = Path(__file__).resolve().parent / "lorenz" / "data"
 
 _LORENZ_STORAGE = _published(
     "lorenz_storage.cyc",
     "76c351c0ce86753fa61265932322adc4a9bfd1336e302a5206f79148d1882ad8",
 )
-_LORENZ_TRAJECTORY = _published(
-    "lorenz_trajectory.cyc",
-    "4c80f20d659b09f9eee6c2e12257bf84bfc2000c5f567b5bbea5cc46babcf894",
+_LORENZ_DETECTION_POSITIONS = _published(
+    "lorenz_detection_positions.npy",
+    "f57c7008e40fc153d4789f15c08f0dc37c815369f36d396327cbf6e1cd3a32b3",
+)
+_LORENZ_DETECTION_TIMES = _published(
+    "lorenz_detection_times.npy",
+    "b517999285ae556fef2a0cdf57eb8504d95006027d900164a43849373453bf58",
 )
 _LORENZ_RAW = _published(
     "lorenz_raw.npy",
     "74103f830bfc532f91a0a999a805b835f2444ed799de73ae631b372036993101",
 )
 
-# Real position units per cube: the divisor the raw Lorenz positions were
-# scaled by. Multiplying a detection trajectory's position half by it recovers
-# native Lorenz coordinates.
-LORENZ_BOXSIZE = 5.0
-
 # Time units per raw row: the fixed interval the raw Lorenz trajectory was
 # recorded at. Lorenz raw row `i` is time `i * LORENZ_DT`, so dividing a
-# detection parameter by it gives the raw row coordinate.
+# detection point's time by it gives the raw row coordinate.
 LORENZ_DT = 0.007
 
 
@@ -132,15 +147,16 @@ def lorenz_storage() -> Path:
     return _cached(_LORENZ_STORAGE, _LORENZ_CACHE / "lorenz_storage.cyc")
 
 
-def lorenz_trajectory() -> Path:
-    """Return the local path to the Lorenz detection trajectory.
+def lorenz_detection() -> DetectionPoints:
+    """Return the Lorenz detection points, fetching the arrays if absent.
 
-    The trajectory is fetched if absent and cached under the gallery's
-    `lorenz/data/` directory. It is the point sequence the published storage
-    indexes: storage index `i` is its detection point `i`, and its
-    `parameters()` are integration times in Lorenz time units.
+    The arrays are cached under the gallery's `lorenz/data/` directory.
     """
-    return _cached(_LORENZ_TRAJECTORY, _LORENZ_CACHE / "lorenz_trajectory.cyc")
+    positions_path = _cached(
+        _LORENZ_DETECTION_POSITIONS, _LORENZ_CACHE / "lorenz_detection_positions.npy"
+    )
+    times_path = _cached(_LORENZ_DETECTION_TIMES, _LORENZ_CACHE / "lorenz_detection_times.npy")
+    return DetectionPoints(positions=np.load(positions_path), times=np.load(times_path))
 
 
 def lorenz_raw() -> Path:
@@ -148,8 +164,8 @@ def lorenz_raw() -> Path:
 
     The trajectory is fetched if absent and cached under the gallery's
     `lorenz/data/` directory. Its raw rows are taken `LORENZ_DT` time units
-    apart and the storage does not index them; dividing a detection parameter
-    by `LORENZ_DT` gives the raw row coordinate of that detection point.
+    apart and the storage does not index them; dividing a detection point's
+    time by `LORENZ_DT` gives the raw row coordinate of that detection point.
     """
     return _cached(_LORENZ_RAW, _LORENZ_CACHE / "lorenz_raw.npy")
 
@@ -160,9 +176,13 @@ _DADRAS_STORAGE = _published(
     "dadras_storage.cyc",
     "33afed5d49b84537fce7b66b2343ea07b6fd41e8a380f104b30de3d48c9a342c",
 )
-_DADRAS_TRAJECTORY = _published(
-    "dadras_trajectory.cyc",
-    "92a768ebef6d666423db8dbeb28cd1ef85b4254959f3d772cddef784c17ff7f7",
+_DADRAS_DETECTION_POSITIONS = _published(
+    "dadras_detection_positions.npy",
+    "ec70ac0a7ca98fc3193e481154fd8ef1ab2aa22b8cd0f9f63be616a0b7619f08",
+)
+_DADRAS_DETECTION_TIMES = _published(
+    "dadras_detection_times.npy",
+    "2082081cfe9f9abed65feb16ec6b9ebbbecaa7373559957f8b035e0ccbea4ed5",
 )
 _DADRAS_RAW = _published(
     "dadras_raw.npy",
@@ -173,11 +193,6 @@ _DADRAS_TIMES = _published(
     "f3449347349c9015c0d8a46a262ca48c028fc8bf91123e283b5a9a6ffcb38972",
 )
 
-# Real position units per cube: the divisor the raw Dadras positions were
-# scaled by. Multiplying a detection trajectory's position half by it recovers
-# native Dadras coordinates.
-DADRAS_BOXSIZE = 12.0
-
 
 def dadras_storage() -> Path:
     """Return the local path to the Dadras cycle storage, fetching it if absent.
@@ -187,15 +202,16 @@ def dadras_storage() -> Path:
     return _cached(_DADRAS_STORAGE, _DADRAS_CACHE / "dadras_storage.cyc")
 
 
-def dadras_trajectory() -> Path:
-    """Return the local path to the Dadras detection trajectory.
+def dadras_detection() -> DetectionPoints:
+    """Return the Dadras detection points, fetching the arrays if absent.
 
-    The trajectory is fetched if absent and cached under the gallery's
-    `dadras/data/` directory. It is the point sequence the published storage
-    indexes: storage index `i` is its detection point `i`, and its
-    `parameters()` are integration times in Dadras time units.
+    The arrays are cached under the gallery's `dadras/data/` directory.
     """
-    return _cached(_DADRAS_TRAJECTORY, _DADRAS_CACHE / "dadras_trajectory.cyc")
+    positions_path = _cached(
+        _DADRAS_DETECTION_POSITIONS, _DADRAS_CACHE / "dadras_detection_positions.npy"
+    )
+    times_path = _cached(_DADRAS_DETECTION_TIMES, _DADRAS_CACHE / "dadras_detection_times.npy")
+    return DetectionPoints(positions=np.load(positions_path), times=np.load(times_path))
 
 
 def dadras_raw() -> Path:
@@ -204,8 +220,8 @@ def dadras_raw() -> Path:
     The trajectory is fetched if absent and cached under the gallery's
     `dadras/data/` directory. Its raw rows are spaced by distance travelled
     rather than by time and the storage does not index them; `dadras_times()`
-    gives the time of each raw row, and interpolating a detection parameter
-    back through it gives the raw row coordinate of that detection point.
+    gives the time of each raw row, and interpolating a detection point's
+    time back through it gives the raw row coordinate of that detection point.
     """
     return _cached(_DADRAS_RAW, _DADRAS_CACHE / "dadras_raw.npy")
 

@@ -24,10 +24,12 @@ multiple roles, but the roles are not interchangeable:
   itself analyzed.
 - The **detection trajectory** is the trajectory that is embedded in the cover
   and detected on, normally `Trajectory.downsample`'s output: the dense
-  trajectory thinned to the sparsity spacing. The gallery publishes the
-  detection trajectory as ``lorenz_trajectory.cyc`` and
-  ``dadras_trajectory.cyc``; a `CycleStorage` indexes it directly, so storage
-  index ``i`` is detection point ``i``.
+  trajectory thinned to the sparsity spacing. Its points are the **detection
+  points**. The gallery publishes them as parallel position and time arrays,
+  ``lorenz_detection_positions.npy``/``lorenz_detection_times.npy`` and
+  ``dadras_detection_positions.npy``/``dadras_detection_times.npy``; a
+  `CycleStorage` indexes them directly, so storage index ``i`` is detection
+  point ``i``.
 
 Raw and dense are easy to conflate because both are denser than a thinned
 detection trajectory, but they come from different stages: raw is given and

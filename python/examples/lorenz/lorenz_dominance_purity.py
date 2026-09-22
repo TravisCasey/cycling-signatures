@@ -23,16 +23,14 @@ they overlap.
 """
 
 # %%
-# Load the raw trajectory, the detection trajectory, and the prebuilt
+# Load the raw trajectory, the detection points, and the prebuilt
 # ``CycleStorage`` from the published example data, fetched and cached on first
-# use. A storage index is an index into the detection trajectory, so its
-# points are what the signature queries and neighborhood tallies below need.
-# Each detection point holds a position half followed by a direction half of
-# the same width; the position half is divided by the box size, so multiplying
-# it back gives native Lorenz coordinates, the coordinates the raw rows are
-# already in. The detection trajectory's ``parameters()`` are the integration
-# time of each detection point, and a raw row is a fixed ``LORENZ_DT`` apart
-# from the next, which is how the two are aligned.
+# use. A storage index is an index into the detection points, so their
+# positions are what the signature queries and neighborhood tallies below
+# need, already in native Lorenz coordinates, the coordinates the raw rows are
+# in too. The detection points' times are the integration time of each one,
+# and a raw row is a fixed ``LORENZ_DT`` apart from the next, which is how the
+# two are aligned.
 
 import math
 from collections import Counter
@@ -45,13 +43,11 @@ import _support
 import cycling_signatures as cs
 
 RAW = np.load(_support.lorenz_raw())
-TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
+DETECTION = _support.lorenz_detection()
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 
-sphere_bundle_points = TRAJECTORY.points()
-POSITION_DIMENSION = sphere_bundle_points.shape[1] // 2
-POSITIONS = sphere_bundle_points[:, :POSITION_DIMENSION] * _support.LORENZ_BOXSIZE
+POSITIONS = DETECTION.positions
 
 # %%
 # Constants that control the analysis. ``WINDOW_LENGTH`` is the number of

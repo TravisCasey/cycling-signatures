@@ -4,12 +4,12 @@
 """Build the Lorenz cycle storage from the raw trajectory.
 
 Reads the Lorenz position trajectory, embeds it in full through the
-sphere-bundle pipeline, and writes two files under ``lorenz/data``:
-``lorenz_trajectory.cyc``, the detection trajectory the storage indexes, and
-``lorenz_storage.cyc``, the detected cycles the gallery queries. A cycle's
-point range indexes the detection trajectory directly; that trajectory's
-``parameters()`` carry the integration time of each detection point, in Lorenz
-time units measured from the first raw row.
+sphere-bundle pipeline, and writes three files under ``lorenz/data``:
+``lorenz_detection_positions.npy`` and ``lorenz_detection_times.npy``, the
+detection points the storage indexes, and ``lorenz_storage.cyc``, the detected
+cycles the gallery queries. A cycle's point range indexes the detection points
+directly; their times carry the integration time of each detection point, in
+Lorenz time units measured from the first raw row.
 
 The raw rows are a fixed ``_support.LORENZ_DT`` apart in time, so the curve is
 fitted over row number and the resulting parameters are scaled to time
@@ -30,6 +30,8 @@ import cycling_signatures as cs
 # The shared helper lives at the examples root, one directory up.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from integrate_lorenz import save_atomic
+
 import _support
 
 # Sphere-bundle parameters are interdependent; see the SphereBundle metric
@@ -44,20 +46,21 @@ import _support
 # cycles by their length through state space. The box size is
 # large enough that recurrences are sufficiently frequent while the cover still
 # resolves the attractor.
-BOXSIZE = _support.LORENZ_BOXSIZE
+BOXSIZE = 5.0
 SPHERE_RADIUS = 3.5
 RESAMPLE_SPACING = 0.45
 MAX_LENGTH = 400
 DOWNSAMPLE_SPACING = 0.5
 
 
-def build() -> tuple[Path, Path, float, float]:
+def build() -> tuple[Path, Path, Path, float, float]:
     """Build the artifacts; return their paths, inserted fraction, resolution.
 
-    The two paths are the detection trajectory and the storage built over it.
-    The fraction is the share of resample-inserted rows relative to the raw
-    row count. The resolution is the detection trajectory's achieved
-    consecutive-point resolution, which stays below the cube side length, 1.
+    The first two paths are the detection positions and times arrays, the
+    third is the storage built over them. The fraction is the share of
+    resample-inserted rows relative to the raw row count. The resolution is
+    the detection points' achieved consecutive-point resolution, which stays
+    below the cube side length, 1.
     """
     raw_path = _support.lorenz_raw()
     points = np.load(raw_path)
@@ -76,28 +79,32 @@ def build() -> tuple[Path, Path, float, float]:
     inserted_fraction = (len(dense) - row_count) / row_count
     del dense, points, spline, interpolator
 
-    trajectory_target = raw_path.parent / "lorenz_trajectory.cyc"
-    detection.save(trajectory_target)
+    dimension = detection.points().shape[1] // 2
+    positions_target = raw_path.parent / "lorenz_detection_positions.npy"
+    times_target = raw_path.parent / "lorenz_detection_times.npy"
+    save_atomic((detection.points()[:, :dimension] * BOXSIZE).astype(np.float32), positions_target)
+    save_atomic(detection.parameters(), times_target)
 
     embedded = cs.EmbeddedTrajectory(detection, cover, metric)
     storage = cs.CycleStorage.build(embedded, range(0, len(detection)), MAX_LENGTH)
     storage_target = raw_path.parent / "lorenz_storage.cyc"
     storage.save(storage_target)
-    return trajectory_target, storage_target, inserted_fraction, embedded.resolution()
+    return positions_target, times_target, storage_target, inserted_fraction, embedded.resolution()
 
 
 def report(
-    trajectory_path: Path,
+    positions_path: Path,
+    times_path: Path,
     storage_path: Path,
     inserted_fraction: float,
     achieved_resolution: float,
 ) -> None:
     """Print an artifact summary: sizes, contents, resolution, resample cost."""
-    trajectory = cs.Trajectory.load(trajectory_path)
     storage = cs.CycleStorage.load(storage_path)
-    print(f"lorenz_trajectory.cyc  {trajectory_path.stat().st_size / 1e6:.1f} MB")
+    print(f"lorenz_detection_positions.npy  {positions_path.stat().st_size / 1e6:.1f} MB")
+    print(f"lorenz_detection_times.npy  {times_path.stat().st_size / 1e6:.1f} MB")
     print(f"lorenz_storage.cyc  {storage_path.stat().st_size / 1e6:.1f} MB")
-    print(f"detection points {len(trajectory)}")
+    print(f"detection points {len(np.load(times_path))}")
     print(
         f"generators {storage.num_generators()}, "
         f"classes {len(storage.classes())}, components {len(storage.components())}"
@@ -107,5 +114,5 @@ def report(
 
 
 if __name__ == "__main__":
-    trajectory_path, storage_path, inserted_fraction, achieved_resolution = build()
-    report(trajectory_path, storage_path, inserted_fraction, achieved_resolution)
+    positions_path, times_path, storage_path, inserted_fraction, achieved_resolution = build()
+    report(positions_path, times_path, storage_path, inserted_fraction, achieved_resolution)

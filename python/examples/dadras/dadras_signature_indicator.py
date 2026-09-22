@@ -21,12 +21,12 @@ four possible non-trivial signatures and its library holds all of them.
 """
 
 # %%
-# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
+# Load the detection points and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. The storage's
-# point indices are positions in the detection trajectory, and that
-# trajectory's ``parameters()`` give the integration time of each detection
-# point: they place every window on the time axis below and turn a window
-# length in detection points into a duration.
+# point indices are positions in the detection points, and their times give
+# the integration time of each detection point: they place every window on
+# the time axis below and turn a window length in detection points into a
+# duration.
 
 from collections import Counter
 
@@ -37,9 +37,9 @@ from matplotlib.colors import ListedColormap
 import _support
 import cycling_signatures as cs
 
-TRAJECTORY = cs.Trajectory.load(_support.dadras_trajectory())
+DETECTION = _support.dadras_detection()
 STORAGE = cs.CycleStorage.load(_support.dadras_storage())
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 
 # %%
 # **Order the classes by frequency and assign canonical colors.** Classes are

@@ -16,11 +16,10 @@ means the class concentrates there rather than that the class is large.
 """
 
 # %%
-# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
+# Load the detection points and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. A cycle's
-# ``range()`` indexes the detection trajectory, whose ``parameters()`` give
-# the integration time of each detection point and so turn that range into a
-# duration.
+# ``range()`` indexes the detection points, whose times give the integration
+# time of each detection point and so turn that range into a duration.
 
 from collections import Counter
 
@@ -30,9 +29,9 @@ import numpy as np
 import _support
 import cycling_signatures as cs
 
-TRAJECTORY = cs.Trajectory.load(_support.dadras_trajectory())
+DETECTION = _support.dadras_detection()
 STORAGE = cs.CycleStorage.load(_support.dadras_storage())
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 
 # %%
 # **Order the classes by frequency and assign canonical colors.** Classes are

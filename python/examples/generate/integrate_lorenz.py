@@ -78,6 +78,19 @@ def integrate(row_interval: float, row_count: int, transient_time: float) -> np.
     return rows
 
 
+def save_atomic(array: np.ndarray, target: Path) -> None:
+    """Save `array` to `target` so the file appears whole or not at all."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=target.parent, suffix=".npy")
+    try:
+        with os.fdopen(handle, "wb") as sink:
+            np.save(sink, array)
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
 def main() -> None:
     """Integrate and save the trajectory described by the command line."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -108,16 +121,7 @@ def main() -> None:
     arguments = parser.parse_args()
 
     rows = integrate(arguments.row_interval, arguments.row_count, arguments.transient_time)
-    arguments.output.parent.mkdir(parents=True, exist_ok=True)
-    # Write through a temporary file so the output appears atomically.
-    handle, temporary = tempfile.mkstemp(dir=arguments.output.parent, suffix=".npy")
-    try:
-        with os.fdopen(handle, "wb") as sink:
-            np.save(sink, rows)
-        os.replace(temporary, arguments.output)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    save_atomic(rows, arguments.output)
     duration = arguments.row_interval * arguments.row_count
     print(f"{arguments.output}  {rows.shape[0]} raw rows, {duration:.1f} time units")
 

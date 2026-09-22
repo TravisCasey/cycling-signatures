@@ -16,13 +16,12 @@ than an artifact of one threshold choice.
 """
 
 # %%
-# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
+# Load the detection points and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. The storage's
-# point indices are positions in the detection trajectory, and that
-# trajectory's ``parameters()`` give the integration time of each detection
-# point,
-# which places every column on the time axis below. The cube side length, 1,
-# is the upper bound on every filtered query below.
+# point indices are positions in the detection points, and their times give
+# the integration time of each detection point, which places every column on
+# the time axis below. The cube side length, 1, is the upper bound on every
+# filtered query below.
 
 from bisect import bisect_left
 from collections import Counter
@@ -34,9 +33,9 @@ from matplotlib.colors import ListedColormap
 import _support
 import cycling_signatures as cs
 
-TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
+DETECTION = _support.lorenz_detection()
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 
 # %%
 # **Canonical class colors.** A rank-1 signature is the span of a single

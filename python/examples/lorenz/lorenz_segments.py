@@ -17,15 +17,14 @@ shaded.
 """
 
 # %%
-# Load the raw trajectory, the detection trajectory, and the prebuilt
+# Load the raw trajectory, the detection points, and the prebuilt
 # ``CycleStorage`` from the published example data, fetched and cached on first
-# use. A cycle's point range indexes the detection trajectory, which is
+# use. A cycle's point range indexes the detection points, which are
 # thinned relative to the raw rows, so drawing a loop as a smooth curve
-# means crossing back to the raw rows. The detection trajectory's
-# ``parameters()`` are that bridge: each entry is the integration time of its
-# detection point, and the raw rows sit a fixed ``LORENZ_DT`` apart in
-# time, so recovering a row from a time is a search through the synthesized
-# row times rather than a division.
+# means crossing back to the raw rows. The detection points' times are that
+# bridge: each entry is the integration time of its detection point, and the
+# raw rows sit a fixed ``LORENZ_DT`` apart in time, so recovering a row from a
+# time is a search through the synthesized row times rather than a division.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,10 +33,10 @@ import _support
 import cycling_signatures as cs
 
 RAW = np.load(_support.lorenz_raw())
-TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
+DETECTION = _support.lorenz_detection()
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
 COMPONENTS = STORAGE.components()
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 ROW_TIMES = np.arange(len(RAW)) * _support.LORENZ_DT
 
 

@@ -19,15 +19,15 @@ representative cycle's time span shaded.
 """
 
 # %%
-# Load the raw trajectory and its row times, the detection trajectory, and
+# Load the raw trajectory and its row times, the detection points, and
 # the prebuilt ``CycleStorage`` from the published example data, fetched and
-# cached on first use. A cycle's point range indexes the detection
-# trajectory, which is thinned relative to the raw rows, so drawing a loop
-# as a smooth curve means crossing back to the raw rows. The detection
-# trajectory's ``parameters()`` are that bridge: each entry is the integration
-# time of its detection point. Raw rows are spaced by distance travelled
-# rather than by time, so recovering a row from a time is a search through the
-# raw row times rather than a division.
+# cached on first use. A cycle's point range indexes the detection points,
+# which are thinned relative to the raw rows, so drawing a loop as a smooth
+# curve means crossing back to the raw rows. The detection points' times are
+# that bridge: each entry is the integration time of its detection point. Raw
+# rows are spaced by distance travelled rather than by time, so recovering a
+# row from a time is a search through the raw row times rather than a
+# division.
 
 from collections import Counter
 
@@ -39,10 +39,10 @@ import cycling_signatures as cs
 
 RAW = np.load(_support.dadras_raw())
 TIMES = np.load(_support.dadras_times())
-TRAJECTORY = cs.Trajectory.load(_support.dadras_trajectory())
+DETECTION = _support.dadras_detection()
 STORAGE = cs.CycleStorage.load(_support.dadras_storage())
 COMPONENTS = STORAGE.components()
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 
 
 def raw_rows(start: int, stop: int) -> tuple[int, int]:

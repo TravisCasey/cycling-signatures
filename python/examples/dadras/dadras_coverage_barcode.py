@@ -15,13 +15,13 @@ always means participation in a recurrence no longer than that cap.
 """
 
 # %%
-# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
+# Load the detection points and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. ``extent()`` gives
 # the half-open point range covered by all stored components, in indices into
-# the detection trajectory, and that trajectory's ``parameters()`` give the
-# integration time of each detection point, which turns a cycle's point range
-# into the stretch of time it covers. Every stored birth lies below the cube
-# side length, 1, and so does every per-panel birth cap below.
+# the detection points, and their times give the integration time of each
+# detection point, which turns a cycle's point range into the stretch of time
+# it covers. Every stored birth lies below the cube side length, 1, and so
+# does every per-panel birth cap below.
 
 from collections import Counter
 
@@ -32,9 +32,9 @@ from matplotlib.colors import ListedColormap
 import _support
 import cycling_signatures as cs
 
-TRAJECTORY = cs.Trajectory.load(_support.dadras_trajectory())
+DETECTION = _support.dadras_detection()
 STORAGE = cs.CycleStorage.load(_support.dadras_storage())
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 EXTENT_START, EXTENT_STOP = STORAGE.extent()
 COMPONENTS = STORAGE.components()
 

@@ -12,9 +12,9 @@ its windows span.
 """
 
 # %%
-# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
-# published example data, fetched and cached on first use. The trajectory
-# contributes only its ``parameters()``, the integration time of each detection
+# Load the detection points and the prebuilt ``CycleStorage`` from the
+# published example data, fetched and cached on first use. The detection
+# points contribute only their times, the integration time of each detection
 # point, which turn a window length in detection points into a duration.
 
 from collections import Counter
@@ -25,9 +25,9 @@ import numpy as np
 import _support
 import cycling_signatures as cs
 
-TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
+DETECTION = _support.lorenz_detection()
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 
 # %%
 # Sweep over window lengths and tally rank occurrences. For each length the

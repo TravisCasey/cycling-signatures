@@ -16,11 +16,10 @@ trades away.
 """
 
 # %%
-# Load the detection trajectory and the prebuilt ``CycleStorage`` from the
+# Load the detection points and the prebuilt ``CycleStorage`` from the
 # published example data, fetched and cached on first use. A cycle's
-# ``range()`` indexes the detection trajectory, whose ``parameters()`` give
-# the integration time of each detection point and so turn that range into a
-# duration.
+# ``range()`` indexes the detection points, whose times give the integration
+# time of each detection point and so turn that range into a duration.
 # A pair is admitted only under the cube side length, 1, so every stored
 # birth lies below it.
 
@@ -31,9 +30,9 @@ from matplotlib.lines import Line2D
 import _support
 import cycling_signatures as cs
 
-TRAJECTORY = cs.Trajectory.load(_support.lorenz_trajectory())
+DETECTION = _support.lorenz_detection()
 STORAGE = cs.CycleStorage.load(_support.lorenz_storage())
-PARAMETERS = TRAJECTORY.parameters()
+PARAMETERS = DETECTION.times
 
 # %%
 # **Canonical class colors.** Each homology class maps to a stable color via
