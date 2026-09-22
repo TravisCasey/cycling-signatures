@@ -15,7 +15,7 @@ use pyo3::{
 };
 use rustc_hash::FxHasher;
 
-use crate::convert::resolve_index;
+use crate::{convert::resolve_index, errors::to_pyerr};
 
 /// Computes a hash of a value, used to give the equatable value types a
 /// `__hash__` consistent with their `__eq__`.
@@ -61,6 +61,21 @@ pub(crate) struct PyHomologyClass {
 /// signature over a fixed cover is independent of the basis chosen for its
 /// homology; its coordinates are not, and the library offers no
 /// basis-independent comparison.
+///
+/// Parameters
+/// ----------
+/// classes : list of ``HomologyClass``
+///     The classes whose span constructs the subspace, all sharing one cover's
+///     generator basis.
+/// num_generators : int, optional
+///     The ambient generator count. Defaults to the length of the first class;
+///     required if ``classes`` is empty.
+///
+/// Raises
+/// ------
+/// ``ValueError``
+///     If ``classes`` is empty and ``num_generators`` is not given, or if any
+///     class's length does not match ``num_generators``.
 #[pyclass(name = "Subspace")]
 pub(crate) struct PySubspace {
     pub(crate) inner: F2Subspace,
@@ -185,6 +200,27 @@ impl PyHomologyClass {
 
 #[pymethods]
 impl PySubspace {
+    /// Constructs the subspace spanned by ``classes``.
+    #[new]
+    #[pyo3(signature = (classes, *, num_generators=None))]
+    fn new(
+        classes: Vec<PyRef<'_, PyHomologyClass>>,
+        num_generators: Option<usize>,
+    ) -> PyResult<Self> {
+        let num_generators = match num_generators {
+            Some(num_generators) => num_generators,
+            None => classes
+                .first()
+                .map(|class| class.inner.len())
+                .ok_or_else(|| {
+                    PyValueError::new_err("num_generators is required when classes is empty")
+                })?,
+        };
+        let vectors = classes.iter().map(|class| class.inner.clone()).collect();
+        let inner = F2Subspace::new(vectors, num_generators).map_err(to_pyerr)?;
+        Ok(Self { inner })
+    }
+
     /// Returns the dimension of this subspace.
     ///
     /// Returns

@@ -10,6 +10,7 @@ use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
 use pyo3::{exceptions::PyTypeError, prelude::*};
 
 use crate::{
+    convert::segment_from_py,
     errors::to_pyerr,
     interpolation::{PyCubicSpline, PySphereBundleInterpolator},
     metric::metric_from_py,
@@ -235,6 +236,35 @@ impl PyTrajectory {
     #[must_use]
     fn parameters<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         self.inner.parameters().to_pyarray(py)
+    }
+
+    /// Returns a new trajectory over one contiguous range of this trajectory's
+    /// points, with their parameters carried through unchanged.
+    ///
+    /// Parameters
+    /// ----------
+    /// segment : range or tuple of int
+    ///     A half-open range of point indices, given as a Python ``range`` or
+    ///     a ``(start, stop)`` integer tuple.
+    ///
+    /// Returns
+    /// -------
+    /// ``Trajectory``
+    ///     The points and parameters of the given range.
+    ///
+    /// Raises
+    /// ------
+    /// ``ValueError``
+    ///     If ``segment`` is not a valid range, or if the normalized range is
+    ///     empty.
+    /// ``IndexError``
+    ///     If ``segment`` falls outside this trajectory's points.
+    fn segment(&self, segment: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let range = segment_from_py(segment)?;
+        let inner = self.inner.segment(range).map_err(to_pyerr)?;
+        Ok(Self {
+            inner: Arc::new(inner),
+        })
     }
 
     /// Returns the number of points in the trajectory.

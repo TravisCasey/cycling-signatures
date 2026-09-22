@@ -52,6 +52,14 @@ def _two_hole_points():
     return np.concatenate([first, first[:1], bridge, second, second[:1]])
 
 
+def test_subspace_from_classes_spans_what_the_signature_spans(square_loop_storage):
+    start, stop = square_loop_storage.extent()
+    signature = square_loop_storage.signature((start, stop))
+    assert cs.Subspace(signature.classes()) == signature.span()
+    with pytest.raises(ValueError):
+        cs.Subspace([])
+
+
 def test_xor_computes_the_symmetric_difference(square_loop_storage, square_loop_embedded):
     nonzero = square_loop_storage.classes()[0]
     zero = square_loop_embedded.cycle_class((0, 10))

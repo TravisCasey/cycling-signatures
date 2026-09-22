@@ -6,17 +6,18 @@
 mod downsample;
 mod resample;
 
+use std::ops::RangeBounds;
 #[cfg(feature = "serde")]
 use std::path::Path;
 
-use ndarray::{Array2, ArrayView2};
+use ndarray::{Array2, ArrayView2, Axis, Slice};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{Error, Result},
     metric::Metric,
-    util::fingerprint::Fingerprint,
+    util::{fingerprint::Fingerprint, range::normalize_segment},
 };
 
 /// An ordered array of points in a metric space together with a strictly
@@ -139,6 +140,26 @@ impl Trajectory {
     #[must_use]
     pub fn parameters(&self) -> &[f64] {
         &self.parameters
+    }
+
+    /// Returns a new trajectory over one contiguous range of this trajectory's
+    /// points, `segment.start..segment.end` normalized through the same rules
+    /// every segment argument follows (`a..b`, `a..=b`, `..b`, and `..` all
+    /// accepted). The parameters of the kept points carry through unchanged.
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::SegmentOutOfBounds`] if the range does not satisfy `start <=
+    ///   end <= len()`.
+    /// - [`Error::TrajectoryEmpty`] if the normalized range is empty.
+    pub fn segment(&self, segment: impl RangeBounds<usize>) -> Result<Self> {
+        let range = normalize_segment(segment, self.len())?;
+        let points = self
+            .points
+            .slice_axis(Axis(0), Slice::from(range.clone()))
+            .to_owned();
+        let parameters = self.parameters[range].to_vec();
+        Self::from_parts(points, parameters)
     }
 
     /// The number of points in the trajectory.
@@ -311,6 +332,32 @@ mod tests {
         let single = Trajectory::new(single_point.view()).unwrap();
 
         assert!(single.resolution(Metric::Euclidean).abs() < 1e-12);
+    }
+
+    #[test]
+    fn segment_carries_points_and_parameters_of_the_range() {
+        let points = array![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]];
+        let trajectory = Trajectory::with_parameters(points.view(), &[0.0, 0.5, 2.0, 3.5]).unwrap();
+
+        let middle = trajectory.segment(1..3).unwrap();
+        assert_eq!(
+            middle.points(),
+            points.slice_axis(ndarray::Axis(0), ndarray::Slice::from(1..3))
+        );
+        assert_eq!(middle.parameters(), &[0.5, 2.0]);
+
+        let whole = trajectory.segment(..).unwrap();
+        assert_eq!(whole.points(), trajectory.points());
+        assert_eq!(whole.parameters(), trajectory.parameters());
+
+        assert!(matches!(
+            trajectory.segment(2..2).unwrap_err(),
+            Error::TrajectoryEmpty
+        ));
+        assert!(matches!(
+            trajectory.segment(1..9).unwrap_err(),
+            Error::SegmentOutOfBounds { .. }
+        ));
     }
 
     #[test]

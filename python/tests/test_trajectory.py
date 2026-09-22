@@ -80,6 +80,19 @@ def test_resample_rejects_odd_dimension_under_sphere_bundle():
         cs.Trajectory.resample(spline, cs.SphereBundle(), 0.5)
 
 
+def test_segment_returns_the_points_and_parameters_of_the_range():
+    points = np.array([[0.0, 0.0], [3.0, 0.0], [6.0, 4.0], [9.0, 8.0]])
+    parameters = np.array([0.0, 0.5, 2.0, 3.5])
+    trajectory = cs.Trajectory(points, parameters)
+
+    piece = trajectory.segment(range(1, 3))
+    np.testing.assert_allclose(piece.points(), points[1:3])
+    np.testing.assert_allclose(piece.parameters(), parameters[1:3])
+
+    with pytest.raises(IndexError):
+        trajectory.segment(range(1, 9))
+
+
 def test_save_load_roundtrip(tmp_path):
     trajectory = cs.Trajectory(np.array([[0.0, 0.0], [3.0, 0.0], [6.0, 4.0]]))
     path = str(tmp_path / "trajectory.cyc")
