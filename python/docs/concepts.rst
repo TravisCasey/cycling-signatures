@@ -31,6 +31,9 @@ multiple roles, but the roles are not interchangeable:
   `CycleStorage` indexes them directly, so storage index ``i`` is detection
   point ``i``.
 
+Charney-DeVore publishes detection points only, one position and time array per
+cube side it is covered at, and no raw trajectory.
+
 Raw and dense are easy to conflate because both are denser than a thinned
 detection trajectory, but they come from different stages: raw is given and
 dense is computed by resampling a curve fitted through the raw points. The

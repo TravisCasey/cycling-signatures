@@ -31,8 +31,16 @@ autodoc_default_options = {
 # For an offline build, pass `-D plot_gallery=0` to sphinx-build: example pages
 # are parsed and rendered, but not executed, so no data is fetched.
 sphinx_gallery_conf = {
-    "examples_dirs": ["../examples/lorenz", "../examples/dadras"],
-    "gallery_dirs": ["auto_examples/lorenz", "auto_examples/dadras"],
+    "examples_dirs": [
+        "../examples/lorenz",
+        "../examples/dadras",
+        "../examples/charney_devore",
+    ],
+    "gallery_dirs": [
+        "auto_examples/lorenz",
+        "auto_examples/dadras",
+        "auto_examples/charney_devore",
+    ],
     "filename_pattern": r".*\.py",
     "within_subsection_order": "FileNameSortKey",
     "remove_config_comments": True,

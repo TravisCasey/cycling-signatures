@@ -29,7 +29,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.image import AxesImage
 from numpy.typing import NDArray
 
 import cycling_signatures as cs
@@ -517,10 +519,10 @@ _SIGNATURE_PALETTE = [
     (170, 102, 68),
 ]
 
-# Five-stop colormap for purity values, running gray, pale yellow, orange,
+# Five-stop colormap for purity values, running white, pale yellow, orange,
 # orange-red, dark red.
 _PURITY_STOPS = [
-    (0.00, (185, 185, 185)),
+    (0.00, (255, 255, 255)),
     (0.25, (255, 237, 160)),
     (0.50, (254, 178, 76)),
     (0.75, (253, 141, 60)),
@@ -556,6 +558,41 @@ def class_color_map(
 
 
 def purity_colormap() -> LinearSegmentedColormap:
-    """Return the gray-to-dark-red purity colormap."""
+    """Return the white-to-dark-red purity colormap."""
     stops = [(position, _normalized(*rgb)) for position, rgb in _PURITY_STOPS]
     return LinearSegmentedColormap.from_list("purity", stops)
+
+
+def purity_heatmap(
+    axes: Axes,
+    matrix: np.ma.MaskedArray,
+    row_labels: list[str],
+    column_labels: list[str],
+) -> AxesImage:
+    """Draw a matrix of purities on `axes` and return the image.
+
+    Each entry is a share in `[0, 1]`, drawn on the white-to-dark-red purity
+    colormap and written into its cell as a percentage. A masked entry is a
+    cell with nothing to report and is left white.
+    """
+    colormap = purity_colormap()
+    colormap.set_bad(color="white")
+    image = axes.imshow(matrix, cmap=colormap, vmin=0.0, vmax=1.0, aspect="auto")
+    axes.set_xticks(range(len(column_labels)), labels=column_labels)
+    axes.set_yticks(range(len(row_labels)), labels=row_labels)
+    mask = np.ma.getmaskarray(matrix)
+    for row in range(matrix.shape[0]):
+        for column in range(matrix.shape[1]):
+            if mask[row, column]:
+                continue
+            value = float(matrix[row, column])
+            axes.text(
+                column,
+                row,
+                f"{100 * value:.1f}%",
+                ha="center",
+                va="center",
+                color="white" if value > 0.6 else "black",
+                fontsize=9,
+            )
+    return image

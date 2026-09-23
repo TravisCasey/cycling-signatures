@@ -144,7 +144,18 @@ gallery_input_stamp() {
                      examples/dadras/data/dadras_detection_positions.npy \
                      examples/dadras/data/dadras_detection_times.npy \
                      examples/dadras/data/dadras_raw.npy \
-                     examples/dadras/data/dadras_times.npy; do
+                     examples/dadras/data/dadras_times.npy \
+                     examples/charney_devore/data/cdv_storage_0005.cyc \
+                     examples/charney_devore/data/cdv_storage_0005_rotation.cyc \
+                     examples/charney_devore/data/cdv_storage_0005_shift.cyc \
+                     examples/charney_devore/data/cdv_storage_0004.cyc \
+                     examples/charney_devore/data/cdv_storage_0006.cyc \
+                     examples/charney_devore/data/cdv_detection_positions_0005.npy \
+                     examples/charney_devore/data/cdv_detection_positions_0004.npy \
+                     examples/charney_devore/data/cdv_detection_positions_0006.npy \
+                     examples/charney_devore/data/cdv_detection_times_0005.npy \
+                     examples/charney_devore/data/cdv_detection_times_0004.npy \
+                     examples/charney_devore/data/cdv_detection_times_0006.npy; do
         if [ -f "$data_file" ]; then
             stat -c '%n %s %Y' "$data_file"
         else

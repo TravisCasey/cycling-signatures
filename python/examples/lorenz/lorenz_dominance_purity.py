@@ -17,7 +17,7 @@ same colors as the coverage barcode and signature-indicator examples), while
 the transition region near the cross-wing bridge shows mixed or rank-2
 dominance. The second figure breaks the same query points into one purity map
 per signature: each shades the attractor by that signature's local share, dark
-red where nearly all neighbors carry it and gray where few do. Reading the
+red where nearly all neighbors carry it and white where few do. Reading the
 purity maps together shows how the signatures partition the attractor and where
 they overlap.
 """
@@ -239,7 +239,7 @@ dominant_figure = build_dominant_figure()
 # %%
 # **Per-signature purity.** One x-z map per library signature, arranged in a
 # grid. Every query point is shaded by that signature's local share via the
-# gray-to-dark-red colormap, drawn in ascending purity order so the prevalent
+# white-to-dark-red colormap, drawn in ascending purity order so the prevalent
 # regions sit on top. A shared colorbar spans the grid.
 
 
