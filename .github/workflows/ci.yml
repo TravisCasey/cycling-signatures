@@ -218,6 +218,7 @@ jobs:
           path: |
             python/examples/lorenz/data
             python/examples/dadras/data
+            python/examples/charney_devore/data
           key: example-data-${{ hashFiles('python/examples/_support.py') }}
       - if: matrix.python-version == '3.14'
         run: uv run --group docs --group examples sphinx-build -E -W -b html docs docs/_build/html
