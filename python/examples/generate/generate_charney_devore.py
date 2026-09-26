@@ -96,7 +96,7 @@ def rotation(seed: int) -> NDArray[np.float64]:
     return orthogonal
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Cover:
     """One cube lattice to cover the trajectory with.
 
@@ -165,8 +165,11 @@ def scaled_points(
     units. The result is a new float64 array and `raw` is left untouched, since
     one raw trajectory feeds every cover.
     """
-    points = np.asarray(raw, dtype=np.float64)
-    points = points @ cover_rotation.T if cover_rotation is not None else np.array(points)
+    points = (
+        np.asarray(raw, dtype=np.float64) @ cover_rotation.T
+        if cover_rotation is not None
+        else np.array(raw, dtype=np.float64)
+    )
     points /= boxsize
     if shift is not None:
         points += shift
@@ -234,6 +237,13 @@ def build_cover(
     )
     extent_times = np.array(detection_times[:extent_stop])
     del detection_times
+    if shared_times_path is not None:
+        shared_times = np.load(shared_times_path)
+        if len(shared_times) != extent_stop or not np.array_equal(extent_times, shared_times):
+            raise RuntimeError(
+                f"cover {cover.name} thins the trajectory to different detection points "
+                f"than cover {cover.partner_of}, whose points its storage indexes"
+            )
     extent_points = detection.segment(range(0, extent_stop)).points()
     detection = cs.Trajectory(extent_points, parameters=extent_times)
 
@@ -254,13 +264,6 @@ def build_cover(
             (extent_points[:, :dimension] * cover.boxsize).astype(np.float32), positions_path
         )
         save_atomic(extent_times, times_path)
-    else:
-        shared_times = np.load(shared_times_path)
-        if len(shared_times) != extent_stop or not np.array_equal(extent_times, shared_times):
-            raise RuntimeError(
-                f"cover {cover.name} thins the trajectory to different detection points "
-                f"than cover {cover.partner_of}, whose points its storage indexes"
-            )
 
     return storage, BuildResult(
         cover_path=cover_path,

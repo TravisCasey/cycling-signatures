@@ -47,7 +47,7 @@ OTHER_SIDES = (0.004, 0.006)
 MIN_OVERLAP = 0.5
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class CoverReading:
     """What one cover's storage says, reduced to arrays over its components.
 

@@ -111,7 +111,12 @@ def image_shares(grid: str) -> tuple[np.ma.MaskedArray, list[str], bool]:
 
     partner_classes = partner.classes()
     leading = [partner_classes[tally.most_common(1)[0][0]] for tally in images.values()]
-    relation_holds = (leading[0] ^ leading[1]) == leading[2] and len(set(leading)) == len(leading)
+    present = set(leading)
+    relation_holds = len(present) == len(leading) and all(
+        first ^ second in present
+        for index, first in enumerate(leading)
+        for second in leading[index + 1 :]
+    )
 
     labels = [f"class {position}" for position in range(1, len(columns) + 1)] + ["other"]
     return np.ma.masked_equal(matrix, 0.0), labels, relation_holds
@@ -125,7 +130,7 @@ RESULTS = {grid: image_shares(grid) for grid in PARTNER_GRIDS}
 
 for grid in PARTNER_GRIDS:
     matrix, _, relation_holds = RESULTS[grid]
-    worst = float(matrix[:, :-1].max(axis=1).min())
+    worst = float(matrix[:, :-1].filled(0.0).max(axis=1).min())
     print(
         f"{PARTNER_NAMES[grid]}: {100 * worst:.1f}% of the cycles kept at worst, "
         + ("relation holds" if relation_holds else "relation fails")
@@ -158,10 +163,8 @@ def build_figure() -> plt.Figure:
 figure = build_figure()
 
 # %%
-# Each row lands on one column, and the three columns it lands on are three
-# different classes of the moved cover satisfying the same relation, so the
-# dominant span maps onto the moved grid's dominant span class for class. The
-# generator bases have nothing to do with each other, and the counts of cubes
-# and generators differ between the covers; what carries over is which cycles
-# share a class, which is exactly the part of the reading that is about the
-# motion rather than about the lattice.
+# Each row lands overwhelmingly on one column, 97.8 % at worst, with the
+# remainder scattered among the turned grid's other classes, and the three
+# columns it lands on are three different classes of the moved cover
+# satisfying the same relation, so the dominant span maps onto the moved
+# grid's dominant span class for class.

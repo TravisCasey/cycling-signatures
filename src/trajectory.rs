@@ -143,9 +143,9 @@ impl Trajectory {
     }
 
     /// Returns a new trajectory over one contiguous range of this trajectory's
-    /// points, `segment.start..segment.end` normalized through the same rules
-    /// every segment argument follows (`a..b`, `a..=b`, `..b`, and `..` all
-    /// accepted). The parameters of the kept points carry through unchanged.
+    /// points. `segment` normalizes to a half-open `start..end` range (`a..b`,
+    /// `a..=b`, `..b`, and `..` all accepted). The parameters of the kept
+    /// points carry through unchanged.
     ///
     /// # Errors
     ///
