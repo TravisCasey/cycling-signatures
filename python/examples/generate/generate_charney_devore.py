@@ -17,22 +17,31 @@ state space and one offset by half a cube along every axis. A moved lattice
 thins the same dense trajectory to the same detection points, so its storage
 indexes the arrays written for its cube side and writes none of its own.
 
-Each cover is built in its own run, in this order::
+Three more covers at the middle cube side are built from only the first 10 M
+or 20 M raw rows, one of them on the turned lattice. The storage's extent
+lies inside those rows, so these covers too share the ``0005`` detection
+points.
 
-    python examples/generate/generate_charney_devore.py --cover 0005
-    python examples/generate/generate_charney_devore.py --cover 0005_rotation
-    python examples/generate/generate_charney_devore.py --cover 0005_shift
-    python examples/generate/generate_charney_devore.py --cover 0004
-    python examples/generate/generate_charney_devore.py --cover 0006
+Each cover is built in its own run, ``0005`` first::
 
-The order is a requirement: each moved lattice checks its detection points
-against the times array the ``0005`` run writes, and refuses to build without
-it.
+  python examples/generate/generate_charney_devore.py --cover 0005
+  python examples/generate/generate_charney_devore.py --cover 0005_rotation
+  python examples/generate/generate_charney_devore.py --cover 0005_shift
+  python examples/generate/generate_charney_devore.py --cover 0004
+  python examples/generate/generate_charney_devore.py --cover 0006
+  python examples/generate/generate_charney_devore.py --cover 0005_10m
+  python examples/generate/generate_charney_devore.py --cover 0005_20m
+  python examples/generate/generate_charney_devore.py --cover 0005_20m_rotation
+
+The order is a requirement: each cover that shares detection points checks
+them against the times array the ``0005`` run writes, and refuses to build
+without it.
 
 A run peaks while the dense trajectory and its cover are both in memory. For
 the 60 M raw rows ``integrate_charney_devore.py`` produces, the resident peak
-is about 19 GB at cube side 0.004 and about 15 GB at 0.005 and 0.006. Run with
-20 GB free, one cover per process.
+is about 19 GB at cube side 0.004 and about 15 GB at 0.005 and 0.006, and
+under 6 GB for the covers built from 20 M rows or fewer. Run with 20 GB free,
+one cover per process.
 """
 
 import argparse
@@ -105,6 +114,8 @@ class Cover:
     units afterwards; either may be absent, and the lattice the coordinates
     arrive on has both absent. `partner_of` names the cover whose detection
     points this one shares, and is absent for a cover that writes its own.
+    `raw_rows` limits the cover to the trajectory's first raw rows, and is
+    absent for a cover built from all of them.
     """
 
     name: str
@@ -112,6 +123,7 @@ class Cover:
     rotation: NDArray[np.float64] | None
     shift: float | None
     partner_of: str | None
+    raw_rows: int | None = None
 
 
 COVERS = (
@@ -120,6 +132,9 @@ COVERS = (
     Cover("0005_shift", 0.005, None, HALF_CUBE_SHIFT, "0005"),
     Cover("0004", 0.004, None, None, None),
     Cover("0006", 0.006, None, None, None),
+    Cover("0005_10m", 0.005, None, None, "0005", 10_000_000),
+    Cover("0005_20m", 0.005, None, None, "0005", 20_000_000),
+    Cover("0005_20m_rotation", 0.005, rotation(ROTATION_SEED), None, "0005", 20_000_000),
 )
 
 _DATA_DIRECTORY = Path(__file__).resolve().parent.parent / "charney_devore" / "data"
@@ -346,12 +361,14 @@ def main() -> None:
     cover = next(candidate for candidate in COVERS if candidate.name == arguments.cover)
     arguments.output_directory.mkdir(parents=True, exist_ok=True)
     raw = np.load(arguments.raw, mmap_mode="r")
-    times = np.asarray(np.load(arguments.times, mmap_mode="r"))
+    times = np.load(arguments.times, mmap_mode="r")
     if len(times) != len(raw):
         raise ValueError(
             f"{arguments.times} holds {len(times)} times for the {len(raw)} raw rows of "
             f"{arguments.raw}; they are not one trajectory"
         )
+    raw = raw[: cover.raw_rows]
+    times = np.asarray(times[: cover.raw_rows])
     storage, result = build_cover(raw, times, cover, arguments.output_directory)
     report(cover, storage, result)
 

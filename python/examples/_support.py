@@ -256,8 +256,9 @@ _CHARNEY_DEVORE_CACHE = Path(__file__).resolve().parent / "charney_devore" / "da
 CHARNEY_DEVORE_SUFFIX = {0.005: "0005", 0.004: "0004", 0.006: "0006"}
 
 # One storage per cover, keyed by the cover's name: the cube-side suffix for
-# the lattice the coordinates arrive on, and the suffix with the placement
-# appended for the two moved lattices, which are covered at 0.005 only.
+# the lattice the coordinates arrive on, with the raw-row count appended for a
+# cover built from part of the trajectory and the placement appended for a
+# moved lattice. Both kinds are covered at 0.005 only.
 _CHARNEY_DEVORE_STORAGES = {
     "0005": _published(
         "cdv_storage_0005.cyc",
@@ -278,6 +279,18 @@ _CHARNEY_DEVORE_STORAGES = {
     "0006": _published(
         "cdv_storage_0006.cyc",
         "982bdf53e2d39ab9b7b0d184724cc35f2c94c963c904ea34d68feb16100daf29",
+    ),
+    "0005_10m": _published(
+        "cdv_storage_0005_10m.cyc",
+        "596abfc33f3c363e20334bef09782b5da8b35028431eaf4e600ec25e920dbd4d",
+    ),
+    "0005_20m": _published(
+        "cdv_storage_0005_20m.cyc",
+        "5df93b0edd4ce62f4cef17da16db04ee9c06ec48133871a3a185f823162523f5",
+    ),
+    "0005_20m_rotation": _published(
+        "cdv_storage_0005_20m_rotation.cyc",
+        "2ba80b9e7fcdd208420b02d90b17d244a3cc482c24210101a846548417e7399a",
     ),
 }
 
@@ -326,7 +339,9 @@ def _charney_devore_suffix(boxsize: float) -> str:
     return suffix
 
 
-def charney_devore_storage(boxsize: float, grid: str = "identity") -> Path:
+def charney_devore_storage(
+    boxsize: float, grid: str = "identity", raw_rows: int | None = None
+) -> Path:
     """Return the path to a Charney-DeVore cycle storage, fetching it if absent.
 
     `boxsize` is the cube side the cover was built at, in the model's own
@@ -335,6 +350,10 @@ def charney_devore_storage(boxsize: float, grid: str = "identity") -> Path:
     arrive on, ``"rotation"`` for one turned by a fixed rotation of the
     six-dimensional state space, and ``"shift"`` for one offset by half a cube
     along every axis. The two moved lattices are published at 0.005 only.
+    `raw_rows` selects a cover built from only the trajectory's first raw
+    rows rather than all 60 M of them: 10 M or 20 M on the identity grid, and
+    20 M on the turned one, all at 0.005. Every storage at 0.005 indexes the
+    same detection points.
 
     Each storage carries its classes in the generator basis of its own cover,
     so classes are comparable between two of these storages only through
@@ -345,13 +364,20 @@ def charney_devore_storage(boxsize: float, grid: str = "identity") -> Path:
     Raises
     ------
     ValueError
-        If no storage is published for `boxsize` and `grid`.
+        If no storage is published for `boxsize`, `grid` and `raw_rows`.
     """
-    suffix = _charney_devore_suffix(boxsize)
-    name = suffix if grid == "identity" else f"{suffix}_{grid}"
+    name = _charney_devore_suffix(boxsize)
+    if raw_rows is not None:
+        name += f"_{raw_rows // 1_000_000}m"
+    if grid != "identity":
+        name += f"_{grid}"
     remote = _CHARNEY_DEVORE_STORAGES.get(name)
     if remote is None:
-        raise ValueError(f"no Charney-DeVore storage on the {grid} grid at box size {boxsize}")
+        rows = "all" if raw_rows is None else f"the first {raw_rows}"
+        raise ValueError(
+            f"no Charney-DeVore storage on the {grid} grid at box size {boxsize} "
+            f"from {rows} raw rows"
+        )
     return _cached(remote, _CHARNEY_DEVORE_CACHE / f"cdv_storage_{name}.cyc")
 
 
