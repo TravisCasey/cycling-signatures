@@ -150,6 +150,9 @@ gallery_input_stamp() {
                      examples/charney_devore/data/cdv_storage_0005_shift.cyc \
                      examples/charney_devore/data/cdv_storage_0004.cyc \
                      examples/charney_devore/data/cdv_storage_0006.cyc \
+                     examples/charney_devore/data/cdv_storage_0005_10m.cyc \
+                     examples/charney_devore/data/cdv_storage_0005_20m.cyc \
+                     examples/charney_devore/data/cdv_storage_0005_20m_rotation.cyc \
                      examples/charney_devore/data/cdv_detection_positions_0005.npy \
                      examples/charney_devore/data/cdv_detection_positions_0004.npy \
                      examples/charney_devore/data/cdv_detection_positions_0006.npy \

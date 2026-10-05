@@ -50,10 +50,22 @@ has to be before its signature is exactly the dominant span. *Signature
 indicator* draws what single windows of four lengths read across one stretch
 of the trajectory.
 
-The other two change the cover and ask whether the reading moves. *The
-signature under a rigid motion of the grid* turns and shifts the cube lattice
-under the same trajectory, which leaves the detection points, and so the
-cycles, untouched while rebuilding the cover from scratch in a new generator
-basis. *The same classes at three cube sides* covers the same trajectory more
+Two more change the cover and ask whether the reading moves. *The signature
+under a rigid motion of the grid* turns and shifts the cube lattice under the
+same trajectory, which leaves the detection points, and so the cycles,
+untouched while rebuilding the cover from scratch in a new generator basis.
+*The same classes at three cube sides* covers the same trajectory more
 coarsely and more finely, which changes the cycles as well. In both cases the
 three classes come back.
+
+The last indicates what is required for the classes to come back. *Trajectory
+length and the cover* builds the cover from only the first sixth or third of the
+trajectory and reads the same cycles against it. A cover holds every hole of the
+region the trajectory has swept out, so one built from too little trajectory
+reports holes the motion does not have, and the classes either shatter or close
+into a span of higher rank. How densely the detection points fill the cover's
+cubes predicts which. On the grid the coordinates arrive on, the covers from
+10 M and 20 M raw rows average about 10 and 17 detection points per cube,
+against 38 for the cover from all 60 M. In this system covers under about 12
+shatter, covers over about 20 read the three classes, and those between read a
+span of higher rank that a turned grid or more trajectory reduces.
